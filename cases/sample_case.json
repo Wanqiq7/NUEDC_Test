@@ -1,0 +1,20 @@
+{
+  "case_id": "wildlife-demo",
+  "start_cell": "A9B1",
+  "return_to_start": false,
+  "landing": {
+    "takeoff_anchor_cm": [450.0, 350.0],
+    "cruise_height_cm": 120.0,
+    "descent_angle_deg": 45.0,
+    "touchdown_radius_cm": 18.0,
+    "preferred_heading_deg": 45.0
+  },
+  "no_fly_cells": ["A4B3", "A5B3", "A6B3"],
+  "tick_interval_ms": 150,
+  "animals": [
+    {"cell": "A2B1", "name": "elephant", "count": 1},
+    {"cell": "A7B2", "name": "monkey", "count": 2},
+    {"cell": "A1B5", "name": "wolf", "count": 1},
+    {"cell": "A9B3", "name": "peacock", "count": 3}
+  ]
+}

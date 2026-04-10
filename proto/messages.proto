@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+message GridConfig {
+  string case_id = 1;
+  string start_cell = 2;
+  repeated string no_fly_cells = 3;
+  repeated string route = 4;
+  string terminal_cell = 5;
+  bool landing_enabled = 6;
+  float descent_angle_deg = 7;
+  float takeoff_anchor_x_cm = 8;
+  float takeoff_anchor_y_cm = 9;
+}
+
+message Telemetry {
+  string current_cell = 1;
+  uint32 step_index = 2;
+  uint32 visited_cells = 3;
+}
+
+message AnimalDetection {
+  string cell_code = 1;
+  string animal_name = 2;
+  uint32 count = 3;
+}
+
+message AnimalTotal {
+  string animal_name = 1;
+  uint32 total_count = 2;
+}
+
+message MissionSummary {
+  repeated AnimalTotal totals = 1;
+  uint32 visited_cells = 2;
+}
+
+message Envelope {
+  uint64 sequence = 1;
+  int64 timestamp_ms = 2;
+
+  oneof payload {
+    GridConfig grid_config = 10;
+    Telemetry telemetry = 11;
+    AnimalDetection animal_detection = 12;
+    MissionSummary mission_summary = 13;
+  }
+}

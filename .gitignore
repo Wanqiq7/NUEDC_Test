@@ -1,0 +1,46 @@
+# CMake / C++
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+Makefile
+compile_commands.json
+
+# Generated protobuf outputs
+build/generated/
+build/proto_messages_autogen/
+python/uav_testbed/generated/messages_pb2.py
+
+# Python caches / virtualenvs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Runtime artifacts
+*.db
+*.sqlite
+*.sqlite3
+cases/active_mission_plan.json
+
+# Qt / IDE
+*.user
+*.autosave
+.idea/
+.vscode/
+
+# Local agent / tool state
+.serena/
+.superpowers/
+.codex/
+.codex
+
+# OS / logs
+.DS_Store
+Thumbs.db
+*.log
