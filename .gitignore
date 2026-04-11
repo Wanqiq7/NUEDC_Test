@@ -11,7 +11,7 @@ compile_commands.json
 # Generated protobuf outputs
 build/generated/
 build/proto_messages_autogen/
-python/uav_testbed/generated/messages_pb2.py
+airborne/uav_testbed/generated/messages_pb2.py
 
 # Python caches / virtualenvs
 __pycache__/
@@ -26,7 +26,8 @@ env/
 *.db
 *.sqlite
 *.sqlite3
-cases/active_mission_plan.json
+runtime/active_mission_plan.json
+runtime/ground_control_results.db
 
 # Qt / IDE
 *.user

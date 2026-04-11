@@ -3,7 +3,7 @@ import sys
 import unittest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
-PYTHON_ROOT = PROJECT_ROOT / "python"
+PYTHON_ROOT = PROJECT_ROOT / "airborne"
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
@@ -30,7 +30,7 @@ class MissionPlanningTests(unittest.TestCase):
         self.assertFalse(set(override_cells) & set(override_plan["route"]))
 
     def test_plan_matches_simulator_config_payload(self) -> None:
-        sample_case = load_case(PROJECT_ROOT / "cases" / "sample_case.json")
+        sample_case = load_case(PROJECT_ROOT / "shared" / "cases" / "sample_case.json")
 
         plan = build_mission_plan(sample_case)
         generator = simulate_messages(sample_case)

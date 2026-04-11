@@ -11,6 +11,24 @@
 
 namespace {
 
+QString findRepositoryRootFromCasePath(const QString &case_path) {
+    QFileInfo file_info(case_path);
+    QDir dir = file_info.isAbsolute() ? file_info.absoluteDir() : QDir::current();
+    if (!file_info.isAbsolute()) {
+        dir = QFileInfo(QDir::current().filePath(case_path)).absoluteDir();
+    }
+
+    for (int depth = 0; depth < 8; ++depth) {
+        if (dir.exists(QStringLiteral("airborne")) && dir.exists(QStringLiteral("shared"))) {
+            return dir.absolutePath();
+        }
+        if (!dir.cdUp()) {
+            break;
+        }
+    }
+    return QFileInfo(file_info.isAbsolute() ? file_info.filePath() : QDir::current().filePath(case_path)).absolutePath();
+}
+
 QStringList requiredStringList(const QJsonObject &object, const char *key, QString *error, bool allow_empty = false) {
     const QString readable_key = QString::fromUtf8(key);
 
@@ -145,12 +163,11 @@ MissionPlanResult MissionPlanBridge::generatePlan(const QString &case_path, cons
     const QString absolute_case_path = case_file_info.isAbsolute()
         ? case_file_info.filePath()
         : QDir::current().filePath(case_path);
-    QDir project_root_dir = QFileInfo(absolute_case_path).absoluteDir();
-    project_root_dir.cdUp();
+    const QDir project_root_dir(findRepositoryRootFromCasePath(absolute_case_path));
 
     QProcess process;
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    environment.insert("PYTHONPATH", project_root_dir.filePath("python"));
+    environment.insert("PYTHONPATH", project_root_dir.filePath("airborne"));
     process.setProcessEnvironment(environment);
     process.setWorkingDirectory(project_root_dir.absolutePath());
 

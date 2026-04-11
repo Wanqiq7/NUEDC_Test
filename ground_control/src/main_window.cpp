@@ -1,6 +1,7 @@
 #include "main_window.h"
 
 #include "grid_scene.h"
+#include "network_config.h"
 #include "zmq_subscriber_worker.h"
 
 #include <QCoreApplication>
@@ -26,7 +27,7 @@ namespace {
 QString findRepositoryRootImpl() {
     QDir dir(QCoreApplication::applicationDirPath());
     for (int depth = 0; depth < 8; ++depth) {
-        if (dir.exists(QStringLiteral("cases")) && dir.exists(QStringLiteral("python"))) {
+        if (dir.exists(QStringLiteral("shared")) && dir.exists(QStringLiteral("airborne"))) {
             return dir.absolutePath();
         }
         if (!dir.cdUp()) {
@@ -44,10 +45,13 @@ const QString &repositoryRootPath() {
 
 MainWindow::MainWindow(QWidget *parent, bool start_worker)
     : QMainWindow(parent),
-      repository_(QDir(repositoryRootPath()).filePath("ground_station_results.db")) {
+      repository_(QDir(repositoryRootPath()).filePath("runtime/ground_control_results.db")) {
     const QString repo_root = repositoryRootPath();
+    const NetworkConfig network_config = NetworkConfig::fromEnvironment();
     case_file_path_ = QDir(repo_root).filePath(case_file_path_);
     mission_plan_output_path_ = QDir(repo_root).filePath(mission_plan_output_path_);
+    command_sync_enabled_ = start_worker;
+    command_client_ = ZmqCommandClient(network_config.commandEndpoint());
 
     auto *central = new QWidget(this);
     auto *root_layout = new QHBoxLayout(central);
@@ -114,6 +118,23 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
     planning_button_->setFixedHeight(46);
     planning_button_->setCursor(Qt::PointingHandCursor);
     left_layout->addWidget(planning_button_);
+
+    airborne_status_label_ = new QLabel("机载状态: 检查中", this);
+    airborne_status_label_->setObjectName("AirborneStatusLabel");
+    airborne_status_label_->setStyleSheet("color: #475569; font-size: 13px; padding: 2px 0;");
+    left_layout->addWidget(airborne_status_label_);
+
+    auto *action_layout = new QHBoxLayout();
+    action_layout->setSpacing(10);
+    execute_button_ = new QPushButton("执行任务", this);
+    execute_button_->setObjectName("ExecuteMissionButton");
+    execute_button_->setCursor(Qt::PointingHandCursor);
+    stop_button_ = new QPushButton("停止任务", this);
+    stop_button_->setObjectName("StopMissionButton");
+    stop_button_->setCursor(Qt::PointingHandCursor);
+    action_layout->addWidget(execute_button_);
+    action_layout->addWidget(stop_button_);
+    left_layout->addLayout(action_layout);
 
     case_label_ = new QLabel("案例: 未加载", this);
     case_label_->setObjectName("StatusText");
@@ -187,10 +208,15 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
     refreshSummaryFromDatabase();
 
     connect(planning_button_, &QPushButton::clicked, this, &MainWindow::handlePlanningButtonClicked);
+    connect(execute_button_, &QPushButton::clicked, this, &MainWindow::handleExecuteMissionClicked);
+    connect(stop_button_, &QPushButton::clicked, this, &MainWindow::handleStopMissionClicked);
     connect(grid_scene_, &GridScene::cellClicked, this, &MainWindow::handleGridSceneCellClicked);
     loadInitialMissionPreview();
+    refreshExecutionControls();
+    refreshAirborneStatusLabel();
+    probeAirborneAvailability(false);
 
-    worker_ = new ZmqSubscriberWorker("tcp://127.0.0.1:5557", this);
+    worker_ = new ZmqSubscriberWorker(network_config.telemetryEndpoint(), this);
     if (start_worker) {
         connect(worker_, &ZmqSubscriberWorker::gridConfigReceived, this, &MainWindow::handleGridConfig);
         connect(worker_, &ZmqSubscriberWorker::telemetryReceived, this, &MainWindow::handleTelemetry);
@@ -233,6 +259,10 @@ void MainWindow::handleGridConfig(
     planning_state_.handleGenerationSucceeded();
     refreshPlanningButtonText();
     refreshMissionContextLabels();
+    airborne_online_ = true;
+    mission_synced_to_airborne_ = true;
+    refreshAirborneStatusLabel();
+    refreshExecutionControls();
     status_label_->setText("状态: 路线已加载，等待起飞");
     grid_scene_->setNoFlyCells(no_fly_cells);
     grid_scene_->setStartCell(start_cell);
@@ -242,6 +272,10 @@ void MainWindow::handleGridConfig(
 }
 
 void MainWindow::handleTelemetry(QString current_cell, int step_index, int visited_cells) {
+    airborne_online_ = true;
+    mission_running_ = true;
+    refreshAirborneStatusLabel();
+    refreshExecutionControls();
     status_label_->setText(QString("状态: 巡查中 | 当前方格: %1 | 步数: %2 | 已访问: %3")
                                .arg(current_cell)
                                .arg(step_index)
@@ -259,6 +293,10 @@ void MainWindow::handleDetection(QString cell_code, QString animal_name, int cou
 }
 
 void MainWindow::handleSummary(QMap<QString, int> totals, int visited_cells) {
+    airborne_online_ = true;
+    mission_running_ = false;
+    refreshAirborneStatusLabel();
+    refreshExecutionControls();
     status_label_->setText(QString("状态: 巡查完成 | 已访问方格: %1").arg(visited_cells));
     updateSummaryTable(totals);
 }
@@ -296,6 +334,57 @@ void MainWindow::handlePlanningButtonClicked() {
     }
 }
 
+void MainWindow::handleExecuteMissionClicked() {
+    if (!command_sync_enabled_) {
+        status_label_->setText("状态: 测试模式不支持执行控制");
+        return;
+    }
+    if (!mission_synced_to_airborne_) {
+        status_label_->setText("状态: 请先生成并同步任务到机载端");
+        return;
+    }
+
+    const auto result = command_client_.sendControlCommand(
+        GroundControlCommandType::StartMission,
+        current_case_id_);
+    airborne_online_ = result.ok;
+    if (!result.ok) {
+        mission_running_ = false;
+        refreshAirborneStatusLabel();
+        refreshExecutionControls();
+        status_label_->setText(QString("错误: 开始执行命令失败 | %1").arg(result.message));
+        return;
+    }
+
+    mission_running_ = true;
+    refreshAirborneStatusLabel();
+    refreshExecutionControls();
+    status_label_->setText("状态: 已发送开始执行命令");
+}
+
+void MainWindow::handleStopMissionClicked() {
+    if (!command_sync_enabled_) {
+        status_label_->setText("状态: 测试模式不支持执行控制");
+        return;
+    }
+
+    const auto result = command_client_.sendControlCommand(
+        GroundControlCommandType::StopMission,
+        current_case_id_);
+    airborne_online_ = result.ok;
+    if (!result.ok) {
+        refreshAirborneStatusLabel();
+        refreshExecutionControls();
+        status_label_->setText(QString("错误: 停止执行命令失败 | %1").arg(result.message));
+        return;
+    }
+
+    mission_running_ = false;
+    refreshAirborneStatusLabel();
+    refreshExecutionControls();
+    status_label_->setText("状态: 已发送停止执行命令");
+}
+
 void MainWindow::handleGridSceneCellClicked(const QString &cell_code) {
     if (planning_state_.state() == PlanningUiState::IdlePreview) {
         return;
@@ -320,10 +409,13 @@ void MainWindow::handleGridSceneCellClicked(const QString &cell_code) {
 void MainWindow::enterNoFlySelectionMode() {
     planning_state_.handlePrimaryButtonClicked();
     candidate_no_fly_cells_.clear();
+    mission_synced_to_airborne_ = false;
+    mission_running_ = false;
     grid_scene_->clearCandidateNoFlyCells();
     grid_scene_->setNoFlyCells({});
     grid_scene_->setNoFlyEditEnabled(true);
     refreshPlanningButtonText();
+    refreshExecutionControls();
     status_label_->setText("状态: 请选择 3 个横向或纵向连续的禁飞格");
 }
 
@@ -350,10 +442,10 @@ void MainWindow::generateMissionPlanFromCandidateSelection() {
         return;
     }
 
-    applyMissionPlanResult(result);
+    applyMissionPlanResult(result, true);
 }
 
-void MainWindow::applyMissionPlanResult(const MissionPlanResult &result) {
+void MainWindow::applyMissionPlanResult(const MissionPlanResult &result, bool sync_to_airborne) {
     case_file_path_ = resolveCaseFilePath(result.plan.case_id);
     current_case_id_ = result.plan.case_id;
     current_start_cell_ = result.plan.start_cell;
@@ -382,13 +474,82 @@ void MainWindow::applyMissionPlanResult(const MissionPlanResult &result) {
     refreshMissionContextLabels();
 
     QString persist_error;
-    if (persistMissionPlan(result.plan, &persist_error)) {
+    if (!persistMissionPlan(result.plan, &persist_error)) {
+        qWarning() << "Failed to persist mission plan:" << persist_error;
+        status_label_->setText(QString("错误: 本地航线已更新，但同步模拟器任务计划失败 | %1").arg(persist_error));
+        return;
+    }
+
+    if (!sync_to_airborne || !command_sync_enabled_) {
+        mission_synced_to_airborne_ = false;
+        mission_running_ = false;
+        refreshExecutionControls();
         status_label_->setText("状态: 航线生成成功，可执行任务");
         return;
     }
 
-    qWarning() << "Failed to persist mission plan:" << persist_error;
-    status_label_->setText(QString("错误: 本地航线已更新，但同步模拟器任务计划失败 | %1").arg(persist_error));
+    const auto send_result = command_client_.sendMissionPlan(result.plan);
+    if (send_result.ok) {
+        airborne_online_ = true;
+        mission_synced_to_airborne_ = true;
+        mission_running_ = false;
+        refreshAirborneStatusLabel();
+        refreshExecutionControls();
+        status_label_->setText("状态: 任务已同步至机载端，可执行任务");
+        return;
+    }
+
+    airborne_online_ = false;
+    mission_synced_to_airborne_ = false;
+    mission_running_ = false;
+    refreshAirborneStatusLabel();
+    refreshExecutionControls();
+    qWarning() << "Failed to sync mission plan to airborne NUC:" << send_result.message;
+    status_label_->setText(QString("错误: 任务已本地生成，但机载端未确认 | %1").arg(send_result.message));
+}
+
+void MainWindow::probeAirborneAvailability(bool update_status_message) {
+    if (!command_sync_enabled_) {
+        airborne_online_ = false;
+        refreshAirborneStatusLabel();
+        refreshExecutionControls();
+        return;
+    }
+
+    const auto result = command_client_.sendControlCommand(
+        GroundControlCommandType::Ping,
+        current_case_id_);
+    airborne_online_ = result.ok;
+    refreshAirborneStatusLabel();
+    refreshExecutionControls();
+    if (update_status_message) {
+        status_label_->setText(
+            result.ok
+                ? QString("状态: 机载端在线 | %1").arg(result.message)
+                : QString("状态: 机载端离线 | %1").arg(result.message));
+    }
+}
+
+void MainWindow::refreshExecutionControls() {
+    const bool can_execute = command_sync_enabled_ && airborne_online_ && mission_synced_to_airborne_ && !mission_running_;
+    const bool can_stop = command_sync_enabled_ && airborne_online_ && mission_running_;
+    if (execute_button_ != nullptr) {
+        execute_button_->setEnabled(can_execute);
+    }
+    if (stop_button_ != nullptr) {
+        stop_button_->setEnabled(can_stop);
+    }
+}
+
+void MainWindow::refreshAirborneStatusLabel() {
+    if (airborne_status_label_ == nullptr) {
+        return;
+    }
+    if (!command_sync_enabled_) {
+        airborne_status_label_->setText("机载状态: 测试模式");
+        return;
+    }
+    airborne_status_label_->setText(airborne_online_ ? "机载状态: 在线" : "机载状态: 离线");
 }
 
 void MainWindow::refreshMissionContextLabels() {
@@ -482,7 +643,7 @@ void MainWindow::loadInitialMissionPreview() {
         return;
     }
 
-    applyMissionPlanResult(result);
+    applyMissionPlanResult(result, false);
     status_label_->setText("状态: 默认航线已加载，可设置禁飞区");
 }
 
@@ -491,7 +652,7 @@ QString MainWindow::resolveCaseFilePath(const QString &case_id) const {
         return case_file_path_;
     }
 
-    const QString candidate_path = QDir(repositoryRootPath()).filePath(QStringLiteral("cases/%1.json").arg(case_id));
+    const QString candidate_path = QDir(repositoryRootPath()).filePath(QStringLiteral("shared/cases/%1.json").arg(case_id));
     if (QFileInfo::exists(candidate_path)) {
         return candidate_path;
     }

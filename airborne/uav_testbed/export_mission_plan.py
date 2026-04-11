@@ -9,7 +9,7 @@ from .mission_planning import build_mission_plan
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="导出任务规划 JSON")
-    parser.add_argument("--case", default="cases/sample_case.json", help="案例文件路径")
+    parser.add_argument("--case", default="shared/cases/sample_case.json", help="案例文件路径")
     parser.add_argument(
         "--no-fly-cells",
         nargs="*",

@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QMetaObject>
 #include <QPushButton>
 
@@ -23,7 +24,7 @@ constexpr qreal kTestCellSize = 52.0;
 QString findRepositoryRoot() {
     QDir dir(QCoreApplication::applicationDirPath());
     for (int depth = 0; depth < 8; ++depth) {
-        if (dir.exists(QStringLiteral("cases")) && dir.exists(QStringLiteral("python"))) {
+        if (dir.exists(QStringLiteral("shared")) && dir.exists(QStringLiteral("airborne"))) {
             return dir.absolutePath();
         }
         if (!dir.cdUp()) {
@@ -45,12 +46,33 @@ class MainWindowTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void executionControlsExistAndAreDisabledInTestMode();
     void manualNoFlyFlowPersistsPlan();
 };
 
+void MainWindowTests::executionControlsExistAndAreDisabledInTestMode() {
+    MainWindow window(nullptr, false);
+    window.show();
+    QTest::qWait(50);
+
+    auto *execute_button = window.findChild<QPushButton *>("ExecuteMissionButton");
+    auto *stop_button = window.findChild<QPushButton *>("StopMissionButton");
+    auto *airborne_status = window.findChild<QLabel *>("AirborneStatusLabel");
+    auto *planning_button = window.findChild<QPushButton *>("PlanningButton");
+
+    QVERIFY(execute_button != nullptr);
+    QVERIFY(stop_button != nullptr);
+    QVERIFY(airborne_status != nullptr);
+    QVERIFY(planning_button != nullptr);
+    QVERIFY(planning_button->isEnabled());
+    QVERIFY(!execute_button->isEnabled());
+    QVERIFY(!stop_button->isEnabled());
+    QVERIFY(airborne_status->text().contains("测试模式"));
+}
+
 void MainWindowTests::manualNoFlyFlowPersistsPlan() {
     const QString repo_root = findRepositoryRoot();
-    const QString plan_path = QDir(repo_root).filePath("cases/active_mission_plan.json");
+    const QString plan_path = QDir(repo_root).filePath("runtime/active_mission_plan.json");
     QFile::remove(plan_path);
 
     QStringList no_fly_cells = {"A4B3", "A5B3", "A6B3"};

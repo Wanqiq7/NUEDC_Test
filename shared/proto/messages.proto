@@ -34,6 +34,23 @@ message MissionSummary {
   uint32 visited_cells = 2;
 }
 
+message Ack {
+  bool success = 1;
+  string message = 2;
+}
+
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  COMMAND_TYPE_START_MISSION = 1;
+  COMMAND_TYPE_STOP_MISSION = 2;
+  COMMAND_TYPE_PING = 3;
+}
+
+message ControlCommand {
+  CommandType type = 1;
+  string case_id = 2;
+}
+
 message Envelope {
   uint64 sequence = 1;
   int64 timestamp_ms = 2;
@@ -43,5 +60,8 @@ message Envelope {
     Telemetry telemetry = 11;
     AnimalDetection animal_detection = 12;
     MissionSummary mission_summary = 13;
+    GridConfig mission_load = 14;
+    Ack ack = 15;
+    ControlCommand control_command = 16;
   }
 }

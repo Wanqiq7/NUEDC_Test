@@ -8,6 +8,7 @@
 #include "mission_plan_bridge.h"
 #include "no_fly_zone_rules.h"
 #include "planning_state_machine.h"
+#include "zmq_command_client.h"
 
 class GridScene;
 class QLabel;
@@ -41,12 +42,17 @@ private slots:
 private:
     void handlePlanningButtonClicked();
     void handleGridSceneCellClicked(const QString &cell_code);
+    void handleExecuteMissionClicked();
+    void handleStopMissionClicked();
 
     void loadInitialMissionPreview();
     void enterNoFlySelectionMode();
     void generateMissionPlanFromCandidateSelection();
-    void applyMissionPlanResult(const MissionPlanResult &result);
+    void applyMissionPlanResult(const MissionPlanResult &result, bool sync_to_airborne = false);
     bool persistMissionPlan(const MissionPlanData &plan, QString *error_message = nullptr) const;
+    void probeAirborneAvailability(bool update_status_message = false);
+    void refreshExecutionControls();
+    void refreshAirborneStatusLabel();
     void refreshMissionContextLabels();
     void refreshPlanningButtonText();
     QString resolveCaseFilePath(const QString &case_id) const;
@@ -64,10 +70,14 @@ private:
     QTableWidget *summary_table_ = nullptr;
 
     QPushButton *planning_button_ = nullptr;
+    QPushButton *execute_button_ = nullptr;
+    QPushButton *stop_button_ = nullptr;
+    QLabel *airborne_status_label_ = nullptr;
     PlanningStateMachine planning_state_;
     MissionPlanBridge mission_plan_bridge_;
-    QString case_file_path_ = "cases/sample_case.json";
-    QString mission_plan_output_path_ = "cases/active_mission_plan.json";
+    ZmqCommandClient command_client_;
+    QString case_file_path_ = "shared/cases/sample_case.json";
+    QString mission_plan_output_path_ = "runtime/active_mission_plan.json";
     QString current_case_id_;
     QString current_start_cell_;
     QString current_terminal_cell_;
@@ -77,6 +87,10 @@ private:
     double current_descent_angle_deg_ = 0.0;
     double current_takeoff_anchor_x_cm_ = 0.0;
     double current_takeoff_anchor_y_cm_ = 0.0;
+    bool command_sync_enabled_ = true;
+    bool airborne_online_ = false;
+    bool mission_synced_to_airborne_ = false;
+    bool mission_running_ = false;
 
     DetectionRepository repository_;
     ZmqSubscriberWorker *worker_ = nullptr;
