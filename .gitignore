@@ -28,6 +28,7 @@ env/
 *.sqlite3
 runtime/active_mission_plan.json
 runtime/ground_control_results.db
+runtime/*.env
 
 # Qt / IDE
 *.user

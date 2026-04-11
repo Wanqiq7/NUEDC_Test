@@ -236,6 +236,12 @@ python3 -m unittest discover -s airborne/tests -v
 
 ## 5. 双机网络配置
 
+如果你不想手动敲 `nmcli`，仓库已经提供了一键脚本：
+
+- 机载端热点脚本：`scripts/start_airborne_hotspot.sh`
+- 地面站网络配置脚本：`scripts/setup_ground_control_network.sh`
+- 地面站网络检查脚本：`scripts/check_ground_control_network.sh`
+
 ### 5.1 推荐网络结构
 
 两台 NUC 在同一局域网，使用固定 IP。
@@ -285,6 +291,24 @@ sudo ufw allow 5558/tcp
 
 ## 6.1 机载端启动
 
+### 方式 A：使用一键热点脚本
+
+在机载 NUC 上执行：
+
+```bash
+cd /path/to/NUEDC_Test
+./scripts/start_airborne_hotspot.sh
+```
+
+你会看到：
+
+- 热点 SSID
+- 热点密码
+- 机载端热点 IP
+- 后续机载程序启动命令
+
+### 方式 B：手动使用 `nmcli`
+
 在机载 NUC 上执行：
 
 ```bash
@@ -308,6 +332,25 @@ PYTHONPATH=airborne python3 -m uav_testbed.run_simulator \
 
 ## 6.2 地面端启动
 
+### 方式 A：使用一键网络配置脚本
+
+在地面站 NUC 上执行：
+
+```bash
+cd /path/to/NUEDC_Test
+./scripts/setup_ground_control_network.sh --host 10.42.0.1 --launch-app
+```
+
+如果你只想连接热点，不立刻启动地面站，则执行：
+
+```bash
+./scripts/setup_ground_control_network.sh --host 10.42.0.1
+source runtime/ground_control_network.env
+./build/ground_control/ground_control_app
+```
+
+### 方式 B：手动设置环境变量
+
 在地面站 NUC 上执行：
 
 ```bash
@@ -322,6 +365,21 @@ export NUEDC_COMMAND_PORT=5558
 
 - 自动尝试 `PING` 机载端
 - 界面显示 `机载状态: 在线` 或 `机载状态: 离线`
+
+### 6.2.1 地面站端网络检查
+
+在地面站 NUC 上执行：
+
+```bash
+cd /path/to/NUEDC_Test
+./scripts/check_ground_control_network.sh --host 10.42.0.1
+```
+
+该脚本会检查：
+
+- `ping` 是否通
+- 遥测端口 `5557` 是否可达
+- 命令端口 `5558` 是否可达
 
 ---
 
