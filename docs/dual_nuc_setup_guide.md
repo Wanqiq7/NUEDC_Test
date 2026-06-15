@@ -15,8 +15,8 @@
 
 ```text
 XT/
-├─ ground_control/
-├─ airborne/
+├─ ground_station_computer/
+├─ airborne_computer/
 ├─ shared/
 ├─ runtime/
 ├─ docs/
@@ -33,7 +33,6 @@ XT/
 建议两台机器都满足：
 
 - Ubuntu 20.04 / 22.04 / 24.04
-- Python 3.10 或更高
 - CMake 3.16 或更高
 - g++ / clang++，支持 C++17
 - Qt6（至少包含 `Core`、`Widgets`、`Sql`、`Test`）
@@ -54,31 +53,15 @@ sudo apt install -y \
   libprotobuf-dev \
   libzmq3-dev \
   cppzmq-dev \
-  python3 \
-  python3-pip \
   qt6-base-dev \
   qt6-base-dev-tools
 ```
 
-### 2.3 Python 依赖
-
-当前仓库 Python 侧主要依赖：
-
-- `protobuf`
-- `pyzmq`
-
-若未安装，可执行：
-
-```bash
-python3 -m pip install --user protobuf pyzmq
-```
-
-### 2.4 环境自检
+### 2.3 环境自检
 
 可在两台机器分别检查：
 
 ```bash
-python3 --version
 cmake --version
 protoc --version
 pkg-config --modversion Qt6Core
@@ -123,12 +106,6 @@ Qt / C++ 测试：
 ctest --test-dir build --output-on-failure
 ```
 
-Python 测试：
-
-```bash
-python3 -m unittest discover -s airborne/tests -v
-```
-
 ---
 
 ## 4. 拉取后应该如何取舍
@@ -153,7 +130,7 @@ python3 -m unittest discover -s airborne/tests -v
 
 地面端 NUC 主要关注：
 
-- `ground_control/`
+- `ground_station_computer/`
   - 地面站 Qt 代码
 - `shared/`
   - 协议与样例
@@ -166,22 +143,21 @@ python3 -m unittest discover -s airborne/tests -v
 
 ### 地面端核心文件
 
-- `ground_control/src/main_window.cpp`
-- `ground_control/src/main_window.h`
-- `ground_control/src/zmq_command_client.cpp`
-- `ground_control/src/network_config.cpp`
+- `ground_station_computer/src/app/main_window.cpp`
+- `ground_station_computer/src/app/main_window.h`
+- `ground_station_computer/src/framework/task/competition_task_adapter.h`
+- `ground_station_computer/src/framework/communication/zmq_command_client.cpp`
+- `ground_station_computer/src/framework/config/network_config.cpp`
+- `ground_station_computer/src/h_problem/ui/h_problem_page.cpp`
 - `shared/proto/messages.proto`
 - `runtime/active_mission_plan.json`
 - `runtime/ground_control_results.db`
 
 ### 地面端不需要日常关注但建议保留
 
-- `airborne/`
+- `airborne_computer/`
 
-不建议删掉，因为：
-
-- 地面端本地仍会通过 Python 生成任务计划
-- 调试时可能需要直接运行 `export_mission_plan`
+不建议删掉，因为地面站和机载端共享 `shared/cpp` 中的 H 题核心逻辑，完整仓库更容易保持协议和算法一致。
 
 ---
 
@@ -189,27 +165,31 @@ python3 -m unittest discover -s airborne/tests -v
 
 机载端 NUC 主要关注：
 
-- `airborne/`
-  - 机载端 Python 代码
+- `airborne_computer/`
+  - C++ 机载端代码
+- `shared/cpp/`
+  - `competition_core` 通用任务核心与默认 H 题 `h_problem_core`
 - `shared/`
   - 协议与样例
 - `runtime/`
   - 当前任务计划
 - `build/`
-  - 协议生成产物（如需要）
+  - 机载端构建产物
 
 ### 机载端核心文件
 
-- `airborne/uav_testbed/run_simulator.py`
-- `airborne/uav_testbed/command_server.py`
-- `airborne/uav_testbed/publisher.py`
-- `airborne/uav_testbed/simulator.py`
+- `airborne_computer/src/main.cpp`
+- `airborne_computer/src/command_server.cpp`
+- `airborne_computer/src/airborne_runtime.cpp`
+- `airborne_computer/src/h_problem_mission_runtime.h`
+- `shared/cpp/src/mission/mission_planning.cpp`
+- `shared/cpp/src/planning/route_planner.cpp`
 - `shared/proto/messages.proto`
 - `runtime/active_mission_plan.json`
 
 ### 机载端不需要日常关注但建议保留
 
-- `ground_control/`
+- `ground_station_computer/`
 
 不建议删掉，因为：
 
@@ -222,8 +202,8 @@ python3 -m unittest discover -s airborne/tests -v
 
 换句话说：
 
-- **地面端逻辑保留**：`ground_control/ + shared/ + runtime/`
-- **机载端逻辑保留**：`airborne/ + shared/ + runtime/`
+- **地面端逻辑保留**：`ground_station_computer/ + shared/ + runtime/`
+- **机载端逻辑保留**：`airborne_computer/ + shared/ + runtime/`
 
 但在实际文件管理上：
 
@@ -313,7 +293,7 @@ cd /path/to/NUEDC_Test
 
 ```bash
 cd /path/to/NUEDC_Test
-PYTHONPATH=airborne python3 -m uav_testbed.run_simulator \
+./build/airborne_computer/airborne_app \
   --case shared/cases/sample_case.json \
   --mission-plan runtime/active_mission_plan.json \
   --endpoint tcp://0.0.0.0:5557 \
@@ -346,7 +326,7 @@ cd /path/to/NUEDC_Test
 ```bash
 ./scripts/setup_ground_control_network.sh --host 10.42.0.1
 source runtime/ground_control_network.env
-./build/ground_control/ground_control_app
+./build/ground_station_computer/ground_station_app
 ```
 
 ### 方式 B：手动设置环境变量
@@ -358,7 +338,7 @@ cd /path/to/NUEDC_Test
 export NUEDC_AIRBORNE_HOST=192.168.10.20
 export NUEDC_TELEMETRY_PORT=5557
 export NUEDC_COMMAND_PORT=5558
-./build/ground_control/ground_control_app
+./build/ground_station_computer/ground_station_app
 ```
 
 启动后，地面站会：

@@ -104,12 +104,12 @@ if [[ ${LAUNCH_APP} -eq 1 ]]; then
   # 这里使用当前 shell 导出环境，确保地面站进程能读取到目标机载地址。
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
-  exec "${ROOT_DIR}/build/ground_control/ground_control_app"
+  exec "${ROOT_DIR}/build/ground_station_computer/ground_station_app"
 fi
 
 cat <<EOF
 后续可执行:
   source "${ENV_FILE}"
   ${ROOT_DIR}/scripts/check_ground_control_network.sh --host ${AIRBORNE_HOST}
-  ./build/ground_control/ground_control_app
+  ./build/ground_station_computer/ground_station_app
 EOF

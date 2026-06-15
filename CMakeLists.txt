@@ -15,24 +15,12 @@ find_path(CPPZMQ_INCLUDE_DIR zmq.hpp PATHS /usr/include /usr/local/include REQUI
 
 set(PROTO_FILE ${PROJECT_SOURCE_DIR}/shared/proto/messages.proto)
 set(CPP_PROTO_DIR ${PROJECT_BINARY_DIR}/generated/proto)
-set(PY_PROTO_DIR ${PROJECT_SOURCE_DIR}/airborne/uav_testbed/generated)
 
 add_custom_command(
     OUTPUT ${CPP_PROTO_DIR}/messages.pb.cc ${CPP_PROTO_DIR}/messages.pb.h
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CPP_PROTO_DIR}
     COMMAND ${Protobuf_PROTOC_EXECUTABLE}
             --cpp_out=${CPP_PROTO_DIR}
-            -I ${PROJECT_SOURCE_DIR}/shared/proto
-            ${PROTO_FILE}
-    DEPENDS ${PROTO_FILE}
-    VERBATIM
-)
-
-add_custom_command(
-    OUTPUT ${PY_PROTO_DIR}/messages_pb2.py
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${PY_PROTO_DIR}
-    COMMAND ${Protobuf_PROTOC_EXECUTABLE}
-            --python_out=${PY_PROTO_DIR}
             -I ${PROJECT_SOURCE_DIR}/shared/proto
             ${PROTO_FILE}
     DEPENDS ${PROTO_FILE}
@@ -49,8 +37,6 @@ target_include_directories(proto_messages PUBLIC
 
 target_link_libraries(proto_messages PUBLIC protobuf::libprotobuf)
 
-add_custom_target(generate_python_proto ALL
-    DEPENDS ${PY_PROTO_DIR}/messages_pb2.py
-)
-
-add_subdirectory(ground_control)
+add_subdirectory(shared/cpp)
+add_subdirectory(airborne_computer)
+add_subdirectory(ground_station_computer)

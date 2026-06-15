@@ -1,0 +1,26 @@
+#pragma once
+
+#include <QString>
+
+#include "framework/communication/envelope_codec.h"
+
+class Envelope;
+
+enum class GroundControlCommandType {
+    StartMission,
+    StopMission,
+    Ping,
+};
+
+class ZmqCommandClient {
+public:
+    explicit ZmqCommandClient(QString endpoint = "tcp://127.0.0.1:5558");
+
+    static Envelope buildControlCommandEnvelope(GroundControlCommandType command_type, const QString &task_id = {});
+    static CommandSendResult parseAck(const QByteArray &payload);
+    CommandSendResult sendEnvelope(const Envelope &envelope) const;
+    CommandSendResult sendControlCommand(GroundControlCommandType command_type, const QString &task_id = {}) const;
+
+private:
+    QString endpoint_;
+};

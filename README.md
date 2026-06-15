@@ -1,18 +1,21 @@
-# H 题混合联调测试平台
+# 通用无人机竞赛任务框架
 
-这是一个用于验证 2025 年电赛 H 题主链路的混合方案工程：
+这是一个面向无人机电赛题目的双端 C++ 联调工程。当前默认题目 Adapter 仍是
+2025 年电赛 H 题野生动物巡查系统，但共享协议和运行链路已经抽成通用任务
+模型：
 
-- Python 机载模拟端
+- C++ 机载端
 - Qt6 桌面地面站
-- ZeroMQ + Protobuf 通信
+- ZeroMQ + Protobuf 通用 `TaskPlan` / `TaskEvent` / `TaskSummary` 通信
 
 ## 目录
 
-- `shared/proto/`：Protobuf 共享协议
+- `shared/proto/`：Protobuf 通用任务协议
 - `shared/cases/`：固定测试案例
 - `runtime/`：运行时任务计划
-- `airborne/`：机载模拟端
-- `ground_control/`：Qt 地面站
+- `shared/cpp/`：`competition_core` 通用核心与 `h_problem_core` 默认 H 题 Adapter 核心
+- `airborne_computer/`：C++ 机载端 Shell、通用运行接口与默认 H runtime
+- `ground_station_computer/`：Qt 地面站 Shell、通用 Adapter 接口与默认 H 页面
 
 ## 构建
 
@@ -21,35 +24,26 @@ cmake -S . -B build
 cmake --build build
 ```
 
-以上构建会同时生成：
+以上构建会生成 C++ protobuf 代码到 `build/generated/proto`，并编译共享核心库、机载端和地面站。
 
-- C++ protobuf 代码到 `build/generated/proto`
-- Python protobuf 代码到 `airborne/uav_testbed/generated`
-
-## 运行 Python 测试
+## 运行测试
 
 ```bash
-python3 -m unittest discover -s airborne/tests -v
-```
-
-## 运行 Qt 测试
-
-```bash
-ctest --test-dir build --output-on-failure
+QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
 ```
 
 ## 启动联调
 
-先启动地面站：
+先启动机载端：
 
 ```bash
-./build/ground_control/ground_control_app
+./build/airborne_computer/airborne_app --case shared/cases/sample_case.json
 ```
 
-再启动模拟端：
+再启动地面站：
 
 ```bash
-PYTHONPATH=airborne python3 -m uav_testbed.run_simulator --case shared/cases/sample_case.json
+./build/ground_station_computer/ground_station_app
 ```
 
 地面站应看到：
@@ -67,23 +61,17 @@ PYTHONPATH=airborne python3 -m uav_testbed.run_simulator --case shared/cases/sam
 3. 在左侧地图上点击 3 个横向或纵向连续的格子。
 4. 按钮变为 `航线生成` 后点击以生成航线。
 5. 地图刷新新的禁飞区与航线。
-6. 后续启动模拟端时，会优先读取 `runtime/active_mission_plan.json` 中的最新任务计划。
+6. 后续启动机载端时，会优先读取 `runtime/active_mission_plan.json` 中的最新任务计划。
 
 ### 双 NUC 最小联调
 
-先在机载端启动任务接收服务：
+在机载端启动 C++ 机载程序：
 
 ```bash
-PYTHONPATH=airborne python3 -m uav_testbed.command_server --endpoint tcp://0.0.0.0:5558 --output runtime/active_mission_plan.json
+./build/airborne_computer/airborne_app --case shared/cases/sample_case.json --mission-plan runtime/active_mission_plan.json --endpoint tcp://0.0.0.0:5557 --command-endpoint tcp://0.0.0.0:5558 --sleep-scale 0.02
 ```
 
-再在机载端或本机启动模拟端遥测：
-
-```bash
-PYTHONPATH=airborne python3 -m uav_testbed.run_simulator --case shared/cases/sample_case.json --mission-plan runtime/active_mission_plan.json --endpoint tcp://0.0.0.0:5557 --command-endpoint tcp://0.0.0.0:5558 --sleep-scale 0.02
-```
-
-地面站在本地生成航线后，会先更新 `runtime/active_mission_plan.json`，再尝试向机载端的命令端口下发任务计划。
+地面站在本地生成航线后，会先更新 `runtime/active_mission_plan.json`，再通过通用 `mission_load(TaskPlan)` 向机载端命令端口下发任务计划。
 
 ### 双 NUC 地址配置
 
@@ -93,13 +81,13 @@ PYTHONPATH=airborne python3 -m uav_testbed.run_simulator --case shared/cases/sam
 export NUEDC_AIRBORNE_HOST=192.168.10.20
 export NUEDC_TELEMETRY_PORT=5557
 export NUEDC_COMMAND_PORT=5558
-./build/ground_control/ground_control_app
+./build/ground_station_computer/ground_station_app
 ```
 
 机载端建议绑定到所有网卡：
 
 ```bash
-PYTHONPATH=airborne python3 -m uav_testbed.run_simulator \
+./build/airborne_computer/airborne_app \
   --case shared/cases/sample_case.json \
   --mission-plan runtime/active_mission_plan.json \
   --endpoint tcp://0.0.0.0:5557 \
@@ -109,15 +97,18 @@ PYTHONPATH=airborne python3 -m uav_testbed.run_simulator \
 
 当前已支持的控制命令能力：
 
-- `mission_load`：地面站下发任务计划
+- `mission_load`：地面站下发通用 `TaskPlan` 任务计划
 - `COMMAND_TYPE_PING`：机载端返回 `pong`
 - `COMMAND_TYPE_START_MISSION`：机载端记录开始执行请求
 - `COMMAND_TYPE_STOP_MISSION`：机载端记录停止请求
 
+新增题目不需要复制主流程。先扩展 `shared/proto/messages.proto` 中已有通用字段能表达的元数据，
+再新增地面站 `CompetitionTaskAdapter` 实现和机载端 `MissionRuntime` 实现；禁止把题目专有 UI 或解析逻辑直接写回 Shell。详细步骤见 `docs/adding_task_adapter.md`。
+
 若希望机载模拟端等待启动命令后再执行，可使用：
 
 ```bash
-PYTHONPATH=airborne python3 -m uav_testbed.run_simulator \
+./build/airborne_computer/airborne_app \
   --case shared/cases/sample_case.json \
   --mission-plan runtime/active_mission_plan.json \
   --endpoint tcp://0.0.0.0:5557 \

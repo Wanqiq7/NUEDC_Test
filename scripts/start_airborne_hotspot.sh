@@ -97,7 +97,7 @@ cat <<EOF
 
 2. 在机载端 NUC 上启动机载程序:
    cd ${ROOT_DIR}
-   PYTHONPATH=airborne python3 -m uav_testbed.run_simulator \\
+   ./build/airborne_computer/airborne_app \\
      --case shared/cases/sample_case.json \\
      --mission-plan runtime/active_mission_plan.json \\
      --endpoint tcp://0.0.0.0:${TELEMETRY_PORT} \\
