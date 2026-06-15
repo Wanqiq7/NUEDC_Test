@@ -1,5 +1,6 @@
 set(GROUND_STATION_CORE_SOURCES
     src/framework/communication/envelope_codec.cpp
+    src/framework/communication/reliable_command_client.cpp
     src/framework/communication/zmq_command_client.cpp
     src/framework/config/network_config.cpp
     src/framework/runtime/mission_runtime_state.cpp
@@ -66,8 +67,11 @@ add_ground_station_test(test_no_fly_zone_rules tests/test_no_fly_zone_rules.cpp)
 add_ground_station_test(test_planning_state_machine tests/test_planning_state_machine.cpp)
 add_ground_station_test(test_mission_plan_bridge tests/test_mission_plan_bridge.cpp)
 add_ground_station_test(test_zmq_command_client tests/test_zmq_command_client.cpp)
+add_ground_station_test(test_reliable_command_client tests/test_reliable_command_client.cpp)
+add_ground_station_test(test_architecture_boundaries tests/test_architecture_boundaries.cpp)
 add_ground_station_test(test_envelope_codec tests/test_envelope_codec.cpp)
 add_ground_station_test(test_mission_load_adapter tests/test_mission_load_adapter.cpp)
+add_ground_station_test(test_mission_command_service tests/test_mission_command_service.cpp)
 add_ground_station_test(test_mission_plan_store tests/test_mission_plan_store.cpp)
 add_ground_station_test(test_mission_runtime_state tests/test_mission_runtime_state.cpp)
 add_ground_station_test(test_grid_scene tests/test_grid_scene.cpp)

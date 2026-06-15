@@ -2,6 +2,7 @@
 
 #include "framework/config/network_config.h"
 #include "framework/runtime/mission_runtime_state.h"
+#include "messages.pb.h"
 #include "framework/communication/zmq_subscriber_worker.h"
 
 #include <QAbstractItemView>
@@ -20,6 +21,8 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
     const NetworkConfig network_config = NetworkConfig::fromEnvironment();
     command_sync_enabled_ = start_worker;
     command_client_ = ZmqCommandClient(network_config.commandEndpoint());
+    command_transport_ = std::make_unique<ZmqCommandTransport>(command_client_);
+    reliable_command_client_ = std::make_unique<ReliableCommandClient>(command_transport_.get());
     task_adapter_->setCommandSyncEnabled(command_sync_enabled_);
     task_adapter_->setCommandClient(command_client_);
 
@@ -279,9 +282,10 @@ void MainWindow::handleExecuteMissionClicked() {
         return;
     }
 
-    const auto result = command_client_.sendControlCommand(
-        GroundControlCommandType::StartMission,
-        task_adapter_->activeTaskId());
+    const auto result = reliable_command_client_->sendReliable(
+        ZmqCommandClient::buildControlCommandEnvelope(
+            GroundControlCommandType::StartMission,
+            task_adapter_->activeTaskId()));
     airborne_online_ = result.ok;
     if (!result.ok) {
         task_adapter_->markAirborneSyncState(false, task_adapter_->missionSyncedToAirborne());
@@ -303,9 +307,10 @@ void MainWindow::handleStopMissionClicked() {
         return;
     }
 
-    const auto result = command_client_.sendControlCommand(
-        GroundControlCommandType::StopMission,
-        task_adapter_->activeTaskId());
+    const auto result = reliable_command_client_->sendReliable(
+        ZmqCommandClient::buildControlCommandEnvelope(
+            GroundControlCommandType::StopMission,
+            task_adapter_->activeTaskId()));
     airborne_online_ = result.ok;
     if (!result.ok) {
         refreshAirborneStatusLabel();
@@ -328,9 +333,7 @@ void MainWindow::probeAirborneAvailability(bool update_status_message) {
         return;
     }
 
-    const auto result = command_client_.sendControlCommand(
-        GroundControlCommandType::Ping,
-        task_adapter_->activeTaskId());
+    const auto result = reliable_command_client_->ping(task_adapter_->activeTaskId());
     airborne_online_ = result.ok;
     refreshAirborneStatusLabel();
     refreshExecutionControls();

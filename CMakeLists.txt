@@ -9,7 +9,13 @@ set(CMAKE_AUTOMOC ON)
 enable_testing()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Sql Test)
-find_package(Protobuf REQUIRED)
+find_package(protobuf CONFIG QUIET)
+if(protobuf_FOUND)
+    set(NUEDC_PROTOC_EXECUTABLE protobuf::protoc)
+else()
+    find_package(Protobuf REQUIRED)
+    find_program(NUEDC_PROTOC_EXECUTABLE protoc REQUIRED)
+endif()
 find_library(ZMQ_LIBRARY zmq REQUIRED)
 find_path(CPPZMQ_INCLUDE_DIR zmq.hpp PATHS /usr/include /usr/local/include REQUIRED)
 
@@ -19,7 +25,7 @@ set(CPP_PROTO_DIR ${PROJECT_BINARY_DIR}/generated/proto)
 add_custom_command(
     OUTPUT ${CPP_PROTO_DIR}/messages.pb.cc ${CPP_PROTO_DIR}/messages.pb.h
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CPP_PROTO_DIR}
-    COMMAND ${Protobuf_PROTOC_EXECUTABLE}
+    COMMAND ${NUEDC_PROTOC_EXECUTABLE}
             --cpp_out=${CPP_PROTO_DIR}
             -I ${PROJECT_SOURCE_DIR}/shared/proto
             ${PROTO_FILE}

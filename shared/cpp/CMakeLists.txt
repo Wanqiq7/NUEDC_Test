@@ -76,9 +76,11 @@ set_tests_properties(${target_name} PROPERTIES
 endfunction()
 
 add_competition_core_test(test_task_protocol tests/test_task_protocol.cpp)
+add_competition_core_test(test_task_ports tests/test_task_ports.cpp)
 
 add_h_problem_core_test(test_h_case_loader tests/test_h_case_loader.cpp)
 add_h_problem_core_test(test_h_route_planner tests/test_h_route_planner.cpp)
+add_h_problem_core_test(test_h_planning_result tests/test_h_planning_result.cpp)
 add_h_problem_core_test(test_h_mission_plan_store tests/test_h_mission_plan_store.cpp)
 add_h_problem_core_test(test_h_envelope_builder tests/test_h_envelope_builder.cpp)
 add_h_problem_core_test(test_h_command_handler tests/test_h_command_handler.cpp)

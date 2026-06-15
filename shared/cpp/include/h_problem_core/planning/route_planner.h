@@ -9,6 +9,15 @@ enum class MissionMode {
     TimeOptimalOpen,
 };
 
+struct PlanningResult {
+    bool ok = false;
+    QStringList route;
+    double cost = 0.0;
+    double coverage_rate = 0.0;
+    QStringList warnings;
+    QString failure_reason;
+};
+
 QStringList planRoute(
     int width,
     int height,
@@ -19,6 +28,16 @@ QStringList planRoute(
     MissionMode mission_mode = MissionMode::Legacy,
     std::optional<LandingProfile> landing_profile = std::nullopt,
     QString *error_message = nullptr);
+
+PlanningResult planRouteWithDetails(
+    int width,
+    int height,
+    const QString &start_cell,
+    const QSet<QString> &no_fly_cells,
+    std::optional<QString> end_cell = std::nullopt,
+    bool require_cycle = false,
+    MissionMode mission_mode = MissionMode::Legacy,
+    std::optional<LandingProfile> landing_profile = std::nullopt);
 
 QStringList exactCompletionToEndForTesting(
     int width,

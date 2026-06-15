@@ -4,6 +4,7 @@
 #include <QPushButton>
 #include <QStringList>
 
+#include "framework/communication/reliable_command_client.h"
 #include "framework/communication/zmq_command_client.h"
 #include "framework/task/competition_task_adapter.h"
 
@@ -63,6 +64,8 @@ private:
     bool command_sync_enabled_ = true;
     bool airborne_online_ = false;
     ZmqCommandClient command_client_;
+    std::unique_ptr<ZmqCommandTransport> command_transport_;
+    std::unique_ptr<ReliableCommandClient> reliable_command_client_;
 
     ZmqSubscriberWorker *worker_ = nullptr;
 };

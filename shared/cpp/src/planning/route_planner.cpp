@@ -441,8 +441,8 @@ QStringList optimizeRouteSuffixToEnd(
     int height,
     const QString &end_cell,
     const QSet<QString> &no_fly_cells,
-    int max_remaining_cells = 16,
-    int max_cut_candidates = 4) {
+    int max_remaining_cells = 10,
+    int max_cut_candidates = 3) {
     QSet<QString> all_cells;
     for (int y_index = 0; y_index < height; ++y_index) {
         for (int x_index = 0; x_index < width; ++x_index) {
@@ -707,6 +707,50 @@ QStringList planRoute(
     }
 
     return planLegacyRoute(width, height, start_cell, no_fly_cells, end_cell, require_cycle, error_message);
+}
+
+PlanningResult planRouteWithDetails(
+    int width,
+    int height,
+    const QString &start_cell,
+    const QSet<QString> &no_fly_cells,
+    std::optional<QString> end_cell,
+    bool require_cycle,
+    MissionMode mission_mode,
+    std::optional<LandingProfile> landing_profile) {
+    PlanningResult result;
+    QString error_message;
+    result.route = planRoute(
+        width,
+        height,
+        start_cell,
+        no_fly_cells,
+        end_cell,
+        require_cycle,
+        mission_mode,
+        landing_profile,
+        &error_message);
+
+    if (result.route.isEmpty()) {
+        result.ok = false;
+        result.failure_reason = error_message.isEmpty() ? QString("planner failed to produce a route") : error_message;
+        return result;
+    }
+
+    QSet<QString> covered_cells(result.route.begin(), result.route.end());
+    for (const QString &blocked_cell : no_fly_cells) {
+        covered_cells.remove(blocked_cell);
+    }
+    const int required_cells = (width * height) - no_fly_cells.size();
+    result.ok = true;
+    result.cost = estimateRouteCost(result.route, height, 18.0, 6.0, landing_profile, width, no_fly_cells);
+    result.coverage_rate = required_cells <= 0
+        ? 0.0
+        : static_cast<double>(covered_cells.size()) / static_cast<double>(required_cells);
+    if (result.coverage_rate < 1.0) {
+        result.warnings.append(QString("route covers %1% of required cells").arg(result.coverage_rate * 100.0, 0, 'f', 1));
+    }
+    return result;
 }
 
 QStringList exactCompletionToEndForTesting(
