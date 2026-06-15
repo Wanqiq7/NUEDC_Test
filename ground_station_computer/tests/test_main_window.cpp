@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <QByteArray>
 
 #include <QDir>
 #include <QFile>
@@ -49,10 +50,39 @@ class MainWindowTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void adapterFactoryListsDefaultProblemAdapter();
+    void configuredAdapterUsesEnvironmentVariableAndReportsUnknownIds();
     void shellUsesCompetitionTaskAdapterBoundary();
     void executionControlsExistAndAreDisabledInTestMode();
     void manualNoFlyFlowPersistsPlan();
 };
+
+void MainWindowTests::adapterFactoryListsDefaultProblemAdapter() {
+    const QVector<CompetitionTaskAdapterDescriptor> descriptors = availableCompetitionTaskAdapters();
+    QVERIFY(!descriptors.isEmpty());
+    QCOMPARE(descriptors.first().adapter_id, QString("h_problem"));
+    QVERIFY(!descriptors.first().display_name.isEmpty());
+    QVERIFY(static_cast<bool>(descriptors.first().create));
+
+    std::unique_ptr<CompetitionTaskAdapter> adapter(createCompetitionTaskAdapter("h_problem"));
+    QVERIFY(adapter != nullptr);
+    QCOMPARE(adapter->initialPlanningButtonText(), QString("设置禁飞区"));
+}
+
+void MainWindowTests::configuredAdapterUsesEnvironmentVariableAndReportsUnknownIds() {
+    qputenv("NUEDC_TASK_ADAPTER", QByteArray("h_problem"));
+    QString error;
+    std::unique_ptr<CompetitionTaskAdapter> adapter(createConfiguredCompetitionTaskAdapter(&error));
+    QVERIFY(adapter != nullptr);
+    QVERIFY(error.isEmpty());
+
+    qputenv("NUEDC_TASK_ADAPTER", QByteArray("missing_problem"));
+    adapter.reset(createConfiguredCompetitionTaskAdapter(&error));
+    QVERIFY(adapter == nullptr);
+    QVERIFY(error.contains("unknown task adapter"));
+    QVERIFY(error.contains("h_problem"));
+    qunsetenv("NUEDC_TASK_ADAPTER");
+}
 
 void MainWindowTests::shellUsesCompetitionTaskAdapterBoundary() {
     std::unique_ptr<CompetitionTaskAdapter> adapter(createDefaultCompetitionTaskAdapter());

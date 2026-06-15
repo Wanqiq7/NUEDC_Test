@@ -11,6 +11,7 @@
 #include <QFrame>
 #include <QGraphicsView>
 #include <QPainter>
+#include <QtGlobal>
 
 namespace {
 QString findRepositoryRootImpl() {
@@ -383,6 +384,45 @@ void HProblemTaskAdapter::updateStatusForCandidateSelection(const NoFlyZoneRules
     notifyStatusTextChanged(QString("状态: %1").arg(validation.message));
 }
 
+QVector<CompetitionTaskAdapterDescriptor> availableCompetitionTaskAdapters() {
+    return {
+        CompetitionTaskAdapterDescriptor{
+            "h_problem",
+            "H 题野生动物巡检",
+            []() -> CompetitionTaskAdapter * { return new HProblemTaskAdapter(); },
+        },
+    };
+}
+
+QString configuredCompetitionTaskAdapterId() {
+    const QString configured_id = qEnvironmentVariable("NUEDC_TASK_ADAPTER").trimmed();
+    return configured_id.isEmpty() ? QStringLiteral("h_problem") : configured_id;
+}
+
+CompetitionTaskAdapter *createCompetitionTaskAdapter(const QString &adapter_id, QString *error_message) {
+    const QString selected_id = adapter_id.trimmed().isEmpty() ? QStringLiteral("h_problem") : adapter_id.trimmed();
+    QStringList available_ids;
+    for (const CompetitionTaskAdapterDescriptor &descriptor : availableCompetitionTaskAdapters()) {
+        available_ids.append(descriptor.adapter_id);
+        if (descriptor.adapter_id == selected_id) {
+            if (error_message != nullptr) {
+                error_message->clear();
+            }
+            return descriptor.create();
+        }
+    }
+
+    if (error_message != nullptr) {
+        *error_message = QString("unknown task adapter '%1'; available adapters: %2")
+            .arg(selected_id, available_ids.join(", "));
+    }
+    return nullptr;
+}
+
+CompetitionTaskAdapter *createConfiguredCompetitionTaskAdapter(QString *error_message) {
+    return createCompetitionTaskAdapter(configuredCompetitionTaskAdapterId(), error_message);
+}
+
 CompetitionTaskAdapter *createDefaultCompetitionTaskAdapter() {
-    return new HProblemTaskAdapter();
+    return createCompetitionTaskAdapter(QStringLiteral("h_problem"));
 }

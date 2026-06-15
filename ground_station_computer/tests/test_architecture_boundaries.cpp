@@ -9,6 +9,7 @@ class ArchitectureBoundaryTests : public QObject {
 private slots:
     void mainWindowDoesNotIncludeProblemSpecificHeaders();
     void mainWindowUsesReliableCommandClientForControlCommands();
+    void mainWindowUsesConfiguredTaskAdapterFactory();
 };
 
 void ArchitectureBoundaryTests::mainWindowDoesNotIncludeProblemSpecificHeaders() {
@@ -22,6 +23,13 @@ void ArchitectureBoundaryTests::mainWindowDoesNotIncludeProblemSpecificHeaders()
         "MainWindow must depend on CompetitionTaskAdapter factory instead of h_problem headers");
 }
 
+void ArchitectureBoundaryTests::mainWindowUsesConfiguredTaskAdapterFactory() {
+    QFile source("ground_station_computer/src/app/main_window.cpp");
+    QVERIFY(source.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString source_text = QString::fromUtf8(source.readAll());
+    QVERIFY(source_text.contains("createConfiguredCompetitionTaskAdapter"));
+    QVERIFY(source_text.contains("createDefaultCompetitionTaskAdapter"));
+}
 void ArchitectureBoundaryTests::mainWindowUsesReliableCommandClientForControlCommands() {
     QFile header("ground_station_computer/src/app/main_window.h");
     QVERIFY(header.open(QIODevice::ReadOnly | QIODevice::Text));

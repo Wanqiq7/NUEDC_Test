@@ -2,26 +2,34 @@
 
 ## 触发场景
 
-当任务涉及地面站界面、比赛现场操作台、按钮状态、状态栏或演示效果时使用。
+当任务涉及地面站界面、状态流、按钮可用性、演示效果或误操作防护时使用。
+
+## 允许修改
+
+- `ground_station_computer/src/app/**`
+- `ground_station_computer/src/h_problem/ui/**`
+- `ground_station_computer/src/framework/runtime/**`
+- `ground_station_computer/tests/test_main_window.cpp`
+- `ground_station_computer/tests/test_grid_scene.cpp`
 
 ## 工作规则
 
-- UI 面向比赛现场，优先稳定、清晰、少按钮、少误操作。
-- 主操作限定为生成任务、同步任务、执行任务、停止任务。
-- 调试信息放入诊断区，不占用主视图。
+- 主界面只保留比赛现场需要的关键动作。
+- 所有按钮状态必须由任务状态机驱动。
+- 调试信息默认收纳到次级区域，不占主操作路径。
 
 ## 禁止事项
 
-- 不把算法内部细节暴露成主操作。
-- 不允许离线、未同步或执行中状态下出现危险按钮可点击。
-- 不用颜色作为唯一状态表达。
+- 不在 UI 里直接写协议细节。
+- 不把规划逻辑塞进按钮回调。
+- 不为了视觉效果破坏可读性和误操作防护。
 
 ## 必跑测试
 
 ```bash
-ctest --test-dir build --output-on-failure -R "test_main_window|test_mission_runtime_state"
+ctest --test-dir build --output-on-failure -R "test_main_window|test_grid_scene|test_mission_runtime_state"
 ```
 
 ## 推荐提示词
 
-请把这个 UI 改动设计成比赛现场操作台体验，列出每个按钮在离线、已连接、已同步、运行中四种状态下是否可用。
+请按比赛现场操作台标准优化地面站 UI，优先说明状态驱动、按钮约束、信息密度和测试覆盖。

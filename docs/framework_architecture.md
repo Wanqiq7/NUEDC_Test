@@ -17,6 +17,7 @@
 - `TaskCodec`：把题目私有字段收敛进 `metadata_json` / `payload_json`。
 - `CompetitionTaskAdapter`：地面站题目页面与 Shell 的唯一交互边界。
 - `MissionRuntime`：机载端执行任务或桥接真实无人机运行栈。
+- `availableCompetitionTaskAdapters()` / `createConfiguredCompetitionTaskAdapter()`：题目 Adapter 注册和选择入口。
 
 ## 禁止事项
 
@@ -29,9 +30,9 @@
 
 1. 新增 `<task>_problem_core`，实现题目案例模型、规划器和 `TaskPlan` 转换。
 2. 新增地面站 `<task>` Adapter，实现页面、规划、遥测/检测/汇总消费。
-3. 新增机载 `<task>_mission_runtime` 或 ROS2 topic 转换。
-4. 注册 Adapter 工厂，默认可通过 `NUEDC_TASK_ADAPTER=<adapter_id>` 选择。
-5. 补测试：核心规划、Adapter 状态、任务下发、机载命令、边界依赖。
+3. 在 `availableCompetitionTaskAdapters()` 中注册新 Adapter，并支持 `NUEDC_TASK_ADAPTER=<adapter_id>` 选择。
+4. 新增机载 `<task>_mission_runtime` 或 ROS2 topic 转换。
+5. 补测试：核心规划、Adapter 状态、工厂选择、任务下发、机载命令、边界依赖。
 
 ## 回归门禁
 

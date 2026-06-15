@@ -3,6 +3,7 @@
 #include <QMap>
 #include <QString>
 #include <QStringList>
+#include <QVector>
 
 #include <functional>
 
@@ -109,4 +110,14 @@ private:
     SummaryCallback summary_callback_;
 };
 
+struct CompetitionTaskAdapterDescriptor {
+    QString adapter_id;
+    QString display_name;
+    std::function<CompetitionTaskAdapter *()> create;
+};
+
+QVector<CompetitionTaskAdapterDescriptor> availableCompetitionTaskAdapters();
+QString configuredCompetitionTaskAdapterId();
+CompetitionTaskAdapter *createCompetitionTaskAdapter(const QString &adapter_id, QString *error_message = nullptr);
+CompetitionTaskAdapter *createConfiguredCompetitionTaskAdapter(QString *error_message = nullptr);
 CompetitionTaskAdapter *createDefaultCompetitionTaskAdapter();

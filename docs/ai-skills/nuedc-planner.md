@@ -2,19 +2,27 @@
 
 ## 触发场景
 
-当任务涉及航线规划、覆盖率、路径长度、耗时估算、禁飞区或降落约束时使用。
+当任务涉及航线规划、覆盖率、代价函数、终点选择或边界样例时使用。
+
+## 允许修改
+
+- `shared/cpp/include/h_problem_core/planning/**`
+- `shared/cpp/src/planning/**`
+- `shared/cpp/tests/test_h_route_planner.cpp`
+- `shared/cpp/tests/test_h_planning_result.cpp`
+- `ground_station_computer/src/h_problem/mission/h_route_planner_bridge.cpp`
 
 ## 工作规则
 
-- 先写规划测试或基准案例，再改算法。
-- 规划器应返回 `PlanningResult`，包括路线、代价、覆盖率、警告和失败原因。
-- 优先保证路线合法、可解释和不超时，再优化路线成本。
+- 先补 `PlanningResult`、失败原因和基准测试，再改算法。
+- 优先保证可解释和稳定，再优化路径长度和耗时。
+- 小规模可以精确解，大规模必须有启发式回退。
 
 ## 禁止事项
 
-- 不用 UI 层判断路线是否合法。
-- 不让精确搜索在大规模案例无限运行。
-- 不用隐藏失败原因的空路线作为唯一错误输出。
+- 不在 UI 层修规划问题。
+- 不把规划搜索写成无时间上限的递归。
+- 不忽略禁飞区、终点约束和降落可达性。
 
 ## 必跑测试
 
@@ -24,4 +32,4 @@ ctest --test-dir build --output-on-failure -R "test_h_route_planner|test_h_plann
 
 ## 推荐提示词
 
-请基于现有 H 题规划器新增一个失败用例或成本回归用例，先证明问题，再优化 `PlanningResult` 输出和路线质量。
+请优化 H 题航线规划器，说明你改了哪一层、代价函数怎样变化、基准案例是否回退，以及失败原因是否更可读。

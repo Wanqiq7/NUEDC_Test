@@ -13,8 +13,9 @@
 
 - Shell 只保留在 `ground_station_computer/src/app/MainWindow`，不得 include `h_problem/*` 或新增题目目录。
 - 新题目实现 `CompetitionTaskAdapter`，至少提供任务页面、Envelope/状态处理、任务下发、当前 task id 和初始预览加载。
+- 新题目必须在 `availableCompetitionTaskAdapters()` 中注册，并可通过 `NUEDC_TASK_ADAPTER=<adapter_id>` 选择。
 - 题目 UI、数据库、规则校验、规划按钮状态全部放在题目 Adapter/Page 内。
-- 新增测试放入 `ground_station_computer/tests/test_*.cpp`，覆盖初始预览、任务生成、mission load 和关键 UI 状态。
+- 新增测试放入 `ground_station_computer/tests/test_*.cpp`，覆盖工厂注册、初始预览、任务生成、mission load 和关键 UI 状态。
 
 ## 机载端
 
@@ -30,5 +31,5 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 rg -n "h_problem_core|h_problem/" shared/cpp/include/competition_core shared/cpp/src/task shared/cpp/src/protocol
 rg -n "h_problem/" ground_station_computer/src/app
-rg -n "SimMessage" airborne_computer/src/airborne_runtime.h
+rg -n "NUEDC_TASK_ADAPTER|availableCompetitionTaskAdapters|createConfiguredCompetitionTaskAdapter" ground_station_computer/src
 ```
