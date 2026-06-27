@@ -1,6 +1,7 @@
 set(AIRBORNE_SOURCES
     src/airborne_runtime.cpp
     src/command_server.cpp
+    src/mission_runtime_factory.cpp
 )
 
 add_executable(airborne_app

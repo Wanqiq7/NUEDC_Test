@@ -1,5 +1,6 @@
 # CMake / C++
 build/
+build-*/
 install/
 log/
 airborne_computer/ros2/build/

@@ -1,13 +1,14 @@
 #include "airborne_runtime.h"
 #include "command_server.h"
-#include "h_problem_mission_runtime.h"
+#include "mission_runtime_factory.h"
 
 #include "competition_core/protocol/envelope_codec.h"
-#include "h_problem_core/mission/case_loader.h"
 
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QThread>
+
+#include <optional>
 
 #include <zmq.hpp>
 
@@ -16,8 +17,9 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName("airborne_app");
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("H 题 C++ 机载端");
+    parser.setApplicationDescription("无人机竞赛 C++ 机载端");
     parser.addHelpOption();
+    parser.addOption({"task", "任务 runtime ID", "id", airborne::defaultMissionRuntimeId()});
     parser.addOption({{"c", "case"}, "案例文件路径", "path", "shared/cases/sample_case.json"});
     parser.addOption({"mission-plan", "任务计划 JSON 文件路径", "path", "runtime/active_mission_plan.json"});
     parser.addOption({"endpoint", "PUB 发布地址", "endpoint", "tcp://0.0.0.0:5557"});
@@ -32,13 +34,7 @@ int main(int argc, char *argv[]) {
         return 2;
     }
 
-    QString error;
-    const auto case_config = hcore::loadCase(parser.value("case"), &error);
-    if (!case_config.has_value()) {
-        qCritical("无法加载案例: %s", qPrintable(error));
-        return 1;
-    }
-
+    const QString task_id = parser.value("task");
     competition::CommandState command_state;
     const QString mission_plan_path = parser.value("mission-plan");
     std::optional<airborne::CommandServer> server;
@@ -53,20 +49,9 @@ int main(int argc, char *argv[]) {
     }
 
     if (parser.isSet("wait-for-start")) {
-        while (!command_state.start_requested && !command_state.stop_requested) {
+        while (!command_state.isStartRequested() && !command_state.isStopRequested()) {
             QThread::msleep(50);
         }
-    }
-
-    const auto stored_plan = airborne::loadOptionalMissionPlan(mission_plan_path, &error);
-    if (!error.isEmpty()) {
-        qWarning("无法加载已保存任务计划 %s: %s", qPrintable(mission_plan_path), qPrintable(error));
-        error.clear();
-    }
-    const hcore::MissionPlan selected_plan = airborne::selectMissionPlan(case_config.value(), stored_plan, &error);
-    if (!error.isEmpty()) {
-        qCritical("无法生成任务计划: %s", qPrintable(error));
-        return 1;
     }
 
     zmq::context_t context(1);
@@ -89,10 +74,21 @@ int main(int argc, char *argv[]) {
             socket.send(zmq::buffer(bytes), zmq::send_flags::none);
             return true;
         });
-    airborne::HProblemMissionRuntime runtime(case_config.value(), selected_plan, &publisher);
-    const int result = runtime.execute(command_state, sleep_scale);
-    if (result != 0 && !runtime.lastError().isEmpty()) {
-        qCritical("任务运行失败: %s", qPrintable(runtime.lastError()));
+    QString error;
+    auto runtime = airborne::createMissionRuntime(
+        task_id,
+        parser.value("case"),
+        mission_plan_path,
+        &publisher,
+        &error);
+    if (runtime == nullptr) {
+        qCritical("无法创建任务 runtime: %s", qPrintable(error));
+        return 1;
+    }
+
+    const int result = runtime->execute(command_state, sleep_scale);
+    if (result != 0) {
+        qCritical("任务运行失败");
     }
 
     if (server.has_value()) {

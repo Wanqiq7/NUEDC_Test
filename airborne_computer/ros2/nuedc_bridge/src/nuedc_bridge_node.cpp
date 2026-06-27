@@ -45,8 +45,7 @@ public:
     NuedcBridgeNode()
         : Node("nuedc_bridge_node"),
           context_(1),
-          pub_socket_(context_, zmq::socket_type::pub),
-          rep_socket_(context_, zmq::socket_type::rep) {
+          pub_socket_(context_, zmq::socket_type::pub) {
         telemetry_endpoint_ = declare_parameter<std::string>("telemetry_endpoint", "tcp://0.0.0.0:5557");
         command_endpoint_ = declare_parameter<std::string>("command_endpoint", "tcp://0.0.0.0:5558");
         mission_plan_path_ = declare_parameter<std::string>("mission_plan_path", "runtime/active_mission_plan.json");
@@ -55,8 +54,6 @@ public:
         detections_topic_ = declare_parameter<std::string>("detections_topic", "detections");
 
         pub_socket_.bind(telemetry_endpoint_);
-        rep_socket_.set(zmq::sockopt::rcvtimeo, 100);
-        rep_socket_.bind(command_endpoint_);
 
         odometry_subscription_ = create_subscription<nav_msgs::msg::Odometry>(
             odometry_topic_,
@@ -87,7 +84,6 @@ public:
         if (command_thread_.joinable()) {
             command_thread_.join();
         }
-        rep_socket_.close();
         pub_socket_.close();
         context_.close();
     }
@@ -99,7 +95,8 @@ private:
     }
 
     void handleDetections(const vision_msgs::msg::Detection2DArray &message) {
-        const auto event = nuedc_bridge::detectionArrayToDetectionEvent(message, activeTaskId(), "odom");
+        const uint32_t event_index = detection_count_.fetch_add(1);
+        const auto event = nuedc_bridge::detectionArrayToDetectionEvent(message, activeTaskId(), "odom", event_index);
         if (event.has_value()) {
             publishEvent(event.value());
         }
@@ -118,9 +115,14 @@ private:
     }
 
     void commandLoop() {
+        zmq::socket_t rep_socket(context_, zmq::socket_type::rep);
+        rep_socket.set(zmq::sockopt::linger, 0);
+        rep_socket.set(zmq::sockopt::rcvtimeo, 100);
+        rep_socket.bind(command_endpoint_);
+
         while (!stop_requested_.load()) {
             zmq::message_t request;
-            const auto received = rep_socket_.recv(request, zmq::recv_flags::none);
+            const auto received = rep_socket.recv(request, zmq::recv_flags::none);
             if (!received.has_value()) {
                 continue;
             }
@@ -129,41 +131,84 @@ private:
             const bool parsed = envelope.ParseFromArray(request.data(), static_cast<int>(request.size()));
             Envelope ack;
             if (!parsed) {
-                ack = nuedc_bridge::buildAckEnvelope(false, "invalid protobuf");
+                ack = buildCurrentStateAck(false, "invalid protobuf");
             } else {
                 ack = handleCommand(envelope);
             }
             const std::string reply = nuedc_bridge::serializeEnvelope(ack);
-            rep_socket_.send(zmq::buffer(reply), zmq::send_flags::none);
+            rep_socket.send(zmq::buffer(reply), zmq::send_flags::none);
+        }
+        rep_socket.close();
+    }
+
+    Envelope buildCurrentStateAck(bool success, const std::string &message) const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return buildAckLocked(success, message);
+    }
+
+    Envelope buildAckLocked(bool success, const std::string &message) const {
+        return nuedc_bridge::buildAckEnvelope(
+            success,
+            message,
+            task_id_,
+            mission_loaded_,
+            mission_running_,
+            last_accepted_sequence_);
+    }
+
+    bool isStaleSequenceLocked(uint64_t sequence) const {
+        return sequence != 0 && sequence <= last_accepted_sequence_;
+    }
+
+    void acceptSequenceLocked(uint64_t sequence) {
+        if (sequence != 0) {
+            last_accepted_sequence_ = sequence;
         }
     }
 
     Envelope handleCommand(const Envelope &envelope) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         switch (envelope.payload_case()) {
         case Envelope::kMissionLoad: {
+            if (isStaleSequenceLocked(envelope.sequence())) {
+                return buildAckLocked(false, "stale command");
+            }
             std::string error;
             if (!writeBytesToFile(mission_plan_path_, nuedc_bridge::taskPlanToJson(envelope.mission_load()), &error)) {
-                return nuedc_bridge::buildAckEnvelope(false, error);
+                return buildAckLocked(false, error);
             }
-            {
-                std::lock_guard<std::mutex> lock(state_mutex_);
-                task_id_ = envelope.mission_load().task_id();
-            }
-            return nuedc_bridge::buildAckEnvelope(true, "task plan stored");
+            task_id_ = envelope.mission_load().task_id();
+            mission_loaded_ = true;
+            mission_running_ = false;
+            acceptSequenceLocked(envelope.sequence());
+            return buildAckLocked(true, "task plan stored");
         }
         case Envelope::kControlCommand:
             switch (envelope.control_command().type()) {
             case COMMAND_TYPE_START_MISSION:
-                return nuedc_bridge::buildAckEnvelope(true, "start accepted");
+                if (isStaleSequenceLocked(envelope.sequence())) {
+                    return buildAckLocked(false, "stale command");
+                }
+                if (!mission_loaded_) {
+                    return buildAckLocked(false, "mission is not loaded");
+                }
+                mission_running_ = true;
+                acceptSequenceLocked(envelope.sequence());
+                return buildAckLocked(true, "start accepted");
             case COMMAND_TYPE_STOP_MISSION:
-                return nuedc_bridge::buildAckEnvelope(true, "stop accepted");
+                if (isStaleSequenceLocked(envelope.sequence())) {
+                    return buildAckLocked(false, "stale command");
+                }
+                mission_running_ = false;
+                acceptSequenceLocked(envelope.sequence());
+                return buildAckLocked(true, "stop accepted");
             case COMMAND_TYPE_PING:
-                return nuedc_bridge::buildAckEnvelope(true, "pong");
+                return buildAckLocked(true, "pong");
             default:
-                return nuedc_bridge::buildAckEnvelope(false, "unsupported command");
+                return buildAckLocked(false, "unsupported command");
             }
         default:
-            return nuedc_bridge::buildAckEnvelope(false, "unsupported payload");
+            return buildAckLocked(false, "unsupported payload");
         }
     }
 
@@ -178,9 +223,12 @@ private:
     std::atomic<bool> stop_requested_{false};
     std::atomic<uint64_t> publish_sequence_{1};
     std::atomic<uint32_t> odometry_count_{0};
+    std::atomic<uint32_t> detection_count_{0};
+    bool mission_loaded_ = false;
+    bool mission_running_ = false;
+    uint64_t last_accepted_sequence_ = 0;
     zmq::context_t context_;
     zmq::socket_t pub_socket_;
-    zmq::socket_t rep_socket_;
     std::thread command_thread_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_subscription_;
     rclcpp::Subscription<vision_msgs::msg::Detection2DArray>::SharedPtr detection_subscription_;

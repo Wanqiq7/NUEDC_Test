@@ -11,11 +11,16 @@
 namespace competition {
 
 Envelope buildTaskPlanEnvelope(quint64 sequence, const TaskPlan &plan);
+Envelope buildMissionLoadEnvelope(quint64 sequence, const TaskPlan &plan);
 Envelope buildMissionLoadEnvelope(const TaskPlan &plan);
 Envelope buildTaskEventEnvelope(quint64 sequence, const TaskEvent &event);
 Envelope buildTaskSummaryEnvelope(quint64 sequence, const TaskSummary &summary);
 Envelope buildAckEnvelope(bool success, const QString &message);
+Envelope buildAckEnvelope(const AckResult &result);
+Envelope buildAckEnvelope(const AckResult &result, const CommandState &state);
 QByteArray buildAckBytes(bool success, const QString &message);
+QByteArray buildAckBytes(const AckResult &result);
+QByteArray buildAckBytes(const AckResult &result, const CommandState *state);
 
 TaskPlanMessage taskPlanToMessage(const TaskPlan &plan);
 TaskEventMessage taskEventToMessage(const TaskEvent &event);

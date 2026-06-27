@@ -2,11 +2,13 @@
 
 #include "airborne_runtime.h"
 #include "h_problem_mission_runtime.h"
+#include "mission_runtime_factory.h"
 
 #include "competition_core/protocol/command_handler.h"
 #include "h_problem_core/mission/mission_plan_store.h"
 #include "h_problem_core/protocol/envelope_builder.h"
 
+#include <QFile>
 #include <QTemporaryDir>
 
 class AirborneRuntimeTests : public QObject {
@@ -18,6 +20,8 @@ private slots:
     void callbackPublisherPublishesGenericEventsAndSummaries();
     void hProblemRuntimePublishesGenericEventsAndSummary();
     void hProblemRuntimeStopsWhenStateRequestsStop();
+    void missionRuntimeFactoryCreatesDefaultHProblemRuntime();
+    void missionRuntimeFactoryRejectsUnknownTask();
     void commandHandlerHandlesControlCommandBytes();
 };
 
@@ -179,7 +183,7 @@ void AirborneRuntimeTests::hProblemRuntimeStopsWhenStateRequestsStop() {
         [&](quint64 sequence, const competition::TaskEvent &) {
             published_sequence = sequence;
             ++published_events;
-            state.stop_requested = true;
+            state.requestStop();
             return true;
         },
         [&](quint64, const competition::TaskSummary &) {
@@ -192,6 +196,66 @@ void AirborneRuntimeTests::hProblemRuntimeStopsWhenStateRequestsStop() {
     QCOMPARE(published_events, 1);
     QCOMPARE(published_summaries, 0);
     QCOMPARE(published_sequence, static_cast<quint64>(1));
+}
+
+void AirborneRuntimeTests::missionRuntimeFactoryCreatesDefaultHProblemRuntime() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString case_path = dir.filePath("factory_case.json");
+    QFile case_file(case_path);
+    QVERIFY(case_file.open(QIODevice::WriteOnly | QIODevice::Text));
+    case_file.write(R"({"case_id":"factory-test","start_cell":"A1B1","tick_interval_ms":1,"animals":[]})");
+    case_file.close();
+
+    const QString plan_path = dir.filePath("active_mission_plan.json");
+    hcore::MissionPlan plan;
+    plan.case_id = "factory-test";
+    plan.start_cell = "A1B1";
+    plan.route = {"A1B1"};
+    plan.terminal_cell = "A1B1";
+    QString store_error;
+    QVERIFY2(hcore::storeMissionPlan(plan, plan_path, &store_error), qPrintable(store_error));
+
+    int published_summaries = 0;
+    airborne::CallbackEventPublisher publisher(
+        [](quint64, const competition::TaskEvent &) { return true; },
+        [&](quint64, const competition::TaskSummary &) {
+            ++published_summaries;
+            return true;
+        });
+
+    QString error;
+    auto runtime = airborne::createMissionRuntime(
+        "h_problem",
+        case_path,
+        plan_path,
+        &publisher,
+        &error);
+
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QVERIFY(runtime != nullptr);
+
+    competition::CommandState state;
+    QCOMPARE(runtime->execute(state, 0.0), 0);
+    QCOMPARE(published_summaries, 1);
+}
+
+void AirborneRuntimeTests::missionRuntimeFactoryRejectsUnknownTask() {
+    airborne::CallbackEventPublisher publisher(
+        [](quint64, const competition::TaskEvent &) { return true; },
+        [](quint64, const competition::TaskSummary &) { return true; });
+
+    QString error;
+    auto runtime = airborne::createMissionRuntime(
+        "missing_problem",
+        "unused_case.json",
+        "unused_plan.json",
+        &publisher,
+        &error);
+
+    QVERIFY(runtime == nullptr);
+    QVERIFY(error.contains("unknown mission runtime"));
+    QVERIFY(error.contains("h_problem"));
 }
 
 void AirborneRuntimeTests::commandHandlerHandlesControlCommandBytes() {
@@ -211,8 +275,8 @@ void AirborneRuntimeTests::commandHandlerHandlesControlCommandBytes() {
         output_path,
         &state);
     QVERIFY2(ack.success, qPrintable(ack.message));
-    QVERIFY(state.start_requested);
-    QVERIFY(!state.stop_requested);
+    QVERIFY(state.isStartRequested());
+    QVERIFY(!state.isStopRequested());
 
     Envelope ping;
     ping.mutable_control_command()->set_type(COMMAND_TYPE_PING);
@@ -236,7 +300,7 @@ void AirborneRuntimeTests::commandHandlerHandlesControlCommandBytes() {
         output_path,
         &state);
     QVERIFY2(ack.success, qPrintable(ack.message));
-    QVERIFY(state.stop_requested);
+    QVERIFY(state.isStopRequested());
 }
 
 QTEST_MAIN(AirborneRuntimeTests)

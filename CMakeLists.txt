@@ -36,6 +36,7 @@ add_custom_command(
 add_library(proto_messages STATIC
     ${CPP_PROTO_DIR}/messages.pb.cc
 )
+set_target_properties(proto_messages PROPERTIES AUTOMOC OFF)
 
 target_include_directories(proto_messages PUBLIC
     ${CPP_PROTO_DIR}

@@ -70,6 +70,10 @@ ament_target_dependencies(nuedc_bridge_node
 ament_add_gtest(test_bridge_conversions
     test/test_bridge_conversions.cpp
 )
+target_compile_definitions(test_bridge_conversions PRIVATE
+    NUEDC_SHARED_PROTO_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../../shared/proto/messages.proto"
+    NUEDC_BRIDGE_PROTO_PATH="${CMAKE_CURRENT_SOURCE_DIR}/proto/messages.proto"
+)
 target_link_libraries(test_bridge_conversions
     nuedc_bridge_core
 )

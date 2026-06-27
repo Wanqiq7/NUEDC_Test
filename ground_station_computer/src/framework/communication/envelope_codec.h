@@ -6,6 +6,10 @@
 struct CommandSendResult {
     bool ok = false;
     QString message;
+    QString task_id;
+    bool mission_loaded = false;
+    bool mission_running = false;
+    quint64 last_accepted_sequence = 0;
 };
 
 class EnvelopeCodec {

@@ -10,13 +10,18 @@ DetectionRepository::DetectionRepository(const QString &database_path)
       database_path_(database_path) {}
 
 DetectionRepository::~DetectionRepository() {
+    const QString connection_name = connection_name_;
     if (database_.isValid()) {
         database_.close();
     }
-    QSqlDatabase::removeDatabase(connection_name_);
+    database_ = QSqlDatabase();
+    QSqlDatabase::removeDatabase(connection_name);
 }
 
 bool DetectionRepository::open() {
+    if (database_.isValid() && database_.isOpen()) {
+        return true;
+    }
     database_ = QSqlDatabase::addDatabase("QSQLITE", connection_name_);
     database_.setDatabaseName(database_path_);
     if (!database_.open()) {

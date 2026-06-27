@@ -115,7 +115,7 @@ int HProblemMissionRuntime::execute(
     hcore::MissionPlan active_plan = mission_plan_.value_or(hcore::MissionPlan{});
     quint64 sequence = 1;
     for (const hcore::SimMessage &message : messages) {
-        if (state.stop_requested) {
+        if (state.isStopRequested()) {
             break;
         }
 

@@ -2,7 +2,6 @@
 
 #include <QMainWindow>
 #include <QPushButton>
-#include <QStringList>
 
 #include "framework/communication/reliable_command_client.h"
 #include "framework/communication/zmq_command_client.h"
@@ -11,8 +10,6 @@
 #include <memory>
 
 class QLabel;
-class QListWidget;
-class QTableWidget;
 class ZmqSubscriberWorker;
 
 class MainWindow : public QMainWindow {
@@ -23,19 +20,9 @@ public:
     ~MainWindow() override;
 
 private slots:
-    void handleGridConfig(
-        QString case_id,
-        QString start_cell,
-        QStringList no_fly_cells,
-        QStringList route,
-        QString terminal_cell,
-        bool landing_enabled,
-        double descent_angle_deg,
-        double takeoff_anchor_x_cm,
-        double takeoff_anchor_y_cm);
-    void handleTelemetry(QString current_cell, int step_index, int visited_cells);
-    void handleDetection(QString cell_code, QString animal_name, int count, qint64 timestamp_ms);
-    void handleSummary(QMap<QString, int> totals, int visited_cells);
+    void handleTaskPlan(competition::TaskPlan plan);
+    void handleTaskEvent(competition::TaskEvent event, qint64 timestamp_ms);
+    void handleTaskSummary(competition::TaskSummary summary);
     void handleError(QString message);
 
 private:
@@ -47,15 +34,8 @@ private:
     void refreshExecutionControls();
     void refreshAirborneStatusLabel();
 
-    void updateSummaryTable(const QMap<QString, int> &totals);
-
     std::unique_ptr<CompetitionTaskAdapter> task_adapter_;
     QLabel *status_label_ = nullptr;
-    QLabel *case_label_ = nullptr;
-    QLabel *mission_label_ = nullptr;
-    QLabel *legend_label_ = nullptr;
-    QListWidget *detection_list_ = nullptr;
-    QTableWidget *summary_table_ = nullptr;
 
     QPushButton *planning_button_ = nullptr;
     QPushButton *execute_button_ = nullptr;

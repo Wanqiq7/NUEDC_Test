@@ -13,5 +13,12 @@ CommandSendResult EnvelopeCodec::parseAck(const QByteArray &payload) {
     }
 
     const auto &ack = envelope.ack();
-    return CommandSendResult{ack.success(), QString::fromStdString(ack.message())};
+    CommandSendResult result;
+    result.ok = ack.success();
+    result.message = QString::fromStdString(ack.message());
+    result.task_id = QString::fromStdString(ack.task_id());
+    result.mission_loaded = ack.mission_loaded();
+    result.mission_running = ack.mission_running();
+    result.last_accepted_sequence = ack.last_accepted_sequence();
+    return result;
 }
