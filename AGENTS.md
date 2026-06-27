@@ -3,15 +3,13 @@
 ## 项目结构与模块组织
 - `shared/proto/`：Protobuf 协议定义；修改 `messages.proto` 后需重新构建生成代码。
 - `shared/cpp/`：C++ 共享核心库；`competition_core` 承载通用任务模型、TaskPlan 存储、Protobuf codec 与控制命令，`h_problem_core` 承载 H 题案例、规划、仿真和默认 Adapter。
-- `airborne_computer/src/`：C++ 机载端源码；`airborne_computer/tests/`：Qt Test 单元测试。
 - `ground_station_computer/src/`：Qt6 地面站源码；`ground_station_computer/tests/`：Qt Test 单元测试。
 - `shared/cases/`：固定联调案例；`runtime/`：运行时任务计划；`build/`：本地构建产物，不应作为手工源码目录。
 
 ## 构建、测试与开发命令
 - `cmake -S . -B build`：配置 CMake 工程并生成构建目录。
-- `cmake --build build`：编译 C++ Protobuf、共享核心库、C++ 机载端与 Qt 地面站。
+- `cmake --build build`：编译 C++ Protobuf、共享核心库与 Qt 地面站。
 - `ctest --test-dir build --output-on-failure`：运行 C++/Qt 测试并输出失败详情。
-- `./build/airborne_computer/airborne_app --case shared/cases/sample_case.json`：启动 C++ 机载端并加载样例案例。
 - `./build/ground_station_computer/ground_station_app`：启动地面站。
 
 ## 编码风格与命名约定
@@ -22,9 +20,9 @@
 ## 测试规范
 - 共享核心、机载端和地面站测试均基于 `Qt6::Test`。
 - 规划逻辑优先覆盖航线覆盖率、相邻性、代价与边界场景。
-- 新增地面站测试文件放入 `ground_station_computer/tests/test_*.cpp`；新增机载端测试放入 `airborne_computer/tests/test_*.cpp`；共享核心测试放入 `shared/cpp/tests/test_*.cpp`。
+- 新增地面站测试文件放入 `ground_station_computer/tests/test_*.cpp`；共享核心测试放入 `shared/cpp/tests/test_*.cpp`。
 - 修复缺陷时先补充最小失败用例，再修改实现；提交前至少运行受影响模块测试。
-- 新增题目时优先新增 Adapter/Runtime，不直接把题目专有逻辑写入地面站 Shell 或 `competition_core`；详见 `docs/adding_task_adapter.md`。
+- 新增题目时优先新增地面站 Adapter，不直接把题目专有逻辑写入地面站 Shell 或 `competition_core`；详见 `docs/adding_task_adapter.md`。
 
 ## 提交与 Pull Request 规范
 - 当前工作区未包含 `.git` 历史，无法提炼既有提交风格；建议使用祈使句、模块前缀格式，如：`airborne: add command server runtime`。

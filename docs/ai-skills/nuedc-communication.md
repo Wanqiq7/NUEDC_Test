@@ -8,8 +8,6 @@
 
 - `ground_station_computer/src/framework/communication/**`
 - `ground_station_computer/src/h_problem/mission/h_mission_command_service.*`
-- `airborne_computer/src/**`
-- `airborne_computer/ros2/nuedc_bridge/**`
 - `shared/cpp/src/protocol/**`
 - `shared/cpp/tests/test_h_command_handler.cpp`
 
@@ -17,7 +15,7 @@
 
 - 优先把同步能力做成幂等、可重试、可观测。
 - 任务下发和状态确认必须保留清晰错误信息。
-- C++ 命令处理和 ROS2 bridge 尽量复用同一套核心语义。
+- 地面站命令客户端与共享协议处理尽量复用同一套核心语义。
 
 ## 禁止事项
 

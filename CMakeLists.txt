@@ -45,5 +45,4 @@ target_include_directories(proto_messages PUBLIC
 target_link_libraries(proto_messages PUBLIC protobuf::libprotobuf)
 
 add_subdirectory(shared/cpp)
-add_subdirectory(airborne_computer)
 add_subdirectory(ground_station_computer)

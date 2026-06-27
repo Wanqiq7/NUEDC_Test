@@ -14,7 +14,6 @@ private slots:
     void subscriberWorkerPublishesGenericTaskSignals();
     void competitionTaskAdapterExposesGenericProtocolHandlers();
     void mainWindowDoesNotOwnProblemSpecificBusinessPanels();
-    void airborneMainUsesMissionRuntimeFactory();
 };
 
 void ArchitectureBoundaryTests::mainWindowDoesNotIncludeProblemSpecificHeaders() {
@@ -109,17 +108,6 @@ void ArchitectureBoundaryTests::mainWindowDoesNotOwnProblemSpecificBusinessPanel
     QVERIFY(!source_text.contains("统计汇总"));
     QVERIFY(!source_text.contains("动物"));
     QVERIFY(!source_text.contains("H 题混合联调地面站"));
-}
-
-void ArchitectureBoundaryTests::airborneMainUsesMissionRuntimeFactory() {
-    QFile source("airborne_computer/src/main.cpp");
-    QVERIFY(source.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString source_text = QString::fromUtf8(source.readAll());
-
-    QVERIFY(source_text.contains("mission_runtime_factory"));
-    QVERIFY(source_text.contains("\"task\""));
-    QVERIFY(!source_text.contains("h_problem_core/mission/case_loader.h"));
-    QVERIFY(!source_text.contains("HProblemMissionRuntime runtime"));
 }
 
 QTEST_MAIN(ArchitectureBoundaryTests)

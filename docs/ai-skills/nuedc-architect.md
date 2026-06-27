@@ -15,8 +15,8 @@
 
 ## 工作规则
 
-- 先判断变更属于 `competition_core`、题目 core、地面站 framework、题目 UI、机载 runtime 还是 ROS2 bridge。
-- 优先保持 Shell 薄，题目逻辑只能通过 Adapter / Runtime / Codec 进入。
+- 先判断变更属于 `competition_core`、题目 core、地面站 framework、题目 UI 还是协议通信。
+- 优先保持 Shell 薄，题目逻辑只能通过 Adapter / Codec 进入。
 - 任何新增题目都必须注册到适配器工厂，默认选择由 `NUEDC_TASK_ADAPTER` 决定。
 
 ## 禁止事项
