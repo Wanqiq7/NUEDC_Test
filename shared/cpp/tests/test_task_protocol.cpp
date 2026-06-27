@@ -45,6 +45,9 @@ class TaskProtocolTests : public QObject {
 private slots:
     void buildsAndParsesTaskPlanEnvelope();
     void storesGenericMissionLoad();
+    void buildsMissionLoadWithExplicitSequence();
+    void rejectsStaleMissionLoadSequence();
+    void buildsAckWithRuntimeState();
 };
 
 void TaskProtocolTests::buildsAndParsesTaskPlanEnvelope() {
@@ -78,7 +81,7 @@ void TaskProtocolTests::storesGenericMissionLoad() {
 
     QVERIFY2(ack.success, qPrintable(ack.message));
     QCOMPARE(ack.message, QString("task plan stored"));
-    QVERIFY(state.mission_loaded);
+    QVERIFY(state.isMissionLoaded());
 
     QString error;
     const auto loaded = competition::loadTaskPlan(output_path, &error);
@@ -91,6 +94,54 @@ void TaskProtocolTests::storesGenericMissionLoad() {
     const QJsonObject object = QJsonDocument::fromJson(file.readAll()).object();
     QCOMPARE(object.value("message_type").toString(), QString("task_plan"));
     QCOMPARE(object.value("task_type").toString(), QString("h_problem"));
+}
+
+void TaskProtocolTests::buildsMissionLoadWithExplicitSequence() {
+    const Envelope envelope = competition::buildMissionLoadEnvelope(7, makeTaskPlan());
+
+    QCOMPARE(envelope.sequence(), 7ULL);
+    QCOMPARE(envelope.payload_case(), Envelope::kMissionLoad);
+    QCOMPARE(QString::fromStdString(envelope.mission_load().task_id()), QString("task-demo"));
+}
+
+void TaskProtocolTests::rejectsStaleMissionLoadSequence() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    competition::CommandState state;
+    const QString output_path = QDir(dir.path()).filePath("runtime/task_plan.json");
+    const competition::AckResult first_ack = competition::handleEnvelopeCommand(
+        competition::buildMissionLoadEnvelope(8, makeTaskPlan()),
+        output_path,
+        &state);
+    QVERIFY2(first_ack.success, qPrintable(first_ack.message));
+    QCOMPARE(state.lastAcceptedSequence(), 8ULL);
+
+    const competition::AckResult stale_ack = competition::handleEnvelopeCommand(
+        competition::buildMissionLoadEnvelope(8, makeTaskPlan()),
+        output_path,
+        &state);
+    QVERIFY(!stale_ack.success);
+    QCOMPARE(stale_ack.message, QString("stale command"));
+    QCOMPARE(state.lastAcceptedSequence(), 8ULL);
+}
+
+void TaskProtocolTests::buildsAckWithRuntimeState() {
+    competition::CommandState state;
+    state.setActiveTaskPlan(makeTaskPlan());
+    state.setMissionLoaded(true);
+    state.requestStart();
+    state.acceptSequence(15);
+
+    const Envelope envelope = competition::buildAckEnvelope({true, "start accepted"}, state);
+
+    QCOMPARE(envelope.payload_case(), Envelope::kAck);
+    QCOMPARE(envelope.ack().success(), true);
+    QCOMPARE(QString::fromStdString(envelope.ack().message()), QString("start accepted"));
+    QCOMPARE(QString::fromStdString(envelope.ack().task_id()), QString("task-demo"));
+    QCOMPARE(envelope.ack().mission_loaded(), true);
+    QCOMPARE(envelope.ack().mission_running(), true);
+    QCOMPARE(envelope.ack().last_accepted_sequence(), 15ULL);
 }
 
 QTEST_MAIN(TaskProtocolTests)

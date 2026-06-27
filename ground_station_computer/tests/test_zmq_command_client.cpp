@@ -8,9 +8,11 @@ class ZmqCommandClientTests : public QObject {
 
 private slots:
     void parsesAckPayload();
+    void parsesAckRuntimeState();
     void rejectsNonAckPayload();
     void parsesFailureAckPayload();
     void buildsControlCommandWithTaskId();
+    void buildsControlCommandWithMonotonicSequence();
 };
 
 void ZmqCommandClientTests::parsesAckPayload() {
@@ -26,6 +28,29 @@ void ZmqCommandClientTests::parsesAckPayload() {
     const auto result = ZmqCommandClient::parseAck(QByteArray::fromStdString(bytes));
     QVERIFY(result.ok);
     QCOMPARE(result.message, QString("ok"));
+}
+
+void ZmqCommandClientTests::parsesAckRuntimeState() {
+    Envelope envelope;
+    envelope.set_sequence(9);
+    auto *ack = envelope.mutable_ack();
+    ack->set_success(true);
+    ack->set_message("start accepted");
+    ack->set_task_id("task-123");
+    ack->set_mission_loaded(true);
+    ack->set_mission_running(true);
+    ack->set_last_accepted_sequence(9);
+
+    std::string bytes;
+    envelope.SerializeToString(&bytes);
+
+    const auto result = ZmqCommandClient::parseAck(QByteArray::fromStdString(bytes));
+    QVERIFY(result.ok);
+    QCOMPARE(result.message, QString("start accepted"));
+    QCOMPARE(result.task_id, QString("task-123"));
+    QVERIFY(result.mission_loaded);
+    QVERIFY(result.mission_running);
+    QCOMPARE(result.last_accepted_sequence, 9ULL);
 }
 
 void ZmqCommandClientTests::rejectsNonAckPayload() {
@@ -65,6 +90,15 @@ void ZmqCommandClientTests::buildsControlCommandWithTaskId() {
     QCOMPARE(envelope.payload_case(), Envelope::kControlCommand);
     QCOMPARE(envelope.control_command().type(), CommandType::COMMAND_TYPE_START_MISSION);
     QCOMPARE(QString::fromStdString(envelope.control_command().task_id()), QString("task-123"));
+}
+
+void ZmqCommandClientTests::buildsControlCommandWithMonotonicSequence() {
+    const Envelope first = ZmqCommandClient::buildControlCommandEnvelope(GroundControlCommandType::Ping);
+    const Envelope second = ZmqCommandClient::buildControlCommandEnvelope(GroundControlCommandType::Ping);
+
+    QVERIFY(first.sequence() > 0);
+    QVERIFY(first.sequence() > (1ULL << 20));
+    QVERIFY(second.sequence() > first.sequence());
 }
 
 QTEST_MAIN(ZmqCommandClientTests)

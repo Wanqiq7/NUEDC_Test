@@ -8,30 +8,34 @@
 - `<task>_problem_core`：题目专有算法、案例解析、仿真、任务元数据转换；可以依赖 `competition_core`，反向依赖禁止。
 - `ground_station_computer/src/framework`：地面站 Shell、通信、配置、运行状态和题目 Adapter 端口，不写题目规则。
 - `ground_station_computer/src/<task>`：题目页面、题目状态解释、题目规划入口、题目数据存储。
-- `airborne_computer/src`：机载 Shell、通用 `MissionRuntime` 和命令服务；题目执行逻辑放入独立 runtime。
+- `airborne_computer/src`：机载 Shell、通用 `MissionRuntime`、runtime 工厂和命令服务；题目执行逻辑放入独立 runtime。
 - `airborne_computer/ros2/nuedc_bridge`：真实机载 ROS2 桥接，只做 ROS2 消息与通用任务协议转换。
 
 ## 通用端口
 
 - `TaskPlanner`：输入题目约束，输出通用 `TaskPlan` 或失败原因。
 - `TaskCodec`：把题目私有字段收敛进 `metadata_json` / `payload_json`。
-- `CompetitionTaskAdapter`：地面站题目页面与 Shell 的唯一交互边界。
+- `CompetitionTaskAdapter`：地面站题目页面与 Shell 的唯一交互边界；只接收通用 `TaskPlan`、`TaskEvent`、`TaskSummary`，题目私有 JSON 解析留在 Adapter 内。
 - `MissionRuntime`：机载端执行任务或桥接真实无人机运行栈。
 - `availableCompetitionTaskAdapters()` / `createConfiguredCompetitionTaskAdapter()`：题目 Adapter 注册和选择入口。
+- `createMissionRuntime()`：机载 runtime 注册和选择入口；`airborne_app --task <adapter_id>` 不直接装配题目 runtime。
 
 ## 禁止事项
 
 - `MainWindow` 禁止 include `h_problem` 或任何题目目录头文件。
+- `ground_station_computer/src/framework/communication` 禁止 include 任何题目目录；订阅层只能解析 Envelope 并发布通用任务信号。
+- `MainWindow` 禁止维护题目业务面板、题目统计表或题目专有槽函数。
 - `competition_core` 禁止 include `<task>_problem_core`。
 - 新题目禁止复制 `MainWindow`、通信客户端或命令服务。
+- 新题目禁止在 `airborne_computer/src/main.cpp` 中直接装配 runtime，必须通过 runtime 工厂注册。
 - ROS2 bridge 禁止解析题目 UI 状态，只处理通用任务协议与 ROS2 topic。
 
 ## 新题目最小接入清单
 
 1. 新增 `<task>_problem_core`，实现题目案例模型、规划器和 `TaskPlan` 转换。
-2. 新增地面站 `<task>` Adapter，实现页面、规划、遥测/检测/汇总消费。
+2. 新增地面站 `<task>` Adapter，实现页面、规划、通用任务事件消费和题目私有 payload 解析。
 3. 在 `availableCompetitionTaskAdapters()` 中注册新 Adapter，并支持 `NUEDC_TASK_ADAPTER=<adapter_id>` 选择。
-4. 新增机载 `<task>_mission_runtime` 或 ROS2 topic 转换。
+4. 新增机载 `<task>_mission_runtime` 或 ROS2 topic 转换，并在 `createMissionRuntime()` 中注册。
 5. 补测试：核心规划、Adapter 状态、工厂选择、任务下发、机载命令、边界依赖。
 
 ## 回归门禁

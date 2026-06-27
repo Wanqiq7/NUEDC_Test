@@ -7,8 +7,17 @@
 #include "h_problem/rules/h_no_fly_zone_rules.h"
 #include "h_problem/storage/h_detection_repository.h"
 
+#include <QMap>
+#include <QString>
+#include <QStringList>
+#include <QtGlobal>
+#include <QWidget>
+
 class GridScene;
+class QLabel;
+class QListWidget;
 class QObject;
+class QTableWidget;
 class ZmqCommandClient;
 
 class HProblemPage {
@@ -25,20 +34,34 @@ public:
     QString activeTaskId() const override;
     bool missionSyncedToAirborne() const override;
     bool missionRunning() const override;
+    MissionRuntimeInputs missionRuntimeInputs() const override;
 
     void setCommandSyncEnabled(bool enabled) override;
     void setCommandClient(const ZmqCommandClient &client) override;
     void loadInitialPreview() override;
-    void handleGridConfig(const TaskGridConfig &config) override;
-    void handleTelemetry(const QString &current_cell, int step_index, int visited_cells) override;
-    void handleDetection(const QString &cell_code, const QString &animal_name, int count, qint64 timestamp_ms) override;
-    void handleSummary(const QMap<QString, int> &totals, int visited_cells) override;
+    void handleTaskPlan(const competition::TaskPlan &plan) override;
+    void handleTaskEvent(const competition::TaskEvent &event, qint64 timestamp_ms) override;
+    void handleTaskSummary(const competition::TaskSummary &summary) override;
     void handlePlanningButtonClicked() override;
     void markControlCommandStarted() override;
     void markControlCommandStopped() override;
     void markAirborneSyncState(bool online, bool synced) override;
+    void applyCommandAck(const CommandSendResult &result) override;
 
 private:
+    void applyGridConfig(
+        const QString &case_id,
+        const QString &start_cell,
+        const QStringList &no_fly_cells,
+        const QStringList &route,
+        const QString &terminal_cell,
+        bool landing_enabled,
+        double descent_angle_deg,
+        double takeoff_anchor_x_cm,
+        double takeoff_anchor_y_cm);
+    void applyTelemetry(const QString &current_cell, int step_index, int visited_cells);
+    void applyDetection(const QString &cell_code, const QString &animal_name, int count, qint64 timestamp_ms);
+    void applySummary(const QMap<QString, int> &totals, int visited_cells);
     void handleGridSceneCellClicked(const QString &cell_code);
     void enterNoFlySelectionMode();
     void generateMissionPlanFromCandidateSelection();
@@ -46,10 +69,16 @@ private:
     void refreshMissionContextLabels();
     void refreshPlanningButtonText();
     void emitRuntimeChanged();
+    void clearCommandAckState();
     QString resolveCaseFilePath(const QString &case_id) const;
     void updateStatusForCandidateSelection(const NoFlyZoneRules::ValidationResult &validation);
+    void updateSummaryTable(const QMap<QString, int> &totals);
 
     GridScene *grid_scene_ = nullptr;
+    QLabel *case_label_ = nullptr;
+    QLabel *mission_label_ = nullptr;
+    QListWidget *detection_list_ = nullptr;
+    QTableWidget *summary_table_ = nullptr;
     PlanningStateMachine planning_state_;
     MissionPlanBridge mission_plan_bridge_;
     MissionCommandService command_service_;
@@ -67,5 +96,9 @@ private:
     bool command_sync_enabled_ = true;
     bool mission_synced_to_airborne_ = false;
     bool mission_running_ = false;
+    QString acknowledged_task_id_;
+    bool acknowledged_mission_loaded_ = false;
+    quint64 last_accepted_sequence_ = 0;
     DetectionRepository repository_;
+    QMap<QString, int> detection_totals_;
 };

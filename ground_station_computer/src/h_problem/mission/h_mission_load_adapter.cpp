@@ -2,7 +2,9 @@
 
 #include "h_problem_core/protocol/envelope_builder.h"
 
-Envelope MissionLoadAdapter::buildMissionLoadEnvelope(const MissionPlanData &plan) {
+namespace {
+
+hcore::MissionPlan toMissionPlan(const MissionPlanData &plan) {
     hcore::MissionPlan mission_plan;
     mission_plan.case_id = plan.case_id;
     mission_plan.start_cell = plan.start_cell;
@@ -13,5 +15,15 @@ Envelope MissionLoadAdapter::buildMissionLoadEnvelope(const MissionPlanData &pla
     mission_plan.descent_angle_deg = plan.descent_angle_deg;
     mission_plan.takeoff_anchor_x_cm = plan.takeoff_anchor_x_cm;
     mission_plan.takeoff_anchor_y_cm = plan.takeoff_anchor_y_cm;
-    return hcore::buildMissionLoadEnvelope(mission_plan);
+    return mission_plan;
+}
+
+} // namespace
+
+Envelope MissionLoadAdapter::buildMissionLoadEnvelope(const MissionPlanData &plan) {
+    return hcore::buildMissionLoadEnvelope(toMissionPlan(plan));
+}
+
+Envelope MissionLoadAdapter::buildMissionLoadEnvelope(quint64 sequence, const MissionPlanData &plan) {
+    return competition::buildMissionLoadEnvelope(sequence, hcore::taskPlanFromMissionPlan(toMissionPlan(plan)));
 }

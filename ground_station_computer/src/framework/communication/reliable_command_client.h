@@ -46,6 +46,7 @@ public:
     QString lastError() const;
 
 private:
+    bool isIdempotentSuccess(const Envelope &envelope, const CommandSendResult &result) const;
     void markResult(const CommandSendResult &result, bool mission_synced);
 
     const CommandTransport *transport_ = nullptr;

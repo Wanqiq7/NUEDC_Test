@@ -1,5 +1,9 @@
 #pragma once
 
+#include <QMetaType>
+#include <QMutex>
+#include <QMutexLocker>
+#include <atomic>
 #include <QString>
 #include <QVector>
 
@@ -49,13 +53,100 @@ struct TaskSummary {
 struct AckResult {
     bool success = false;
     QString message;
+    QString task_id;
+    bool mission_loaded = false;
+    bool mission_running = false;
+    quint64 last_accepted_sequence = 0;
 };
 
 struct CommandState {
-    bool start_requested = false;
-    bool stop_requested = false;
-    bool mission_loaded = false;
-    TaskPlan active_task_plan;
+    CommandState() = default;
+
+    CommandState(const CommandState &other)
+        : start_requested_(other.isStartRequested()),
+          stop_requested_(other.isStopRequested()),
+          mission_loaded_(other.isMissionLoaded()),
+          last_accepted_sequence_(other.lastAcceptedSequence()),
+          active_task_plan_(other.activeTaskPlan()) {}
+
+    CommandState &operator=(const CommandState &other) {
+        if (this == &other) {
+            return *this;
+        }
+        start_requested_.store(other.isStartRequested(), std::memory_order_relaxed);
+        stop_requested_.store(other.isStopRequested(), std::memory_order_relaxed);
+        mission_loaded_.store(other.isMissionLoaded(), std::memory_order_relaxed);
+        last_accepted_sequence_.store(other.lastAcceptedSequence(), std::memory_order_relaxed);
+        setActiveTaskPlan(other.activeTaskPlan());
+        return *this;
+    }
+
+    void requestStart() {
+        stop_requested_.store(false, std::memory_order_release);
+        start_requested_.store(true, std::memory_order_release);
+    }
+
+    void requestStop() {
+        stop_requested_.store(true, std::memory_order_release);
+    }
+
+    bool isStartRequested() const {
+        return start_requested_.load(std::memory_order_acquire);
+    }
+
+    bool isStopRequested() const {
+        return stop_requested_.load(std::memory_order_acquire);
+    }
+
+    void setMissionLoaded(bool loaded) {
+        mission_loaded_.store(loaded, std::memory_order_release);
+    }
+
+    bool isMissionLoaded() const {
+        return mission_loaded_.load(std::memory_order_acquire);
+    }
+
+    void setActiveTaskPlan(const TaskPlan &plan) {
+        QMutexLocker<QMutex> locker(&active_task_plan_mutex_);
+        active_task_plan_ = plan;
+    }
+
+    TaskPlan activeTaskPlan() const {
+        QMutexLocker<QMutex> locker(&active_task_plan_mutex_);
+        return active_task_plan_;
+    }
+
+    quint64 lastAcceptedSequence() const {
+        return last_accepted_sequence_.load(std::memory_order_acquire);
+    }
+
+    bool isStaleSequence(quint64 sequence) const {
+        return sequence != 0 && sequence <= lastAcceptedSequence();
+    }
+
+
+    void acceptSequence(quint64 sequence) {
+        if (sequence != 0) {
+            last_accepted_sequence_.store(sequence, std::memory_order_release);
+        }
+    }
+
+    QMutex *commandMutex() {
+        return &command_mutex_;
+    }
+
+private:
+    std::atomic_bool start_requested_{false};
+    std::atomic_bool stop_requested_{false};
+    std::atomic_bool mission_loaded_{false};
+    std::atomic<quint64> last_accepted_sequence_{0};
+    mutable QMutex command_mutex_;
+    mutable QMutex active_task_plan_mutex_;
+    TaskPlan active_task_plan_;
 };
 
 } // namespace competition
+
+Q_DECLARE_METATYPE(competition::TaskPlan)
+Q_DECLARE_METATYPE(competition::TaskEvent)
+Q_DECLARE_METATYPE(competition::TaskSummary)

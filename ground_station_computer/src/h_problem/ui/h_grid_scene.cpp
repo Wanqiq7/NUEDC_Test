@@ -21,6 +21,8 @@ constexpr int kRows = 7;
 constexpr qreal kCellSize = 52.0;
 constexpr qreal kFieldMarginCm = 25.0;
 constexpr qreal kGridCellCm = 50.0;
+constexpr int kCurrentMarkerDataKey = 1001;
+constexpr const char *kCurrentMarkerDataValue = "current_marker";
 
 QList<qreal> buildArrowOffsets(int repeat_count) {
     QList<qreal> offsets;
@@ -332,25 +334,27 @@ void GridScene::setStartCell(const QString &cell_code) {
 }
 
 void GridScene::setCurrentCell(const QString &cell_code) {
-    if (current_marker_ != nullptr) {
-        removeItem(current_marker_);
-        delete current_marker_;
-        current_marker_ = nullptr;
-    }
-
     if (cell_code.isEmpty()) {
+        if (current_marker_ != nullptr) {
+            current_marker_->hide();
+        }
         return;
     }
 
-    const QPointF center = cellCenter(cell_code);
-    current_marker_ = addEllipse(
-        center.x() - 9.0,
-        center.y() - 9.0,
-        18.0,
-        18.0,
-        QPen(QColor(255, 255, 255, 240), 2.0),
-        QBrush(QColor(231, 76, 60)));
-    current_marker_->setZValue(5.0);
+    if (current_marker_ == nullptr) {
+        current_marker_ = addEllipse(
+            -9.0,
+            -9.0,
+            18.0,
+            18.0,
+            QPen(QColor(255, 255, 255, 240), 2.0),
+            QBrush(QColor(231, 76, 60)));
+        current_marker_->setData(kCurrentMarkerDataKey, QLatin1String(kCurrentMarkerDataValue));
+        current_marker_->setZValue(5.0);
+    }
+
+    current_marker_->setPos(cellCenter(cell_code));
+    current_marker_->show();
 }
 
 void GridScene::setLandingTarget(

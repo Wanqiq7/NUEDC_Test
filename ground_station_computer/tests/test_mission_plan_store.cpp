@@ -7,7 +7,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
-#include "framework/storage/mission_plan_store.h"
+#include "h_problem/storage/h_mission_plan_store.h"
 
 class MissionPlanStoreTests : public QObject {
     Q_OBJECT

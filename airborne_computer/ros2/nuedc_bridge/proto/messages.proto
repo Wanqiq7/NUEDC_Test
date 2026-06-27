@@ -38,6 +38,10 @@ message TaskSummaryMessage {
 message Ack {
   bool success = 1;
   string message = 2;
+  string task_id = 3;
+  bool mission_loaded = 4;
+  bool mission_running = 5;
+  uint64 last_accepted_sequence = 6;
 }
 
 enum CommandType {

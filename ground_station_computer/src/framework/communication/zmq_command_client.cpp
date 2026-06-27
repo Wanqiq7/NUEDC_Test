@@ -3,10 +3,25 @@
 #include "messages.pb.h"
 
 #include <QByteArray>
+#include <QDateTime>
+
+#include <atomic>
 
 #include <zmq.hpp>
 
 namespace {
+
+constexpr int kSequenceCounterBits = 20;
+
+quint64 initialCommandSequence() {
+    const qint64 current_ms = QDateTime::currentMSecsSinceEpoch();
+    if (current_ms <= 0) {
+        return 0;
+    }
+    return static_cast<quint64>(current_ms) << kSequenceCounterBits;
+}
+
+std::atomic<quint64> global_command_sequence{initialCommandSequence()};
 
 CommandType toProtoCommandType(GroundControlCommandType command_type) {
     switch (command_type) {
@@ -51,6 +66,10 @@ CommandSendResult sendEnvelopeToEndpoint(const Envelope &envelope, const QString
 ZmqCommandClient::ZmqCommandClient(QString endpoint)
     : endpoint_(std::move(endpoint)) {}
 
+quint64 ZmqCommandClient::nextCommandSequence() {
+    return global_command_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
 CommandSendResult ZmqCommandClient::parseAck(const QByteArray &payload) {
     return EnvelopeCodec::parseAck(payload);
 }
@@ -58,8 +77,15 @@ CommandSendResult ZmqCommandClient::parseAck(const QByteArray &payload) {
 Envelope ZmqCommandClient::buildControlCommandEnvelope(
     GroundControlCommandType command_type,
     const QString &task_id) {
+    return buildControlCommandEnvelope(ZmqCommandClient::nextCommandSequence(), command_type, task_id);
+}
+
+Envelope ZmqCommandClient::buildControlCommandEnvelope(
+    quint64 sequence,
+    GroundControlCommandType command_type,
+    const QString &task_id) {
     Envelope envelope;
-    envelope.set_sequence(0);
+    envelope.set_sequence(sequence);
     auto *payload = envelope.mutable_control_command();
     payload->set_type(toProtoCommandType(command_type));
     payload->set_task_id(task_id.toStdString());

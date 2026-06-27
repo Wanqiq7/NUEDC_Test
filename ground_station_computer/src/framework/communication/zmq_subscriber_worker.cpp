@@ -1,13 +1,16 @@
 #include "framework/communication/zmq_subscriber_worker.h"
 
-#include "h_problem/mission/h_protocol_adapter.h"
+#include "competition_core/protocol/envelope_codec.h"
 #include "messages.pb.h"
 
-#include <QStringList>
 #include <zmq.hpp>
 
 ZmqSubscriberWorker::ZmqSubscriberWorker(QString endpoint, QObject *parent)
-    : QThread(parent), endpoint_(std::move(endpoint)) {}
+    : QThread(parent), endpoint_(std::move(endpoint)) {
+    qRegisterMetaType<competition::TaskPlan>("competition::TaskPlan");
+    qRegisterMetaType<competition::TaskEvent>("competition::TaskEvent");
+    qRegisterMetaType<competition::TaskSummary>("competition::TaskSummary");
+}
 
 void ZmqSubscriberWorker::run() {
     try {
@@ -33,60 +36,38 @@ void ZmqSubscriberWorker::run() {
             switch (envelope.payload_case()) {
             case Envelope::kTaskPlan:
             case Envelope::kMissionLoad: {
-                HGridConfigData config;
                 QString error_message;
                 const TaskPlanMessage &message = envelope.payload_case() == Envelope::kTaskPlan
                     ? envelope.task_plan()
                     : envelope.mission_load();
-                if (!HProtocolAdapter::decodeGridConfig(message, &config, &error_message)) {
+                const auto plan = competition::taskPlanFromMessage(message, &error_message);
+                if (!plan.has_value()) {
                     emit errorOccurred(error_message);
                     break;
                 }
-                emit gridConfigReceived(
-                    config.case_id,
-                    config.start_cell,
-                    config.no_fly_cells,
-                    config.route,
-                    config.terminal_cell,
-                    config.landing_enabled,
-                    config.descent_angle_deg,
-                    config.takeoff_anchor_x_cm,
-                    config.takeoff_anchor_y_cm);
+                emit taskPlanReceived(plan.value());
                 break;
             }
             case Envelope::kTaskEvent: {
                 const auto &event = envelope.task_event();
-                QString error_message;
-                if (QString::fromStdString(event.event_type()) == "detection") {
-                    HDetectionData detection;
-                    if (!HProtocolAdapter::decodeDetection(event, &detection, &error_message)) {
-                        emit errorOccurred(error_message);
-                        break;
-                    }
-                    emit detectionReceived(
-                        detection.cell_code,
-                        detection.animal_name,
-                        detection.count,
-                        envelope.timestamp_ms());
-                    break;
-                }
-
-                HTelemetryData telemetry;
-                if (!HProtocolAdapter::decodeTelemetry(event, &telemetry, &error_message)) {
-                    emit errorOccurred(error_message);
-                    break;
-                }
-                emit telemetryReceived(telemetry.current_cell, telemetry.step_index, telemetry.visited_cells);
+                emit taskEventReceived(competition::TaskEvent{
+                    QString::fromStdString(event.task_id()),
+                    QString::fromStdString(event.event_type()),
+                    event.sequence_index(),
+                    QString::fromStdString(event.waypoint_id()),
+                    QString::fromStdString(event.payload_json()),
+                }, envelope.timestamp_ms());
                 break;
             }
             case Envelope::kTaskSummary: {
-                HSummaryData summary;
-                QString error_message;
-                if (!HProtocolAdapter::decodeSummary(envelope.task_summary(), &summary, &error_message)) {
-                    emit errorOccurred(error_message);
-                    break;
-                }
-                emit summaryReceived(summary.totals, summary.visited_cells);
+                const auto &summary = envelope.task_summary();
+                emit taskSummaryReceived(competition::TaskSummary{
+                    QString::fromStdString(summary.task_id()),
+                    QString::fromStdString(summary.task_type()),
+                    summary.success(),
+                    summary.visited_waypoints(),
+                    QString::fromStdString(summary.payload_json()),
+                });
                 break;
             }
             case Envelope::PAYLOAD_NOT_SET:

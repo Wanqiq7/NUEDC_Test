@@ -113,11 +113,14 @@ Envelope buildTaskPlanEnvelope(quint64 sequence, const TaskPlan &plan) {
     return envelope;
 }
 
-Envelope buildMissionLoadEnvelope(const TaskPlan &plan) {
-    Envelope envelope;
-    envelope.set_sequence(0);
+Envelope buildMissionLoadEnvelope(quint64 sequence, const TaskPlan &plan) {
+    Envelope envelope = newEnvelope(sequence);
     *envelope.mutable_mission_load() = taskPlanToMessage(plan);
     return envelope;
+}
+
+Envelope buildMissionLoadEnvelope(const TaskPlan &plan) {
+    return buildMissionLoadEnvelope(0, plan);
 }
 
 Envelope buildTaskEventEnvelope(quint64 sequence, const TaskEvent &event) {
@@ -133,16 +136,44 @@ Envelope buildTaskSummaryEnvelope(quint64 sequence, const TaskSummary &summary) 
 }
 
 Envelope buildAckEnvelope(bool success, const QString &message) {
-    Envelope envelope;
-    envelope.set_sequence(0);
+    return buildAckEnvelope(AckResult{success, message});
+}
+
+Envelope buildAckEnvelope(const AckResult &result) {
+    Envelope envelope = newEnvelope(0);
     auto *payload = envelope.mutable_ack();
-    payload->set_success(success);
-    payload->set_message(message.toStdString());
+    payload->set_success(result.success);
+    payload->set_message(result.message.toStdString());
+    payload->set_task_id(result.task_id.toStdString());
+    payload->set_mission_loaded(result.mission_loaded);
+    payload->set_mission_running(result.mission_running);
+    payload->set_last_accepted_sequence(result.last_accepted_sequence);
     return envelope;
 }
 
+Envelope buildAckEnvelope(const AckResult &result, const CommandState &state) {
+    AckResult stateful_result = result;
+    const TaskPlan plan = state.activeTaskPlan();
+    stateful_result.task_id = plan.task_id;
+    stateful_result.mission_loaded = state.isMissionLoaded();
+    stateful_result.mission_running = state.isStartRequested() && !state.isStopRequested();
+    stateful_result.last_accepted_sequence = state.lastAcceptedSequence();
+    return buildAckEnvelope(stateful_result);
+}
+
 QByteArray buildAckBytes(bool success, const QString &message) {
-    const Envelope envelope = buildAckEnvelope(success, message);
+    return buildAckBytes(AckResult{success, message});
+}
+
+QByteArray buildAckBytes(const AckResult &result) {
+    const Envelope envelope = buildAckEnvelope(result);
+    std::string bytes;
+    envelope.SerializeToString(&bytes);
+    return QByteArray(bytes.data(), static_cast<qsizetype>(bytes.size()));
+}
+
+QByteArray buildAckBytes(const AckResult &result, const CommandState *state) {
+    const Envelope envelope = (state == nullptr) ? buildAckEnvelope(result) : buildAckEnvelope(result, *state);
     std::string bytes;
     envelope.SerializeToString(&bytes);
     return QByteArray(bytes.data(), static_cast<qsizetype>(bytes.size()));

@@ -34,7 +34,7 @@ MissionCommandService &MissionCommandService::operator=(const MissionCommandServ
 }
 
 CommandSendResult MissionCommandService::sendMissionPlan(const MissionPlanData &plan) {
-    return reliable_client_.sendReliable(MissionLoadAdapter::buildMissionLoadEnvelope(plan));
+    return reliable_client_.sendReliable(MissionLoadAdapter::buildMissionLoadEnvelope(ZmqCommandClient::nextCommandSequence(), plan));
 }
 
 CommandSendResult MissionCommandService::sendControlCommand(

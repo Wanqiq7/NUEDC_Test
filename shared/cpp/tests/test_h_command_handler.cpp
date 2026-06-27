@@ -2,6 +2,9 @@
 
 #include <QDir>
 #include <QTemporaryDir>
+#include <QThread>
+#include <QVector>
+#include <atomic>
 
 #include "h_problem_core/protocol/command_handler.h"
 #include "h_problem_core/protocol/envelope_builder.h"
@@ -31,6 +34,9 @@ class HCommandHandlerTests : public QObject {
 private slots:
     void storesMissionLoadAndMarksLoaded();
     void handlesStartStopPing();
+    void rejectsStaleControlCommandSequence();
+    void rejectsLowerSequenceAfterHigherConcurrentCommand();
+    void commandStateIsSafeForConcurrentCommandHandling();
     void rejectsUnsupportedPayload();
     void rejectsInvalidProtobufBytes();
 };
@@ -45,8 +51,8 @@ void HCommandHandlerTests::storesMissionLoadAndMarksLoaded() {
 
     QVERIFY(ack.success);
     QCOMPARE(ack.message, QString("task plan stored"));
-    QVERIFY(state.mission_loaded);
-    QCOMPARE(state.active_task_plan.task_id, QString("demo"));
+    QVERIFY(state.isMissionLoaded());
+    QCOMPARE(state.activeTaskPlan().task_id, QString("demo"));
     QVERIFY(QFile::exists(output_path));
 }
 
@@ -60,8 +66,8 @@ void HCommandHandlerTests::handlesStartStopPing() {
     const hcore::AckResult start_ack = hcore::handleEnvelopeCommand(start, QDir(dir.path()).filePath("plan.json"), &state);
     QVERIFY(start_ack.success);
     QCOMPARE(start_ack.message, QString("start accepted"));
-    QVERIFY(state.start_requested);
-    QVERIFY(!state.stop_requested);
+    QVERIFY(state.isStartRequested());
+    QVERIFY(!state.isStopRequested());
 
     Envelope ping;
     ping.mutable_control_command()->set_type(COMMAND_TYPE_PING);
@@ -74,7 +80,88 @@ void HCommandHandlerTests::handlesStartStopPing() {
     const hcore::AckResult stop_ack = hcore::handleEnvelopeCommand(stop, QDir(dir.path()).filePath("plan.json"), &state);
     QVERIFY(stop_ack.success);
     QCOMPARE(stop_ack.message, QString("stop accepted"));
-    QVERIFY(state.stop_requested);
+    QVERIFY(state.isStopRequested());
+}
+
+void HCommandHandlerTests::rejectsStaleControlCommandSequence() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    hcore::CommandState state;
+
+    Envelope start;
+    start.set_sequence(21);
+    start.mutable_control_command()->set_type(COMMAND_TYPE_START_MISSION);
+    const hcore::AckResult start_ack = hcore::handleEnvelopeCommand(start, QDir(dir.path()).filePath("plan.json"), &state);
+    QVERIFY(start_ack.success);
+    QCOMPARE(state.lastAcceptedSequence(), 21ULL);
+
+    Envelope stop;
+    stop.set_sequence(20);
+    stop.mutable_control_command()->set_type(COMMAND_TYPE_STOP_MISSION);
+    const hcore::AckResult stale_ack = hcore::handleEnvelopeCommand(stop, QDir(dir.path()).filePath("plan.json"), &state);
+    QVERIFY(!stale_ack.success);
+    QCOMPARE(stale_ack.message, QString("stale command"));
+    QVERIFY(!state.isStopRequested());
+    QCOMPARE(state.lastAcceptedSequence(), 21ULL);
+}
+
+void HCommandHandlerTests::rejectsLowerSequenceAfterHigherConcurrentCommand() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    hcore::CommandState state;
+
+    Envelope start;
+    start.set_sequence(30);
+    start.mutable_control_command()->set_type(COMMAND_TYPE_START_MISSION);
+    const hcore::AckResult start_ack = hcore::handleEnvelopeCommand(start, QDir(dir.path()).filePath("plan.json"), &state);
+    QVERIFY(start_ack.success);
+    QVERIFY(state.isStartRequested());
+    QCOMPARE(state.lastAcceptedSequence(), 30ULL);
+
+    Envelope stop;
+    stop.set_sequence(29);
+    stop.mutable_control_command()->set_type(COMMAND_TYPE_STOP_MISSION);
+    const hcore::AckResult stale_ack = hcore::handleEnvelopeCommand(stop, QDir(dir.path()).filePath("plan.json"), &state);
+    QVERIFY(!stale_ack.success);
+    QCOMPARE(stale_ack.message, QString("stale command"));
+    QVERIFY(!state.isStopRequested());
+    QCOMPARE(state.lastAcceptedSequence(), 30ULL);
+}
+void HCommandHandlerTests::commandStateIsSafeForConcurrentCommandHandling() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    hcore::CommandState state;
+    const QString output_path = QDir(dir.path()).filePath("plan.json");
+    Envelope start;
+    start.mutable_control_command()->set_type(COMMAND_TYPE_START_MISSION);
+    Envelope stop;
+    stop.mutable_control_command()->set_type(COMMAND_TYPE_STOP_MISSION);
+
+    std::atomic_bool failed{false};
+    QVector<QThread *> threads;
+    for (int thread_index = 0; thread_index < 4; ++thread_index) {
+        QThread *thread = QThread::create([&, thread_index]() {
+            for (int iteration = 0; iteration < 200; ++iteration) {
+                const Envelope &command = ((iteration + thread_index) % 2 == 0) ? start : stop;
+                const hcore::AckResult ack = hcore::handleEnvelopeCommand(command, output_path, &state);
+                if (!ack.success) {
+                    failed.store(true, std::memory_order_relaxed);
+                    return;
+                }
+                static_cast<void>(state.isStartRequested());
+                static_cast<void>(state.isStopRequested());
+            }
+        });
+        threads.append(thread);
+        thread->start();
+    }
+
+    for (QThread *thread : threads) {
+        QVERIFY(thread->wait(5000));
+        delete thread;
+    }
+    QVERIFY(!failed.load(std::memory_order_relaxed));
 }
 
 void HCommandHandlerTests::rejectsUnsupportedPayload() {

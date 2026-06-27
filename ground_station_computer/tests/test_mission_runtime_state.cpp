@@ -9,6 +9,9 @@ private slots:
     void disablesBothControlsWhenCommandSyncDisabled();
     void enablesExecuteOnlyWhenReadyAndNotRunning();
     void enablesStopOnlyWhenRunning();
+    void rejectsAckStateForDifferentTask();
+    void disablesExecuteWhenAckSaysMissionNotLoaded();
+    void formatsAckStateForStatusDisplay();
 };
 
 void MissionRuntimeStateTests::disablesBothControlsWhenCommandSyncDisabled() {
@@ -42,6 +45,55 @@ void MissionRuntimeStateTests::enablesStopOnlyWhenRunning() {
     });
     QVERIFY(!controls.can_execute);
     QVERIFY(controls.can_stop);
+}
+
+void MissionRuntimeStateTests::rejectsAckStateForDifferentTask() {
+    const MissionRuntimeControls controls = MissionRuntimeState::controlsFor(MissionRuntimeInputs{
+        true,
+        true,
+        true,
+        false,
+        "local-task",
+        "airborne-task",
+        true,
+        7,
+    });
+    QVERIFY(!controls.can_execute);
+    QVERIFY(!controls.can_stop);
+}
+
+void MissionRuntimeStateTests::disablesExecuteWhenAckSaysMissionNotLoaded() {
+    const MissionRuntimeControls controls = MissionRuntimeState::controlsFor(MissionRuntimeInputs{
+        true,
+        true,
+        true,
+        false,
+        "case-001",
+        "case-001",
+        false,
+        8,
+    });
+    QVERIFY(!controls.can_execute);
+    QVERIFY(!controls.can_stop);
+}
+
+void MissionRuntimeStateTests::formatsAckStateForStatusDisplay() {
+    const QString text = MissionRuntimeState::airborneStatusText(MissionRuntimeInputs{
+        true,
+        true,
+        true,
+        false,
+        "case-001",
+        "case-001",
+        true,
+        42,
+    });
+
+    QVERIFY(text.contains("在线"));
+    QVERIFY(text.contains("case-001"));
+    QVERIFY(text.contains("已加载"));
+    QVERIFY(text.contains("待执行"));
+    QVERIFY(text.contains("42"));
 }
 
 QTEST_MAIN(MissionRuntimeStateTests)

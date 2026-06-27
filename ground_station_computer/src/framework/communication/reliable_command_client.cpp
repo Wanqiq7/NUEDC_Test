@@ -39,6 +39,14 @@ CommandSendResult ReliableCommandClient::sendReliable(const Envelope &envelope) 
             markResult(last_result, envelope.payload_case() == Envelope::kMissionLoad);
             return last_result;
         }
+        if (isIdempotentSuccess(envelope, last_result)) {
+            last_result.ok = true;
+            if (last_result.message.isEmpty() || last_result.message == QString("stale command")) {
+                last_result.message = "command already accepted";
+            }
+            markResult(last_result, envelope.payload_case() == Envelope::kMissionLoad);
+            return last_result;
+        }
         if (attempt + 1 < policy_.max_attempts && policy_.retry_delay_ms > 0) {
             QThread::msleep(static_cast<unsigned long>(policy_.retry_delay_ms));
         }
@@ -50,6 +58,34 @@ CommandSendResult ReliableCommandClient::sendReliable(const Envelope &envelope) 
 
 CommandSendResult ReliableCommandClient::ping(const QString &task_id) {
     return sendReliable(ZmqCommandClient::buildControlCommandEnvelope(GroundControlCommandType::Ping, task_id));
+}
+
+bool ReliableCommandClient::isIdempotentSuccess(const Envelope &envelope, const CommandSendResult &result) const {
+    if (result.ok || envelope.sequence() == 0 || result.last_accepted_sequence < envelope.sequence()) {
+        return false;
+    }
+
+    switch (envelope.payload_case()) {
+    case Envelope::kMissionLoad:
+        return result.mission_loaded
+            && result.task_id == QString::fromStdString(envelope.mission_load().task_id());
+    case Envelope::kControlCommand:
+        if (!envelope.control_command().task_id().empty()
+            && !result.task_id.isEmpty()
+            && result.task_id != QString::fromStdString(envelope.control_command().task_id())) {
+            return false;
+        }
+        switch (envelope.control_command().type()) {
+        case COMMAND_TYPE_START_MISSION:
+            return result.mission_running;
+        case COMMAND_TYPE_STOP_MISSION:
+            return !result.mission_running;
+        default:
+            return false;
+        }
+    default:
+        return false;
+    }
 }
 
 CommandLinkStatus ReliableCommandClient::status() const {

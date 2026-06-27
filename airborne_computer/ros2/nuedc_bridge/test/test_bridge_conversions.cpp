@@ -5,6 +5,10 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <vision_msgs/msg/detection2_d_array.hpp>
 
+#include <cctype>
+#include <fstream>
+#include <sstream>
+
 namespace {
 
 nav_msgs::msg::Odometry makeOdometry() {
@@ -31,7 +35,42 @@ vision_msgs::msg::Detection2DArray makeDetections() {
     return array;
 }
 
+std::string readTextFile(const char *path) {
+    std::ifstream input(path);
+    std::ostringstream content;
+    content << input.rdbuf();
+    return content.str();
+}
+
+std::string normalizeProtoText(const std::string &text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    bool previous_was_space = false;
+    for (const unsigned char character : text) {
+        if (std::isspace(character) != 0) {
+            if (!previous_was_space) {
+                normalized.push_back(' ');
+                previous_was_space = true;
+            }
+            continue;
+        }
+        normalized.push_back(static_cast<char>(character));
+        previous_was_space = false;
+    }
+    return normalized;
+}
 } // namespace
+
+TEST(BridgeConversions, KeepsBridgeProtoInSyncWithSharedProto) {
+    ASSERT_NE(std::string(NUEDC_SHARED_PROTO_PATH), std::string(NUEDC_BRIDGE_PROTO_PATH));
+
+    const std::string shared_proto = readTextFile(NUEDC_SHARED_PROTO_PATH);
+    const std::string bridge_proto = readTextFile(NUEDC_BRIDGE_PROTO_PATH);
+
+    ASSERT_FALSE(shared_proto.empty());
+    ASSERT_FALSE(bridge_proto.empty());
+    EXPECT_EQ(normalizeProtoText(bridge_proto), normalizeProtoText(shared_proto));
+}
 
 TEST(BridgeConversions, ConvertsOdometryToTelemetryEvent) {
     const TaskEventMessage event = nuedc_bridge::odometryToTelemetryEvent(
@@ -52,11 +91,13 @@ TEST(BridgeConversions, ConvertsDetectionArrayToDetectionEvent) {
     const auto event = nuedc_bridge::detectionArrayToDetectionEvent(
         makeDetections(),
         "mission-1",
-        "odom");
+        "odom",
+        5);
 
     ASSERT_TRUE(event.has_value());
     EXPECT_EQ(event->task_id(), "mission-1");
     EXPECT_EQ(event->event_type(), "detection");
+    EXPECT_EQ(event->sequence_index(), 5u);
     EXPECT_EQ(event->waypoint_id(), "odom");
     EXPECT_NE(event->payload_json().find("\"animal_name\":\"rabbit\""), std::string::npos);
     EXPECT_NE(event->payload_json().find("\"count\":1"), std::string::npos);
@@ -67,7 +108,8 @@ TEST(BridgeConversions, IgnoresEmptyDetectionArray) {
     const auto event = nuedc_bridge::detectionArrayToDetectionEvent(
         vision_msgs::msg::Detection2DArray{},
         "mission-1",
-        "odom");
+        "odom",
+        6);
 
     EXPECT_FALSE(event.has_value());
 }
@@ -81,6 +123,20 @@ TEST(BridgeConversions, SerializesAckEnvelope) {
     ASSERT_EQ(parsed.payload_case(), Envelope::kAck);
     EXPECT_TRUE(parsed.ack().success());
     EXPECT_EQ(parsed.ack().message(), "pong");
+    EXPECT_GT(parsed.timestamp_ms(), 0);
+}
+
+TEST(BridgeConversions, SerializesStatefulAckEnvelope) {
+    const Envelope envelope = nuedc_bridge::buildAckEnvelope(true, "start accepted", "task-001", true, true, 42);
+
+    ASSERT_EQ(envelope.payload_case(), Envelope::kAck);
+    EXPECT_TRUE(envelope.ack().success());
+    EXPECT_EQ(envelope.ack().message(), "start accepted");
+    EXPECT_EQ(envelope.ack().task_id(), "task-001");
+    EXPECT_TRUE(envelope.ack().mission_loaded());
+    EXPECT_TRUE(envelope.ack().mission_running());
+    EXPECT_EQ(envelope.ack().last_accepted_sequence(), 42u);
+    EXPECT_GT(envelope.timestamp_ms(), 0);
 }
 
 TEST(BridgeConversions, ConvertsTaskPlanToCompatibleJsonWithEscaping) {

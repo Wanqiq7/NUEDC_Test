@@ -80,7 +80,8 @@ TaskEventMessage odometryToTelemetryEvent(
 std::optional<TaskEventMessage> detectionArrayToDetectionEvent(
     const vision_msgs::msg::Detection2DArray &message,
     const std::string &task_id,
-    const std::string &waypoint_id) {
+    const std::string &waypoint_id,
+    uint32_t sequence_index) {
     if (message.detections.empty()) {
         return std::nullopt;
     }
@@ -99,7 +100,7 @@ std::optional<TaskEventMessage> detectionArrayToDetectionEvent(
     TaskEventMessage event;
     event.set_task_id(task_id);
     event.set_event_type("detection");
-    event.set_sequence_index(0);
+    event.set_sequence_index(sequence_index);
     event.set_waypoint_id(waypoint_id);
 
     std::ostringstream payload;
@@ -124,11 +125,26 @@ Envelope buildTaskEventEnvelope(uint64_t sequence, const TaskEventMessage &event
 }
 
 Envelope buildAckEnvelope(bool success, const std::string &message) {
+    return buildAckEnvelope(success, message, "", false, false, 0);
+}
+
+Envelope buildAckEnvelope(
+    bool success,
+    const std::string &message,
+    const std::string &task_id,
+    bool mission_loaded,
+    bool mission_running,
+    uint64_t last_accepted_sequence) {
     Envelope envelope;
     envelope.set_sequence(0);
+    envelope.set_timestamp_ms(nowMs());
     auto *ack = envelope.mutable_ack();
     ack->set_success(success);
     ack->set_message(message);
+    ack->set_task_id(task_id);
+    ack->set_mission_loaded(mission_loaded);
+    ack->set_mission_running(mission_running);
+    ack->set_last_accepted_sequence(last_accepted_sequence);
     return envelope;
 }
 

@@ -37,7 +37,7 @@ void CommandServer::run() {
 
         const QByteArray payload(static_cast<const char *>(request.data()), static_cast<qsizetype>(request.size()));
         const competition::AckResult ack = competition::handleCommandBytes(payload, output_path_, state_);
-        const QByteArray reply = competition::buildAckBytes(ack.success, ack.message);
+        const QByteArray reply = competition::buildAckBytes(ack, state_);
         socket.send(zmq::buffer(reply.constData(), static_cast<size_t>(reply.size())), zmq::send_flags::none);
     }
 

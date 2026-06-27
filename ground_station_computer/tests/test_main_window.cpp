@@ -16,6 +16,7 @@
 
 #include <memory>
 
+#include "h_problem_core/protocol/envelope_builder.h"
 #include "framework/task/competition_task_adapter.h"
 #include "h_problem/rules/h_grid_mapper.h"
 #include "app/main_window.h"
@@ -53,6 +54,7 @@ private slots:
     void adapterFactoryListsDefaultProblemAdapter();
     void configuredAdapterUsesEnvironmentVariableAndReportsUnknownIds();
     void shellUsesCompetitionTaskAdapterBoundary();
+    void defaultAdapterConsumesCommandAckRuntimeState();
     void executionControlsExistAndAreDisabledInTestMode();
     void manualNoFlyFlowPersistsPlan();
 };
@@ -90,6 +92,19 @@ void MainWindowTests::shellUsesCompetitionTaskAdapterBoundary() {
     QCOMPARE(adapter->initialPlanningButtonText(), QString("设置禁飞区"));
 }
 
+
+void MainWindowTests::defaultAdapterConsumesCommandAckRuntimeState() {
+    std::unique_ptr<CompetitionTaskAdapter> adapter(createDefaultCompetitionTaskAdapter());
+    QVERIFY(adapter != nullptr);
+
+    adapter->applyCommandAck(CommandSendResult{true, "start accepted", "case-001", true, true, 88});
+    const MissionRuntimeInputs inputs = adapter->missionRuntimeInputs();
+
+    QCOMPARE(inputs.acknowledged_task_id, QString("case-001"));
+    QVERIFY(inputs.acknowledged_mission_loaded);
+    QVERIFY(inputs.mission_running);
+    QCOMPARE(inputs.last_accepted_sequence, 88ULL);
+}
 void MainWindowTests::executionControlsExistAndAreDisabledInTestMode() {
     MainWindow window(nullptr, false);
     window.show();
@@ -115,27 +130,12 @@ void MainWindowTests::manualNoFlyFlowPersistsPlan() {
     const QString plan_path = QDir(repo_root).filePath("runtime/active_mission_plan.json");
     QFile::remove(plan_path);
 
-    QStringList no_fly_cells = {"A4B3", "A5B3", "A6B3"};
-    QStringList route = {"A9B1", "A9B2", "A8B2"};
     const QStringList selected_cells = {"A1B2", "A2B2", "A3B2"};
 
     {
         MainWindow window(nullptr, false);
         window.show();
         QTest::qWait(50);
-        QMetaObject::invokeMethod(
-            &window,
-            "handleGridConfig",
-            Qt::DirectConnection,
-            Q_ARG(QString, "wildlife-demo"),
-            Q_ARG(QString, "A9B1"),
-            Q_ARG(QStringList, no_fly_cells),
-            Q_ARG(QStringList, route),
-            Q_ARG(QString, "A8B2"),
-            Q_ARG(bool, true),
-            Q_ARG(double, 45.0),
-            Q_ARG(double, 450.0),
-            Q_ARG(double, 350.0));
 
         auto *planning_button = window.findChild<QPushButton *>("PlanningButton");
         QVERIFY(planning_button != nullptr);
@@ -172,3 +172,4 @@ void MainWindowTests::manualNoFlyFlowPersistsPlan() {
 
 QTEST_MAIN(MainWindowTests)
 #include "test_main_window.moc"
+
