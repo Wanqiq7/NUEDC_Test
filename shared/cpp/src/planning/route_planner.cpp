@@ -696,32 +696,50 @@ QStringList planRoute(
     MissionMode mission_mode,
     std::optional<LandingProfile> landing_profile,
     QString *error_message) {
-    if (mission_mode == MissionMode::TimeOptimalOpen) {
-        if (!landing_profile.has_value()) {
-            if (error_message != nullptr) {
-                *error_message = "landing_profile is required when mission_mode is time_optimal_open";
-            }
-            return {};
-        }
-        return planTimeOptimalOpenRoute(width, height, start_cell, no_fly_cells, landing_profile.value(), error_message);
+    const RoutePlanResult result = planRoute(RouteRequest{
+        width,
+        height,
+        start_cell,
+        no_fly_cells,
+        end_cell,
+        require_cycle,
+        mission_mode,
+        landing_profile,
+    });
+    if (!result.ok && error_message != nullptr) {
+        *error_message = result.failure_reason;
+    } else if (error_message != nullptr) {
+        error_message->clear();
     }
-
-    return planLegacyRoute(width, height, start_cell, no_fly_cells, end_cell, require_cycle, error_message);
+    return result.route;
 }
 
 RoutePlanResult planRoute(const RouteRequest &request) {
     RoutePlanResult result;
     QString error_message;
-    result.route = planRoute(
-        request.width,
-        request.height,
-        request.start_cell,
-        request.no_fly_cells,
-        request.end_cell,
-        request.require_cycle,
-        request.mission_mode,
-        request.landing_profile,
-        &error_message);
+
+    if (request.mission_mode == MissionMode::TimeOptimalOpen) {
+        if (!request.landing_profile.has_value()) {
+            result.failure_reason = "landing_profile is required when mission_mode is time_optimal_open";
+            return result;
+        }
+        result.route = planTimeOptimalOpenRoute(
+            request.width,
+            request.height,
+            request.start_cell,
+            request.no_fly_cells,
+            request.landing_profile.value(),
+            &error_message);
+    } else {
+        result.route = planLegacyRoute(
+            request.width,
+            request.height,
+            request.start_cell,
+            request.no_fly_cells,
+            request.end_cell,
+            request.require_cycle,
+            &error_message);
+    }
 
     if (result.route.isEmpty()) {
         result.ok = false;

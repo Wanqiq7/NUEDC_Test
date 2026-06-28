@@ -15,9 +15,4 @@ std::optional<SimulatedTaskStream> simulateTaskStream(
     std::optional<MissionPlan> mission_plan = std::nullopt,
     QString *error_message = nullptr);
 
-QVector<SimMessage> simulateMessages(
-    const CaseConfig &case_config,
-    std::optional<MissionPlan> mission_plan = std::nullopt,
-    QString *error_message = nullptr);
-
 } // namespace hcore

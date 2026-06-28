@@ -194,20 +194,6 @@ Envelope buildSummaryEnvelope(quint64 sequence, const QMap<QString, quint32> &to
     return buildTaskSummaryEnvelope(sequence, summary);
 }
 
-Envelope buildEnvelope(quint64 sequence, const SimMessage &message) {
-    switch (message.type) {
-    case SimMessageType::Config:
-        return buildGridConfigEnvelope(sequence, message.mission_plan);
-    case SimMessageType::Telemetry:
-        return buildTelemetryEnvelope(sequence, message.cell, message.step_index, message.visited_cells);
-    case SimMessageType::Detection:
-        return buildDetectionEnvelope(sequence, message.cell, message.animal_name, message.count);
-    case SimMessageType::Summary:
-        return buildSummaryEnvelope(sequence, message.totals, message.visited_cells);
-    }
-    return buildAckEnvelope(false, "unsupported message type");
-}
-
 std::optional<MissionPlan> missionPlanFromGridConfig(const TaskPlanMessage &config, QString *error_message) {
     const auto task_plan = taskPlanFromMessage(config, error_message);
     if (!task_plan.has_value()) {

@@ -55,25 +55,6 @@ struct MissionPlan {
     std::optional<double> takeoff_anchor_y_cm;
 };
 
-enum class SimMessageType {
-    Config,
-    Telemetry,
-    Detection,
-    Summary,
-};
-
-struct SimMessage {
-    SimMessageType type = SimMessageType::Config;
-    MissionPlan mission_plan;
-    QString cell;
-    QString animal_name;
-    quint32 count = 0;
-    quint32 step_index = 0;
-    quint32 visited_cells = 0;
-    int tick_interval_ms = 0;
-    QMap<QString, quint32> totals;
-};
-
 using AckResult = competition::AckResult;
 using CommandState = competition::CommandState;
 

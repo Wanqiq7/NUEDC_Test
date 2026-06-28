@@ -20,28 +20,9 @@ class HSimulatorTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void emitsDetectionAndSummaryForAnimals();
     void emitsGenericTaskEventStream();
     void prefersProvidedMissionPlan();
 };
-
-void HSimulatorTests::emitsDetectionAndSummaryForAnimals() {
-    QString error;
-    const QVector<hcore::SimMessage> messages = hcore::simulateMessages(makeCase(), {}, &error);
-    QVERIFY2(!messages.isEmpty(), qPrintable(error));
-
-    int detection_count = 0;
-    for (const hcore::SimMessage &message : messages) {
-        if (message.type == hcore::SimMessageType::Detection) {
-            ++detection_count;
-        }
-    }
-
-    QCOMPARE(detection_count, 2);
-    QCOMPARE(messages.last().type, hcore::SimMessageType::Summary);
-    QCOMPARE(messages.last().totals.value("elephant"), 1u);
-    QCOMPARE(messages.last().totals.value("monkey"), 2u);
-}
 
 void HSimulatorTests::emitsGenericTaskEventStream() {
     QString error;
@@ -63,6 +44,8 @@ void HSimulatorTests::emitsGenericTaskEventStream() {
     QVERIFY(stream->summary.success);
     QCOMPARE(stream->summary.task_id, QString("plan-test"));
     QVERIFY(stream->summary.payload_json.contains("totals"));
+    QVERIFY(stream->summary.payload_json.contains("elephant"));
+    QVERIFY(stream->summary.payload_json.contains("monkey"));
 }
 
 void HSimulatorTests::prefersProvidedMissionPlan() {
@@ -74,15 +57,15 @@ void HSimulatorTests::prefersProvidedMissionPlan() {
     plan.terminal_cell = "A3B1";
 
     QString error;
-    const QVector<hcore::SimMessage> messages = hcore::simulateMessages(makeCase(), plan, &error);
-    QVERIFY2(!messages.isEmpty(), qPrintable(error));
-    QCOMPARE(messages.first().type, hcore::SimMessageType::Config);
-    QCOMPARE(messages.first().mission_plan.route, plan.route);
+    const auto stream = hcore::simulateTaskStream(makeCase(), plan, &error);
+    QVERIFY2(stream.has_value(), qPrintable(error));
+    QCOMPARE(stream->plan.task_id, QString("plan-test"));
+    QCOMPARE(stream->plan.waypoints.size(), plan.route.size());
 
     QStringList telemetry_cells;
-    for (const hcore::SimMessage &message : messages) {
-        if (message.type == hcore::SimMessageType::Telemetry) {
-            telemetry_cells.append(message.cell);
+    for (const competition::TaskEvent &event : stream->events) {
+        if (event.event_type == "telemetry") {
+            telemetry_cells.append(event.waypoint_id);
         }
     }
     QCOMPARE(telemetry_cells, plan.route);

@@ -1,6 +1,6 @@
 # Canonical TaskPlan Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make `competition::TaskPlan` the canonical persisted and transmitted mission model while keeping H problem compatibility at a thin conversion seam.
 
@@ -30,7 +30,7 @@
 - Consumes: `hcore::loadMissionPlan(const QString &, QString *)`
 - Produces: compatibility behavior where H store writes canonical `TaskPlan` JSON and still reads it back as `hcore::MissionPlan`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `shared/cpp/tests/test_h_mission_plan_store.cpp`, change `storesReceivedMissionPlan()` so it expects canonical `TaskPlan` JSON:
 
@@ -88,7 +88,7 @@ void HMissionPlanStoreTests::readsLegacyMissionPlanJsonDuringMigration() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -99,7 +99,7 @@ cmake --build build --target test_h_mission_plan_store
 
 Expected: FAIL in `storesReceivedMissionPlan()` because the current file writes `message_type: "config"` and no `waypoints`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `shared/cpp/src/mission/mission_plan_store.cpp`, include the H protocol conversion header:
 
@@ -141,7 +141,7 @@ std::optional<MissionPlan> loadMissionPlan(const QString &path, QString *error_m
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -163,7 +163,7 @@ Expected: PASS for all H mission plan store tests.
 - Consumes: `hcore::missionPlanFromTaskPlan(const competition::TaskPlan &, QString *)`
 - Produces: route/no-fly/landing metadata round-trip through canonical `TaskPlan`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `shared/cpp/tests/test_h_envelope_builder.cpp`, add a test that round-trips landing and no-fly metadata through `competition::TaskPlan`:
 
@@ -206,7 +206,7 @@ void HEnvelopeBuilderTests::roundTripsMissionPlanThroughCanonicalTaskPlan() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -217,7 +217,7 @@ cmake --build build --target test_h_envelope_builder
 
 Expected: If the slot is not declared or metadata is incomplete, FAIL. If it already passes, add one assertion for `task_plan.metadata_json` containing `terminal_cell` and rerun to verify coverage.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 If the test fails because a metadata field is missing, update `taskPlanFromMissionPlan()` / `missionPlanFromTaskPlan()` in `shared/cpp/src/protocol/envelope_builder.cpp` so these fields round-trip:
 
@@ -229,7 +229,7 @@ metadata["takeoff_anchor_x_cm"] = plan.takeoff_anchor_x_cm.has_value() ? QJsonVa
 metadata["takeoff_anchor_y_cm"] = plan.takeoff_anchor_y_cm.has_value() ? QJsonValue(plan.takeoff_anchor_y_cm.value()) : QJsonValue::Null;
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -251,7 +251,7 @@ Expected: PASS.
 - Consumes: completed Tasks 1-2 behavior
 - Produces: documented architecture rule that persisted runtime mission plans are canonical `competition::TaskPlan`
 
-- [ ] **Step 1: Write the failing documentation check**
+- [x] **Step 1: Write the failing documentation check**
 
 Add a focused assertion to `ground_station_computer/tests/test_architecture_boundaries.cpp` or `shared/cpp/tests/test_task_ports.cpp` that checks the repository documentation mentions canonical `TaskPlan` storage:
 
@@ -265,7 +265,7 @@ Use `QFile` to read `docs/framework_architecture.md` and verify it contains:
 QVERIFY(contents.contains("运行时任务计划持久化统一使用 competition::TaskPlan"));
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -276,7 +276,7 @@ cmake --build build --target test_architecture_boundaries
 
 Expected: FAIL because the exact rule is not documented yet.
 
-- [ ] **Step 3: Update docs**
+- [x] **Step 3: Update docs**
 
 In `docs/framework_architecture.md`, add this line under `competition_core`:
 
@@ -296,7 +296,7 @@ In `shared/cpp/README.md`, add a short note:
 运行时任务计划以 `competition::TaskPlan` 作为唯一规范模型；各题目核心可保留内部规划结构，但持久化和协议传输必须通过通用模型。
 ```
 
-- [ ] **Step 4: Run documentation check to verify it passes**
+- [x] **Step 4: Run documentation check to verify it passes**
 
 Run:
 
@@ -316,7 +316,7 @@ Expected: PASS.
 - Consumes: Tasks 1-3
 - Produces: verified migration state
 
-- [ ] **Step 1: Run affected tests**
+- [x] **Step 1: Run affected tests**
 
 Run:
 
@@ -330,7 +330,7 @@ cmake --build build --target test_h_mission_plan_store test_h_envelope_builder t
 
 Expected: all PASS.
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 Run:
 
@@ -341,7 +341,7 @@ QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
 
 Expected: build exit 0 and ctest reports 0 failed tests.
 
-- [ ] **Step 3: Inspect architectural guardrails**
+- [x] **Step 3: Inspect architectural guardrails**
 
 Run:
 
@@ -359,3 +359,9 @@ Expected: H compatibility functions remain only in `h_problem_core`; `competitio
 - Spec coverage: The plan covers canonical `TaskPlan` storage, H compatibility, docs, and verification. It does not implement RouteRequest, command FSM, JSON codec consolidation, or simulation event stream; those are intentionally separate follow-up plans.
 - Placeholder scan: No TBD/TODO/later placeholders remain.
 - Type consistency: The plan uses existing `hcore::MissionPlan`, `competition::TaskPlan`, `taskPlanFromMissionPlan()`, `missionPlanFromTaskPlan()`, `storeMissionPlan()`, and `loadMissionPlan()` names consistently.
+
+## Execution Status
+
+- 2026-06-28: 已落地。`hcore::storeMissionPlan()` 写入 canonical `competition::TaskPlan` JSON，`hcore::loadMissionPlan()` 优先读取 canonical `TaskPlan` 并兼容 legacy H JSON。
+- 2026-06-28: 已补充 `TaskPlan` / H `MissionPlan` 往返测试、legacy 读取迁移测试和架构护栏文档测试。
+- 2026-06-28: 全量构建通过；全量 `ctest` 在当前沙箱内仅 `test_zmq_subscriber_worker` 因 ZeroMQ `ip_resolver.cpp:542 不允许的操作` 失败，其余测试通过。

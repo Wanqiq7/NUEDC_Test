@@ -27,7 +27,6 @@ Envelope buildMissionLoadEnvelope(const MissionPlan &plan);
 Envelope buildTelemetryEnvelope(quint64 sequence, const QString &cell, quint32 step_index, quint32 visited_cells);
 Envelope buildDetectionEnvelope(quint64 sequence, const QString &cell, const QString &animal_name, quint32 count);
 Envelope buildSummaryEnvelope(quint64 sequence, const QMap<QString, quint32> &totals, quint32 visited_cells);
-Envelope buildEnvelope(quint64 sequence, const SimMessage &message);
 std::optional<MissionPlan> missionPlanFromGridConfig(const TaskPlanMessage &config, QString *error_message = nullptr);
 
 } // namespace hcore

@@ -10,10 +10,10 @@
 - `include/competition_core/task/`：通用任务模型，例如 `TaskDefinition`、`TaskPlan`、`TaskEvent`、`TaskSummary`。
 - `include/competition_core/mission/`：通用 `TaskPlan` JSON 读写与校验。
 - `include/competition_core/protocol/`：通用 `Envelope` codec 与 `MissionLoad` / 控制命令处理。
-- `common/`：H 题兼容数据模型，例如 `CaseConfig`、`MissionPlan`、`SimMessage`。
+- `common/`：H 题兼容数据模型，例如 `CaseConfig`、`MissionPlan`。
 - `planning/`：航线规划、方格几何、路线代价和降落终端区域计算。
 - `mission/`：案例 JSON 解析、H 题任务计划生成、旧 `MissionPlan` 兼容读取与校验。
-- `protocol/`：H 题 `MissionPlan` / `SimMessage` 到通用 `TaskPlan` / `TaskEvent` / `TaskSummary` 的转换。
+- `protocol/`：H 题 `MissionPlan` 到通用 `TaskPlan` 的转换，以及 H 题事件 payload 构造。
 - `runtime/`：按 H 题任务路线生成通用任务事件。
 
 新增跨题共享逻辑优先放入 `include/competition_core/`；只有 H 题专有兼容逻辑才继续放入 `include/h_problem_core/` 和 `src/<layer>/`。
