@@ -83,6 +83,34 @@ AckResult applyCommandEnvelope(const Envelope &envelope, CommandState *state) {
     return state_machine.apply(envelope);
 }
 
+bool isCommandAlreadyAccepted(const Envelope &envelope, const AckResult &result) {
+    if (result.success || envelope.sequence() == 0 || result.last_accepted_sequence < envelope.sequence()) {
+        return false;
+    }
+
+    switch (envelope.payload_case()) {
+    case Envelope::kMissionLoad:
+        return result.mission_loaded
+            && result.task_id == QString::fromStdString(envelope.mission_load().task_id());
+    case Envelope::kControlCommand:
+        if (!envelope.control_command().task_id().empty()
+            && !result.task_id.isEmpty()
+            && result.task_id != QString::fromStdString(envelope.control_command().task_id())) {
+            return false;
+        }
+        switch (envelope.control_command().type()) {
+        case COMMAND_TYPE_START_MISSION:
+            return result.mission_running;
+        case COMMAND_TYPE_STOP_MISSION:
+            return !result.mission_running;
+        default:
+            return false;
+        }
+    default:
+        return false;
+    }
+}
+
 AckResult handleEnvelopeCommand(const Envelope &envelope, const QString &output_path, CommandState *state) {
     QMutexLocker<QMutex> command_lock(state != nullptr ? state->commandMutex() : nullptr);
 

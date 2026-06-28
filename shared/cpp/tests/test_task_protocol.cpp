@@ -47,6 +47,8 @@ private slots:
     void storesGenericMissionLoad();
     void commandStateMachineRejectsStaleStartWithoutMutatingState();
     void commandStateMachineAcceptsStopAfterStart();
+    void commandSemanticsClassifiesAcceptedStaleStartAck();
+    void commandSemanticsRejectsWrongStateStaleStartAck();
     void buildsMissionLoadWithExplicitSequence();
     void rejectsStaleMissionLoadSequence();
     void buildsAckWithRuntimeState();
@@ -144,6 +146,42 @@ void TaskProtocolTests::commandStateMachineAcceptsStopAfterStart() {
     QVERIFY(state.isStartRequested());
     QVERIFY(state.isStopRequested());
     QCOMPARE(state.lastAcceptedSequence(), 14ULL);
+}
+
+void TaskProtocolTests::commandSemanticsClassifiesAcceptedStaleStartAck() {
+    Envelope start;
+    start.set_sequence(21);
+    start.mutable_control_command()->set_type(COMMAND_TYPE_START_MISSION);
+    start.mutable_control_command()->set_task_id("task-demo");
+
+    const competition::AckResult stale_ack{
+        false,
+        "stale command",
+        "task-demo",
+        true,
+        true,
+        21,
+    };
+
+    QVERIFY(competition::isCommandAlreadyAccepted(start, stale_ack));
+}
+
+void TaskProtocolTests::commandSemanticsRejectsWrongStateStaleStartAck() {
+    Envelope start;
+    start.set_sequence(22);
+    start.mutable_control_command()->set_type(COMMAND_TYPE_START_MISSION);
+    start.mutable_control_command()->set_task_id("task-demo");
+
+    const competition::AckResult stale_ack{
+        false,
+        "stale command",
+        "task-demo",
+        true,
+        false,
+        22,
+    };
+
+    QVERIFY(!competition::isCommandAlreadyAccepted(start, stale_ack));
 }
 
 void TaskProtocolTests::buildsMissionLoadWithExplicitSequence() {

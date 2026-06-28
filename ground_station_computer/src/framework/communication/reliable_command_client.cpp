@@ -1,10 +1,26 @@
 #include "framework/communication/reliable_command_client.h"
 
+#include "competition_core/protocol/command_handler.h"
 #include "messages.pb.h"
 
 #include <QThread>
 
 #include <utility>
+
+namespace {
+
+competition::AckResult toAckResult(const CommandSendResult &result) {
+    return competition::AckResult{
+        result.ok,
+        result.message,
+        result.task_id,
+        result.mission_loaded,
+        result.mission_running,
+        result.last_accepted_sequence,
+    };
+}
+
+} // namespace
 
 ZmqCommandTransport::ZmqCommandTransport(ZmqCommandClient client)
     : client_(std::move(client)) {}
@@ -39,7 +55,7 @@ CommandSendResult ReliableCommandClient::sendReliable(const Envelope &envelope) 
             markResult(last_result, envelope.payload_case() == Envelope::kMissionLoad);
             return last_result;
         }
-        if (isIdempotentSuccess(envelope, last_result)) {
+        if (competition::isCommandAlreadyAccepted(envelope, toAckResult(last_result))) {
             last_result.ok = true;
             if (last_result.message.isEmpty() || last_result.message == QString("stale command")) {
                 last_result.message = "command already accepted";
@@ -58,34 +74,6 @@ CommandSendResult ReliableCommandClient::sendReliable(const Envelope &envelope) 
 
 CommandSendResult ReliableCommandClient::ping(const QString &task_id) {
     return sendReliable(ZmqCommandClient::buildControlCommandEnvelope(GroundControlCommandType::Ping, task_id));
-}
-
-bool ReliableCommandClient::isIdempotentSuccess(const Envelope &envelope, const CommandSendResult &result) const {
-    if (result.ok || envelope.sequence() == 0 || result.last_accepted_sequence < envelope.sequence()) {
-        return false;
-    }
-
-    switch (envelope.payload_case()) {
-    case Envelope::kMissionLoad:
-        return result.mission_loaded
-            && result.task_id == QString::fromStdString(envelope.mission_load().task_id());
-    case Envelope::kControlCommand:
-        if (!envelope.control_command().task_id().empty()
-            && !result.task_id.isEmpty()
-            && result.task_id != QString::fromStdString(envelope.control_command().task_id())) {
-            return false;
-        }
-        switch (envelope.control_command().type()) {
-        case COMMAND_TYPE_START_MISSION:
-            return result.mission_running;
-        case COMMAND_TYPE_STOP_MISSION:
-            return !result.mission_running;
-        default:
-            return false;
-        }
-    default:
-        return false;
-    }
 }
 
 CommandLinkStatus ReliableCommandClient::status() const {

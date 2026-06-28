@@ -19,6 +19,7 @@ private:
 };
 
 AckResult applyCommandEnvelope(const Envelope &envelope, CommandState *state);
+bool isCommandAlreadyAccepted(const Envelope &envelope, const AckResult &result);
 AckResult handleEnvelopeCommand(const Envelope &envelope, const QString &output_path, CommandState *state);
 AckResult handleCommandBytes(const QByteArray &payload, const QString &output_path, CommandState *state);
 
