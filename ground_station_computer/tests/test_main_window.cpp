@@ -56,6 +56,7 @@ private slots:
     void shellUsesCompetitionTaskAdapterBoundary();
     void defaultAdapterConsumesCommandAckRuntimeState();
     void executionControlsExistAndAreDisabledInTestMode();
+    void taskMapExpandsInsideLargeShellWindow();
     void manualNoFlyFlowPersistsPlan();
 };
 
@@ -125,6 +126,20 @@ void MainWindowTests::executionControlsExistAndAreDisabledInTestMode() {
     QVERIFY(airborne_status->text().contains("测试模式"));
 }
 
+void MainWindowTests::taskMapExpandsInsideLargeShellWindow() {
+    MainWindow window(nullptr, false);
+    window.resize(1840, 1040);
+    window.show();
+    QTest::qWait(50);
+
+    auto *view = window.findChild<QGraphicsView *>("TaskView");
+    QVERIFY(view != nullptr);
+    QVERIFY(view->viewport()->width() > 900);
+
+    const QRectF mapped_scene = view->mapToScene(view->viewport()->rect()).boundingRect();
+    QVERIFY(mapped_scene.width() < 700.0);
+}
+
 void MainWindowTests::manualNoFlyFlowPersistsPlan() {
     const QString repo_root = findRepositoryRoot();
     const QString plan_path = QDir(repo_root).filePath("runtime/active_mission_plan.json");
@@ -172,4 +187,3 @@ void MainWindowTests::manualNoFlyFlowPersistsPlan() {
 
 QTEST_MAIN(MainWindowTests)
 #include "test_main_window.moc"
-

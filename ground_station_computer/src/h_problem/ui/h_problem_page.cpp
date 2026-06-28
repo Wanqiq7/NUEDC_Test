@@ -44,6 +44,37 @@ const QString &repositoryRootPath() {
 
 constexpr int kMaxDetectionListItems = 500;
 
+class AutoFitGraphicsView final : public QGraphicsView {
+public:
+    explicit AutoFitGraphicsView(QGraphicsScene *scene, QWidget *parent = nullptr)
+        : QGraphicsView(scene, parent) {
+        setAlignment(Qt::AlignCenter);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override {
+        QGraphicsView::resizeEvent(event);
+        fitSceneToViewport();
+    }
+
+    void showEvent(QShowEvent *event) override {
+        QGraphicsView::showEvent(event);
+        fitSceneToViewport();
+    }
+
+private:
+    void fitSceneToViewport() {
+        if (scene() == nullptr || scene()->sceneRect().isEmpty()) {
+            return;
+        }
+        resetTransform();
+        fitInView(scene()->sceneRect(), Qt::KeepAspectRatio);
+    }
+};
+
 }
 
 GridScene *HProblemPage::createGridScene(QObject *parent) {
@@ -63,7 +94,7 @@ HProblemTaskAdapter::HProblemTaskAdapter()
 
 QWidget *HProblemTaskAdapter::createTaskView(QWidget *parent) {
     grid_scene_ = HProblemPage::createGridScene(parent);
-    auto *view = new QGraphicsView(grid_scene_, parent);
+    auto *view = new AutoFitGraphicsView(grid_scene_, parent);
     view->setObjectName("TaskView");
     view->setRenderHints(QPainter::Antialiasing);
     view->setFrameShape(QFrame::NoFrame);
@@ -655,7 +686,6 @@ CompetitionTaskAdapter *createConfiguredCompetitionTaskAdapter(QString *error_me
 CompetitionTaskAdapter *createDefaultCompetitionTaskAdapter() {
     return createCompetitionTaskAdapter(QStringLiteral("h_problem"));
 }
-
 
 
 
