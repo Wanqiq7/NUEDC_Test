@@ -44,6 +44,7 @@ public:
     CommandSendResult ping(const QString &task_id = {});
     CommandLinkStatus status() const;
     QString lastError() const;
+    static QString operatorStatusText(const QString &action_text, const CommandSendResult &result);
 
 private:
     void markResult(const CommandSendResult &result, bool mission_synced);

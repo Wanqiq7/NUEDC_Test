@@ -190,7 +190,7 @@ void MainWindow::handleExecuteMissionClicked() {
         task_adapter_->markAirborneSyncState(false, task_adapter_->missionSyncedToAirborne());
         refreshAirborneStatusLabel();
         refreshExecutionControls();
-        status_label_->setText(QString("错误: 开始执行命令失败 | %1").arg(result.message));
+        status_label_->setText(ReliableCommandClient::operatorStatusText("开始执行命令", result));
         return;
     }
 
@@ -200,7 +200,7 @@ void MainWindow::handleExecuteMissionClicked() {
     }
     refreshAirborneStatusLabel();
     refreshExecutionControls();
-    status_label_->setText("状态: 已发送开始执行命令");
+    status_label_->setText(ReliableCommandClient::operatorStatusText("开始执行命令", result));
 }
 
 void MainWindow::handleStopMissionClicked() {
@@ -217,7 +217,7 @@ void MainWindow::handleStopMissionClicked() {
     if (!result.ok) {
         refreshAirborneStatusLabel();
         refreshExecutionControls();
-        status_label_->setText(QString("错误: 停止执行命令失败 | %1").arg(result.message));
+        status_label_->setText(ReliableCommandClient::operatorStatusText("停止执行命令", result));
         return;
     }
 
@@ -227,7 +227,7 @@ void MainWindow::handleStopMissionClicked() {
     }
     refreshAirborneStatusLabel();
     refreshExecutionControls();
-    status_label_->setText("状态: 已发送停止执行命令");
+    status_label_->setText(ReliableCommandClient::operatorStatusText("停止执行命令", result));
 }
 
 void MainWindow::probeAirborneAvailability(bool update_status_message) {
@@ -274,5 +274,4 @@ void MainWindow::refreshAirborneStatusLabel() {
     inputs.airborne_online = airborne_online_;
     airborne_status_label_->setText(MissionRuntimeState::airborneStatusText(inputs));
 }
-
 

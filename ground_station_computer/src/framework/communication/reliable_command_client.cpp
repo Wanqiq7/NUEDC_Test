@@ -84,6 +84,17 @@ QString ReliableCommandClient::lastError() const {
     return last_error_;
 }
 
+QString ReliableCommandClient::operatorStatusText(const QString &action_text, const CommandSendResult &result) {
+    if (result.ok && result.message == QStringLiteral("command already accepted")) {
+        return QString("状态: %1已通过幂等重试确认到达 | seq %2")
+            .arg(action_text, QString::number(result.last_accepted_sequence));
+    }
+    if (result.ok) {
+        return QString("状态: 已发送%1").arg(action_text);
+    }
+    return QString("错误: %1失败 | %2").arg(action_text, result.message);
+}
+
 void ReliableCommandClient::markResult(const CommandSendResult &result, bool mission_synced) {
     if (result.ok) {
         last_error_.clear();

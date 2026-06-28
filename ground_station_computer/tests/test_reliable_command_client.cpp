@@ -37,6 +37,8 @@ private slots:
     void treatsAcceptedStartStaleAckAsSuccess();
     void treatsAcceptedStopStaleAckAsSuccess();
     void doesNotTreatWrongTargetStaleAckAsSuccess();
+    void formatsIdempotentSuccessForOperatorStatus();
+    void formatsNormalSuccessForOperatorStatus();
     void heartbeatCachesOnlineState();
 };
 
@@ -136,6 +138,39 @@ void ReliableCommandClientTests::doesNotTreatWrongTargetStaleAckAsSuccess() {
     QCOMPARE(result.message, QString("stale command"));
     QCOMPARE(static_cast<int>(client.status()), static_cast<int>(CommandLinkStatus::Offline));
 }
+
+void ReliableCommandClientTests::formatsIdempotentSuccessForOperatorStatus() {
+    const CommandSendResult result{
+        true,
+        "command already accepted",
+        "task-001",
+        true,
+        true,
+        14,
+    };
+
+    const QString text = ReliableCommandClient::operatorStatusText("开始执行命令", result);
+
+    QVERIFY(text.contains("开始执行命令"));
+    QVERIFY(text.contains("幂等重试确认到达"));
+    QVERIFY(text.contains("seq 14"));
+}
+
+void ReliableCommandClientTests::formatsNormalSuccessForOperatorStatus() {
+    const CommandSendResult result{
+        true,
+        "start accepted",
+        "task-001",
+        true,
+        true,
+        14,
+    };
+
+    const QString text = ReliableCommandClient::operatorStatusText("开始执行命令", result);
+
+    QCOMPARE(text, QString("状态: 已发送开始执行命令"));
+}
+
 void ReliableCommandClientTests::heartbeatCachesOnlineState() {
     ScriptedTransport transport({CommandSendResult{true, "pong"}});
     ReliableCommandClient client(&transport, ReliableCommandPolicy{1, 0});
