@@ -38,6 +38,51 @@ void acceptEnvelopeSequence(const Envelope &envelope, CommandState *state) {
 
 } // namespace
 
+MissionCommandStateMachine::MissionCommandStateMachine(CommandState *state)
+    : state_(state) {}
+
+AckResult MissionCommandStateMachine::apply(const Envelope &envelope) {
+    QMutexLocker<QMutex> command_lock(state_ != nullptr ? state_->commandMutex() : nullptr);
+
+    if (envelope.payload_case() != Envelope::kControlCommand) {
+        return {false, "unsupported payload"};
+    }
+
+    switch (envelope.control_command().type()) {
+    case COMMAND_TYPE_START_MISSION: {
+        AckResult stale_result;
+        if (rejectStaleSequence(envelope, state_, &stale_result)) {
+            return stale_result;
+        }
+        if (state_ != nullptr) {
+            state_->requestStart();
+        }
+        acceptEnvelopeSequence(envelope, state_);
+        return {true, "start accepted"};
+    }
+    case COMMAND_TYPE_STOP_MISSION: {
+        AckResult stale_result;
+        if (rejectStaleSequence(envelope, state_, &stale_result)) {
+            return stale_result;
+        }
+        if (state_ != nullptr) {
+            state_->requestStop();
+        }
+        acceptEnvelopeSequence(envelope, state_);
+        return {true, "stop accepted"};
+    }
+    case COMMAND_TYPE_PING:
+        return {true, "pong"};
+    default:
+        return {false, "unsupported command"};
+    }
+}
+
+AckResult applyCommandEnvelope(const Envelope &envelope, CommandState *state) {
+    MissionCommandStateMachine state_machine(state);
+    return state_machine.apply(envelope);
+}
+
 AckResult handleEnvelopeCommand(const Envelope &envelope, const QString &output_path, CommandState *state) {
     QMutexLocker<QMutex> command_lock(state != nullptr ? state->commandMutex() : nullptr);
 
@@ -64,35 +109,10 @@ AckResult handleEnvelopeCommand(const Envelope &envelope, const QString &output_
         acceptEnvelopeSequence(envelope, state);
         return {true, "task plan stored"};
     }
-    case Envelope::kControlCommand:
-        switch (envelope.control_command().type()) {
-        case COMMAND_TYPE_START_MISSION: {
-            AckResult stale_result;
-            if (rejectStaleSequence(envelope, state, &stale_result)) {
-                return stale_result;
-            }
-            if (state != nullptr) {
-                state->requestStart();
-            }
-            acceptEnvelopeSequence(envelope, state);
-            return {true, "start accepted"};
-        }
-        case COMMAND_TYPE_STOP_MISSION: {
-            AckResult stale_result;
-            if (rejectStaleSequence(envelope, state, &stale_result)) {
-                return stale_result;
-            }
-            if (state != nullptr) {
-                state->requestStop();
-            }
-            acceptEnvelopeSequence(envelope, state);
-            return {true, "stop accepted"};
-        }
-        case COMMAND_TYPE_PING:
-            return {true, "pong"};
-        default:
-            return {false, "unsupported command"};
-        }
+    case Envelope::kControlCommand: {
+        command_lock.unlock();
+        return applyCommandEnvelope(envelope, state);
+    }
     default:
         return {false, "unsupported payload"};
     }

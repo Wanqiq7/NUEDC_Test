@@ -709,26 +709,18 @@ QStringList planRoute(
     return planLegacyRoute(width, height, start_cell, no_fly_cells, end_cell, require_cycle, error_message);
 }
 
-PlanningResult planRouteWithDetails(
-    int width,
-    int height,
-    const QString &start_cell,
-    const QSet<QString> &no_fly_cells,
-    std::optional<QString> end_cell,
-    bool require_cycle,
-    MissionMode mission_mode,
-    std::optional<LandingProfile> landing_profile) {
-    PlanningResult result;
+RoutePlanResult planRoute(const RouteRequest &request) {
+    RoutePlanResult result;
     QString error_message;
     result.route = planRoute(
-        width,
-        height,
-        start_cell,
-        no_fly_cells,
-        end_cell,
-        require_cycle,
-        mission_mode,
-        landing_profile,
+        request.width,
+        request.height,
+        request.start_cell,
+        request.no_fly_cells,
+        request.end_cell,
+        request.require_cycle,
+        request.mission_mode,
+        request.landing_profile,
         &error_message);
 
     if (result.route.isEmpty()) {
@@ -738,12 +730,19 @@ PlanningResult planRouteWithDetails(
     }
 
     QSet<QString> covered_cells(result.route.begin(), result.route.end());
-    for (const QString &blocked_cell : no_fly_cells) {
+    for (const QString &blocked_cell : request.no_fly_cells) {
         covered_cells.remove(blocked_cell);
     }
-    const int required_cells = (width * height) - no_fly_cells.size();
+    const int required_cells = (request.width * request.height) - request.no_fly_cells.size();
     result.ok = true;
-    result.cost = estimateRouteCost(result.route, height, 18.0, 6.0, landing_profile, width, no_fly_cells);
+    result.cost = estimateRouteCost(
+        result.route,
+        request.height,
+        18.0,
+        6.0,
+        request.landing_profile,
+        request.width,
+        request.no_fly_cells);
     result.coverage_rate = required_cells <= 0
         ? 0.0
         : static_cast<double>(covered_cells.size()) / static_cast<double>(required_cells);
@@ -751,6 +750,27 @@ PlanningResult planRouteWithDetails(
         result.warnings.append(QString("route covers %1% of required cells").arg(result.coverage_rate * 100.0, 0, 'f', 1));
     }
     return result;
+}
+
+PlanningResult planRouteWithDetails(
+    int width,
+    int height,
+    const QString &start_cell,
+    const QSet<QString> &no_fly_cells,
+    std::optional<QString> end_cell,
+    bool require_cycle,
+    MissionMode mission_mode,
+    std::optional<LandingProfile> landing_profile) {
+    return planRoute(RouteRequest{
+        width,
+        height,
+        start_cell,
+        no_fly_cells,
+        end_cell,
+        require_cycle,
+        mission_mode,
+        landing_profile,
+    });
 }
 
 QStringList exactCompletionToEndForTesting(

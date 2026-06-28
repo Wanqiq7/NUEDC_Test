@@ -1,4 +1,5 @@
 set(COMPETITION_CORE_SOURCES
+    src/storage/json_codec.cpp
     src/task/task_plan_store.cpp
     src/protocol/competition_command_handler.cpp
     src/protocol/envelope_codec.cpp
@@ -77,6 +78,7 @@ endfunction()
 
 add_competition_core_test(test_task_protocol tests/test_task_protocol.cpp)
 add_competition_core_test(test_task_ports tests/test_task_ports.cpp)
+add_competition_core_test(test_json_codec tests/test_json_codec.cpp)
 
 add_h_problem_core_test(test_h_case_loader tests/test_h_case_loader.cpp)
 add_h_problem_core_test(test_h_route_planner tests/test_h_route_planner.cpp)

@@ -15,25 +15,28 @@ std::optional<MissionPlan> buildMissionPlan(
 
     const QSet<QString> no_fly_set(plan.no_fly_cells.begin(), plan.no_fly_cells.end());
     const std::optional<LandingProfile> landing_profile = case_config.landing;
-    const QStringList route = planRoute(
-        MapWidth,
-        MapHeight,
-        case_config.start_cell,
-        no_fly_set,
-        case_config.return_to_start ? std::optional<QString>(case_config.start_cell) : std::nullopt,
-        case_config.return_to_start,
-        landing_profile.has_value() ? MissionMode::TimeOptimalOpen : MissionMode::Legacy,
-        landing_profile,
-        error_message);
-    if (route.isEmpty()) {
+    RouteRequest request;
+    request.width = MapWidth;
+    request.height = MapHeight;
+    request.start_cell = case_config.start_cell;
+    request.no_fly_cells = no_fly_set;
+    request.end_cell = case_config.return_to_start ? std::optional<QString>(case_config.start_cell) : std::nullopt;
+    request.require_cycle = case_config.return_to_start;
+    request.mission_mode = landing_profile.has_value() ? MissionMode::TimeOptimalOpen : MissionMode::Legacy;
+    request.landing_profile = landing_profile;
+
+    const RoutePlanResult route_result = planRoute(request);
+    if (!route_result.ok) {
         if (error_message != nullptr && error_message->isEmpty()) {
-            *error_message = QString("Route planner returned empty route for case %1").arg(case_config.case_id);
+            *error_message = route_result.failure_reason.isEmpty()
+                ? QString("Route planner returned empty route for case %1").arg(case_config.case_id)
+                : route_result.failure_reason;
         }
         return std::nullopt;
     }
 
-    plan.route = route;
-    plan.terminal_cell = route.last();
+    plan.route = route_result.route;
+    plan.terminal_cell = route_result.route.last();
     plan.landing_enabled = case_config.landing.has_value();
     if (case_config.landing.has_value()) {
         plan.descent_angle_deg = case_config.landing->descent_angle_deg;

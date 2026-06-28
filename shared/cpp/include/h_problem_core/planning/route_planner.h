@@ -18,6 +18,21 @@ struct PlanningResult {
     QString failure_reason;
 };
 
+struct RouteRequest {
+    int width = 0;
+    int height = 0;
+    QString start_cell;
+    QSet<QString> no_fly_cells;
+    std::optional<QString> end_cell = std::nullopt;
+    bool require_cycle = false;
+    MissionMode mission_mode = MissionMode::Legacy;
+    std::optional<LandingProfile> landing_profile = std::nullopt;
+};
+
+using RoutePlanResult = PlanningResult;
+
+RoutePlanResult planRoute(const RouteRequest &request);
+
 QStringList planRoute(
     int width,
     int height,

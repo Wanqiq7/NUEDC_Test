@@ -11,6 +11,7 @@ class HEnvelopeBuilderTests : public QObject {
 
 private slots:
     void buildsGridConfigEnvelope();
+    void roundTripsMissionPlanThroughCanonicalTaskPlan();
     void buildsRuntimeEnvelopes();
     void buildsAckEnvelope();
 };
@@ -40,6 +41,44 @@ void HEnvelopeBuilderTests::buildsGridConfigEnvelope() {
     QVERIFY2(round_trip.has_value(), qPrintable(error));
     QCOMPARE(round_trip->route, plan.route);
     QCOMPARE(round_trip->landing_enabled, true);
+}
+
+void HEnvelopeBuilderTests::roundTripsMissionPlanThroughCanonicalTaskPlan() {
+    hcore::MissionPlan plan;
+    plan.case_id = "demo";
+    plan.start_cell = "A9B1";
+    plan.no_fly_cells = {"A1B2", "A2B2", "A3B2"};
+    plan.route = {"A9B1", "A8B1", "A7B1"};
+    plan.terminal_cell = "A7B1";
+    plan.landing_enabled = true;
+    plan.descent_angle_deg = 45.0;
+    plan.takeoff_anchor_x_cm = 450.0;
+    plan.takeoff_anchor_y_cm = 350.0;
+
+    const competition::TaskPlan task_plan = hcore::taskPlanFromMissionPlan(plan);
+    QCOMPARE(task_plan.task_id, QString("demo"));
+    QCOMPARE(task_plan.task_type, QString("h_problem"));
+    QCOMPARE(task_plan.start_waypoint_id, QString("A9B1"));
+    QCOMPARE(task_plan.terminal_waypoint_id, QString("A7B1"));
+    QCOMPARE(task_plan.waypoints.size(), 3);
+    QCOMPARE(task_plan.waypoints.at(1).id, QString("A8B1"));
+
+    const QJsonObject metadata = QJsonDocument::fromJson(task_plan.metadata_json.toUtf8()).object();
+    QCOMPARE(metadata.value("terminal_cell").toString(), QString("A7B1"));
+    QCOMPARE(metadata.value("no_fly_cells").toArray().at(2).toString(), QString("A3B2"));
+    QCOMPARE(metadata.value("landing_enabled").toBool(), true);
+
+    QString error;
+    const auto decoded = hcore::missionPlanFromTaskPlan(task_plan, &error);
+    QVERIFY2(decoded.has_value(), qPrintable(error));
+    QCOMPARE(decoded->case_id, plan.case_id);
+    QCOMPARE(decoded->no_fly_cells, plan.no_fly_cells);
+    QCOMPARE(decoded->route, plan.route);
+    QCOMPARE(decoded->terminal_cell, plan.terminal_cell);
+    QCOMPARE(decoded->landing_enabled, true);
+    QCOMPARE(decoded->descent_angle_deg.value_or(0.0), 45.0);
+    QCOMPARE(decoded->takeoff_anchor_x_cm.value_or(0.0), 450.0);
+    QCOMPARE(decoded->takeoff_anchor_y_cm.value_or(0.0), 350.0);
 }
 
 void HEnvelopeBuilderTests::buildsRuntimeEnvelopes() {

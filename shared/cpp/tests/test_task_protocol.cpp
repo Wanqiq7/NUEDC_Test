@@ -45,6 +45,8 @@ class TaskProtocolTests : public QObject {
 private slots:
     void buildsAndParsesTaskPlanEnvelope();
     void storesGenericMissionLoad();
+    void commandStateMachineRejectsStaleStartWithoutMutatingState();
+    void commandStateMachineAcceptsStopAfterStart();
     void buildsMissionLoadWithExplicitSequence();
     void rejectsStaleMissionLoadSequence();
     void buildsAckWithRuntimeState();
@@ -94,6 +96,54 @@ void TaskProtocolTests::storesGenericMissionLoad() {
     const QJsonObject object = QJsonDocument::fromJson(file.readAll()).object();
     QCOMPARE(object.value("message_type").toString(), QString("task_plan"));
     QCOMPARE(object.value("task_type").toString(), QString("h_problem"));
+}
+
+void TaskProtocolTests::commandStateMachineRejectsStaleStartWithoutMutatingState() {
+    competition::CommandState state;
+    state.setActiveTaskPlan(makeTaskPlan());
+    state.setMissionLoaded(true);
+    state.acceptSequence(12);
+
+    Envelope stale_start;
+    stale_start.set_sequence(12);
+    stale_start.mutable_control_command()->set_type(COMMAND_TYPE_START_MISSION);
+    stale_start.mutable_control_command()->set_task_id("task-demo");
+    competition::MissionCommandStateMachine state_machine(&state);
+    const competition::AckResult ack = state_machine.apply(stale_start);
+
+    QVERIFY(!ack.success);
+    QCOMPARE(ack.message, QString("stale command"));
+    QCOMPARE(ack.task_id, QString("task-demo"));
+    QVERIFY(ack.mission_loaded);
+    QVERIFY(!ack.mission_running);
+    QCOMPARE(ack.last_accepted_sequence, 12ULL);
+    QVERIFY(!state.isStartRequested());
+}
+
+void TaskProtocolTests::commandStateMachineAcceptsStopAfterStart() {
+    competition::CommandState state;
+    state.setActiveTaskPlan(makeTaskPlan());
+    state.setMissionLoaded(true);
+
+    Envelope start;
+    start.set_sequence(13);
+    start.mutable_control_command()->set_type(COMMAND_TYPE_START_MISSION);
+    start.mutable_control_command()->set_task_id("task-demo");
+    competition::MissionCommandStateMachine state_machine(&state);
+    const competition::AckResult start_ack = state_machine.apply(start);
+    QVERIFY2(start_ack.success, qPrintable(start_ack.message));
+    QVERIFY(state.isStartRequested());
+    QVERIFY(!state.isStopRequested());
+
+    Envelope stop;
+    stop.set_sequence(14);
+    stop.mutable_control_command()->set_type(COMMAND_TYPE_STOP_MISSION);
+    stop.mutable_control_command()->set_task_id("task-demo");
+    const competition::AckResult stop_ack = state_machine.apply(stop);
+    QVERIFY2(stop_ack.success, qPrintable(stop_ack.message));
+    QVERIFY(state.isStartRequested());
+    QVERIFY(state.isStopRequested());
+    QCOMPARE(state.lastAcceptedSequence(), 14ULL);
 }
 
 void TaskProtocolTests::buildsMissionLoadWithExplicitSequence() {

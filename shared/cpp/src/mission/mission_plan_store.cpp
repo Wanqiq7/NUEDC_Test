@@ -1,5 +1,6 @@
 #include "h_problem_core/mission/mission_plan_store.h"
 
+#include "h_problem_core/protocol/envelope_builder.h"
 #include "h_problem_core/planning/mission_geometry.h"
 
 #include <QDir>
@@ -254,10 +255,16 @@ bool storeMissionPlan(const MissionPlan &plan, const QString &output_path, QStri
         return false;
     }
 
-    return writeJsonObject(missionPlanToJson(plan), output_path, error_message);
+    return competition::storeTaskPlan(taskPlanFromMissionPlan(plan), output_path, error_message);
 }
 
 std::optional<MissionPlan> loadMissionPlan(const QString &path, QString *error_message) {
+    QString task_plan_error;
+    const auto task_plan = competition::loadTaskPlan(path, &task_plan_error);
+    if (task_plan.has_value()) {
+        return missionPlanFromTaskPlan(task_plan.value(), error_message);
+    }
+
     const auto object = readJsonObject(path, "mission plan", error_message);
     if (!object.has_value()) {
         return std::nullopt;

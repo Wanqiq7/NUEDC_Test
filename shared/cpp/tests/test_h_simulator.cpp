@@ -21,6 +21,7 @@ class HSimulatorTests : public QObject {
 
 private slots:
     void emitsDetectionAndSummaryForAnimals();
+    void emitsGenericTaskEventStream();
     void prefersProvidedMissionPlan();
 };
 
@@ -40,6 +41,28 @@ void HSimulatorTests::emitsDetectionAndSummaryForAnimals() {
     QCOMPARE(messages.last().type, hcore::SimMessageType::Summary);
     QCOMPARE(messages.last().totals.value("elephant"), 1u);
     QCOMPARE(messages.last().totals.value("monkey"), 2u);
+}
+
+void HSimulatorTests::emitsGenericTaskEventStream() {
+    QString error;
+    const auto stream = hcore::simulateTaskStream(makeCase(), {}, &error);
+    QVERIFY2(stream.has_value(), qPrintable(error));
+
+    QCOMPARE(stream->plan.task_id, QString("plan-test"));
+    QVERIFY(!stream->events.isEmpty());
+
+    int detection_count = 0;
+    for (const competition::TaskEvent &event : stream->events) {
+        if (event.event_type == "detection") {
+            ++detection_count;
+            QVERIFY(event.payload_json.contains("animal_name"));
+        }
+    }
+
+    QCOMPARE(detection_count, 2);
+    QVERIFY(stream->summary.success);
+    QCOMPARE(stream->summary.task_id, QString("plan-test"));
+    QVERIFY(stream->summary.payload_json.contains("totals"));
 }
 
 void HSimulatorTests::prefersProvidedMissionPlan() {

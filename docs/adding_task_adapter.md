@@ -5,6 +5,7 @@
 ## 共享核心
 
 - 通用模型、`TaskPlan` JSON 存储、Protobuf codec、控制命令处理放入 `competition_core`。
+- 新题目的运行时任务文件必须使用通用 `competition::TaskPlan` JSON；题目私有字段进入 `metadata_json` / `payload_json`，不要新增第二套长期任务计划存储格式。
 - 题目专有 case、规划、仿真、旧格式兼容放入独立 target，例如 `g_problem_core`。
 - 新 target 可以依赖 `competition_core`，但 `competition_core` 禁止 include 任何题目目录。
 - 对外传输统一使用 `competition::TaskPlan`、`competition::TaskEvent`、`competition::TaskSummary`。

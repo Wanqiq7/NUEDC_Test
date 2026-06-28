@@ -1,8 +1,20 @@
 #include "h_problem_core/runtime/simulator.h"
 
 #include "h_problem_core/mission/mission_planning.h"
+#include "h_problem_core/protocol/envelope_builder.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
 
 namespace hcore {
+
+namespace {
+
+QString compactJson(const QJsonObject &object) {
+    return QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
+}
+
+} // namespace
 
 QVector<SimMessage> simulateMessages(
     const CaseConfig &case_config,
@@ -69,6 +81,79 @@ QVector<SimMessage> simulateMessages(
         error_message->clear();
     }
     return messages;
+}
+
+std::optional<SimulatedTaskStream> simulateTaskStream(
+    const CaseConfig &case_config,
+    std::optional<MissionPlan> mission_plan,
+    QString *error_message) {
+    const QVector<SimMessage> messages = simulateMessages(case_config, mission_plan, error_message);
+    if (messages.isEmpty()) {
+        return std::nullopt;
+    }
+
+    SimulatedTaskStream stream;
+    for (const SimMessage &message : messages) {
+        switch (message.type) {
+        case SimMessageType::Config:
+            stream.plan = taskPlanFromMissionPlan(message.mission_plan);
+            break;
+        case SimMessageType::Telemetry: {
+            QJsonObject payload;
+            payload["current_cell"] = message.cell;
+            payload["visited_cells"] = static_cast<int>(message.visited_cells);
+            stream.events.append(competition::TaskEvent{
+                stream.plan.task_id,
+                "telemetry",
+                message.step_index,
+                message.cell,
+                compactJson(payload),
+            });
+            break;
+        }
+        case SimMessageType::Detection: {
+            QJsonObject payload;
+            payload["cell_code"] = message.cell;
+            payload["animal_name"] = message.animal_name;
+            payload["count"] = static_cast<int>(message.count);
+            stream.events.append(competition::TaskEvent{
+                stream.plan.task_id,
+                "detection",
+                0,
+                message.cell,
+                compactJson(payload),
+            });
+            break;
+        }
+        case SimMessageType::Summary: {
+            QJsonObject totals;
+            for (auto iterator = message.totals.cbegin(); iterator != message.totals.cend(); ++iterator) {
+                totals[iterator.key()] = static_cast<int>(iterator.value());
+            }
+            QJsonObject payload;
+            payload["totals"] = totals;
+            stream.summary = competition::TaskSummary{
+                stream.plan.task_id,
+                "h_problem",
+                true,
+                message.visited_cells,
+                compactJson(payload),
+            };
+            break;
+        }
+        }
+    }
+
+    if (stream.plan.task_id.isEmpty() || stream.summary.task_id.isEmpty()) {
+        if (error_message != nullptr) {
+            *error_message = "simulator failed to produce a complete task stream";
+        }
+        return std::nullopt;
+    }
+    if (error_message != nullptr) {
+        error_message->clear();
+    }
+    return stream;
 }
 
 } // namespace hcore

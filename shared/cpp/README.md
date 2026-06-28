@@ -5,12 +5,14 @@
 - `competition_core`：通用任务模型、`TaskPlan` JSON 存储、Protobuf codec 与控制命令处理。
 - `h_problem_core`：H 题案例解析、航线规划、仿真和 H 题到通用任务模型的 Adapter，依赖 `competition_core`。
 
+运行时任务计划以 `competition::TaskPlan` 作为唯一规范模型；各题目核心可保留内部规划结构，但持久化和协议传输必须通过通用模型。
+
 - `include/competition_core/task/`：通用任务模型，例如 `TaskDefinition`、`TaskPlan`、`TaskEvent`、`TaskSummary`。
 - `include/competition_core/mission/`：通用 `TaskPlan` JSON 读写与校验。
 - `include/competition_core/protocol/`：通用 `Envelope` codec 与 `MissionLoad` / 控制命令处理。
 - `common/`：H 题兼容数据模型，例如 `CaseConfig`、`MissionPlan`、`SimMessage`。
 - `planning/`：航线规划、方格几何、路线代价和降落终端区域计算。
-- `mission/`：案例 JSON 解析、H 题任务计划生成、旧 `MissionPlan` JSON 读写与校验。
+- `mission/`：案例 JSON 解析、H 题任务计划生成、旧 `MissionPlan` 兼容读取与校验。
 - `protocol/`：H 题 `MissionPlan` / `SimMessage` 到通用 `TaskPlan` / `TaskEvent` / `TaskSummary` 的转换。
 - `runtime/`：按 H 题任务路线生成通用任务事件。
 

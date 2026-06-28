@@ -33,6 +33,7 @@ private slots:
     void storesReceivedMissionPlan();
     void rejectsRouteIntersectingNoFlyZone();
     void readsStoredMissionPlan();
+    void readsLegacyMissionPlanJsonDuringMigration();
 };
 
 void HMissionPlanStoreTests::storesReceivedMissionPlan() {
@@ -46,8 +47,17 @@ void HMissionPlanStoreTests::storesReceivedMissionPlan() {
     QFile file(output_path);
     QVERIFY(file.open(QIODevice::ReadOnly));
     const QJsonObject object = QJsonDocument::fromJson(file.readAll()).object();
-    QCOMPARE(object.value("case_id").toString(), QString("demo"));
-    QCOMPARE(object.value("route").toArray().at(2).toString(), QString("A7B1"));
+    QCOMPARE(object.value("message_type").toString(), QString("task_plan"));
+    QCOMPARE(object.value("task_id").toString(), QString("demo"));
+    QCOMPARE(object.value("task_type").toString(), QString("h_problem"));
+    QCOMPARE(object.value("start_waypoint_id").toString(), QString("A9B1"));
+    QCOMPARE(object.value("terminal_waypoint_id").toString(), QString("A7B1"));
+    QCOMPARE(object.value("waypoints").toArray().at(2).toObject().value("id").toString(), QString("A7B1"));
+
+    const QJsonObject metadata = QJsonDocument::fromJson(object.value("metadata_json").toString().toUtf8()).object();
+    QCOMPARE(metadata.value("case_id").toString(), QString("demo"));
+    QCOMPARE(metadata.value("no_fly_cells").toArray().at(1).toString(), QString("A2B2"));
+    QCOMPARE(metadata.value("landing_enabled").toBool(), true);
 }
 
 void HMissionPlanStoreTests::rejectsRouteIntersectingNoFlyZone() {
@@ -77,6 +87,24 @@ void HMissionPlanStoreTests::readsStoredMissionPlan() {
     QCOMPARE(loaded->case_id, QString("demo"));
     QCOMPARE(loaded->no_fly_cells, QStringList({"A1B2", "A2B2", "A3B2"}));
     QCOMPARE(loaded->route, QStringList({"A9B1", "A8B1", "A7B1"}));
+}
+
+void HMissionPlanStoreTests::readsLegacyMissionPlanJsonDuringMigration() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString path = QDir(dir.path()).filePath("legacy_mission_plan.json");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+    file.write(QJsonDocument(hcore::missionPlanToJson(makePlan())).toJson(QJsonDocument::Compact));
+    file.close();
+
+    QString error;
+    const auto loaded = hcore::loadMissionPlan(path, &error);
+    QVERIFY2(loaded.has_value(), qPrintable(error));
+    QCOMPARE(loaded->case_id, QString("demo"));
+    QCOMPARE(loaded->route, QStringList({"A9B1", "A8B1", "A7B1"}));
+    QCOMPARE(loaded->landing_enabled, true);
 }
 
 QTEST_MAIN(HMissionPlanStoreTests)

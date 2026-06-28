@@ -5,6 +5,7 @@
 ## 分层职责
 
 - `competition_core`：唯一通用内核，只放通用 `TaskPlan`、`TaskEvent`、`TaskSummary`、协议编解码、命令处理、任务端口和通用校验。
+- 运行时任务计划持久化统一使用 `competition::TaskPlan`；题目专有模型只能作为规划算法内部结构，落盘和传输前必须转换到通用模型。
 - `<task>_problem_core`：题目专有算法、案例解析、仿真、任务元数据转换；可以依赖 `competition_core`，反向依赖禁止。
 - `ground_station_computer/src/framework`：地面站 Shell、通信、配置、运行状态和题目 Adapter 端口，不写题目规则。
 - `ground_station_computer/src/<task>`：题目页面、题目状态解释、题目规划入口、题目数据存储。

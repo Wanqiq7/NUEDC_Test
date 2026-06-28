@@ -14,6 +14,7 @@ private slots:
     void subscriberWorkerPublishesGenericTaskSignals();
     void competitionTaskAdapterExposesGenericProtocolHandlers();
     void mainWindowDoesNotOwnProblemSpecificBusinessPanels();
+    void documentsCanonicalTaskPlanStorage();
 };
 
 void ArchitectureBoundaryTests::mainWindowDoesNotIncludeProblemSpecificHeaders() {
@@ -108,6 +109,13 @@ void ArchitectureBoundaryTests::mainWindowDoesNotOwnProblemSpecificBusinessPanel
     QVERIFY(!source_text.contains("统计汇总"));
     QVERIFY(!source_text.contains("动物"));
     QVERIFY(!source_text.contains("H 题混合联调地面站"));
+}
+
+void ArchitectureBoundaryTests::documentsCanonicalTaskPlanStorage() {
+    QFile file("docs/framework_architecture.md");
+    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString contents = QString::fromUtf8(file.readAll());
+    QVERIFY(contents.contains("运行时任务计划持久化统一使用 `competition::TaskPlan`"));
 }
 
 QTEST_MAIN(ArchitectureBoundaryTests)
