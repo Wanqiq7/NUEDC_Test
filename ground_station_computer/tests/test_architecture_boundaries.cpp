@@ -40,6 +40,8 @@ private slots:
     void mainWindowDoesNotIncludeProblemSpecificHeaders();
     void mainWindowUsesReliableCommandClientForControlCommands();
     void mainWindowUsesConfiguredTaskAdapterFactory();
+    void adapterRegistryLivesInFrameworkNotProblemModule();
+    void hProblemAdapterIsThinShimOverControllerAndView();
     void frameworkCommunicationDoesNotIncludeProblemSpecificHeaders();
     void subscriberWorkerPublishesGenericTaskSignals();
     void competitionTaskAdapterExposesGenericProtocolHandlers();
@@ -68,6 +70,56 @@ void ArchitectureBoundaryTests::mainWindowUsesReliableCommandClientForControlCom
     const QString source_text = readSourceOrFail("ground_station_computer/src/app/main_window.cpp");
     QVERIFY(source_text.contains("sendReliable"));
     QVERIFY(source_text.contains("reliable_command_client_->ping"));
+}
+
+void ArchitectureBoundaryTests::adapterRegistryLivesInFrameworkNotProblemModule() {
+    // 注册聚合与工厂选择逻辑必须落在框架自有 TU，题目模块只暴露自己的 descriptor。
+    // 这样新增题目无需编辑任何已有题目文件，符合 adding_task_adapter.md 的边界。
+    const QString registry = readSourceOrFail(
+        "ground_station_computer/src/framework/task/competition_task_registry.cpp");
+    QVERIFY2(registry.contains("createCompetitionTaskAdapter"),
+             "framework registry must own createCompetitionTaskAdapter");
+    QVERIFY2(registry.contains("createConfiguredCompetitionTaskAdapter"),
+             "framework registry must own createConfiguredCompetitionTaskAdapter");
+    QVERIFY2(registry.contains("defaultCompetitionTaskAdapterId"),
+             "default adapter id must have a single source of truth in the framework registry");
+
+    // 题目页面不得再定义工厂选择逻辑（防止回退到题目模块承担注册聚合职责）。
+    const QString page = readSourceOrFail("ground_station_computer/src/h_problem/ui/h_problem_page.cpp");
+    const QRegularExpression defines_selector(
+        R"(std::unique_ptr<CompetitionTaskAdapter>\s+createCompetitionTaskAdapter\s*\()");
+    QVERIFY2(!defines_selector.match(page).hasMatch(),
+             "h_problem_page.cpp must not define the adapter selection factory");
+    QVERIFY2(page.contains("hProblemTaskAdapterDescriptor"),
+             "h_problem module must expose its descriptor provider instead");
+}
+
+void ArchitectureBoundaryTests::hProblemAdapterIsThinShimOverControllerAndView() {
+    // MVC 拆分回归护栏：Adapter 应是薄适配层——装配 view 与 controller 并转发接口，
+    // 不再承载工作流 / 状态 / UI 构建。若这些职责回流到 adapter，说明上帝对象在复活。
+    const QString adapter = readSourceOrFail("ground_station_computer/src/h_problem/ui/h_problem_page.cpp");
+    QVERIFY2(adapter.contains("HMissionController"),
+             "adapter must delegate to HMissionController");
+    QVERIFY2(adapter.contains("controller_->"),
+             "adapter must forward interface calls to the controller");
+
+    // 工作流逻辑（规划状态机 / 航线桥 / 命令服务）不应再直接出现在 adapter TU。
+    QVERIFY2(!adapter.contains("PlanningStateMachine"),
+             "planning workflow must live in the controller, not the adapter");
+    QVERIFY2(!adapter.contains("MissionPlanBridge"),
+             "plan generation must live in the controller, not the adapter");
+    QVERIFY2(!adapter.contains("DetectionRepository"),
+             "detection persistence must live in the controller, not the adapter");
+
+    // 控制器仅依赖窄的视图接口，不依赖具体 UI 控件类型（保持可 mock 单测）。
+    const QString controller_header =
+        readSourceOrFail("ground_station_computer/src/h_problem/mission/h_mission_controller.h");
+    QVERIFY2(controller_header.contains("HMissionViewSink"),
+             "controller must drive the view through the HMissionViewSink interface");
+    const QRegularExpression widget_include(
+        R"(#include\s+<Q(Widget|Label|ListWidget|TableWidget|GraphicsView)>)");
+    QVERIFY2(!widget_include.match(controller_header).hasMatch(),
+             "controller header must not depend on concrete Qt widget types");
 }
 
 void ArchitectureBoundaryTests::frameworkCommunicationDoesNotIncludeProblemSpecificHeaders() {

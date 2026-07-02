@@ -3,8 +3,11 @@ set(GROUND_STATION_CORE_SOURCES
     src/framework/communication/reliable_command_client.cpp
     src/framework/communication/zmq_command_client.cpp
     src/framework/config/network_config.cpp
+    src/framework/config/repository_paths.cpp
+    src/framework/runtime/airborne_sync_state.cpp
     src/framework/runtime/mission_runtime_state.cpp
     src/h_problem/mission/h_mission_command_service.cpp
+    src/h_problem/mission/h_mission_controller.cpp
     src/h_problem/mission/h_mission_load_adapter.cpp
     src/h_problem/mission/h_no_fly_planning_state.cpp
     src/h_problem/mission/h_protocol_adapter.cpp
@@ -19,10 +22,12 @@ set(GROUND_STATION_CORE_SOURCES
 
 set(GROUND_STATION_APP_SOURCES
     src/framework/task/competition_task_adapter.h
+    src/framework/task/competition_task_registry.cpp
     src/app/main_window.cpp
     src/framework/communication/message_dispatcher.cpp
     src/framework/communication/zmq_subscriber_worker.cpp
     src/h_problem/ui/h_grid_scene.cpp
+    src/h_problem/ui/h_problem_view.cpp
     src/h_problem/ui/h_problem_page.cpp
 )
 
@@ -61,6 +66,7 @@ endfunction()
 add_ground_station_test(test_detection_repository tests/test_detection_repository.cpp)
 add_ground_station_test(test_grid_mapper tests/test_grid_mapper.cpp)
 add_ground_station_test(test_network_config tests/test_network_config.cpp)
+add_ground_station_test(test_repository_paths tests/test_repository_paths.cpp)
 add_ground_station_test(test_route_validator tests/test_route_validator.cpp)
 add_ground_station_test(test_route_visualizer tests/test_route_visualizer.cpp)
 add_ground_station_test(test_no_fly_zone_rules tests/test_no_fly_zone_rules.cpp)
@@ -82,6 +88,8 @@ add_ground_station_test(test_mission_load_adapter tests/test_mission_load_adapte
 add_ground_station_test(test_mission_command_service tests/test_mission_command_service.cpp)
 add_ground_station_test(test_mission_plan_store tests/test_mission_plan_store.cpp)
 add_ground_station_test(test_mission_runtime_state tests/test_mission_runtime_state.cpp)
+add_ground_station_test(test_airborne_sync_state tests/test_airborne_sync_state.cpp)
+add_ground_station_test(test_h_mission_controller tests/test_h_mission_controller.cpp)
 add_ground_station_test(test_grid_scene tests/test_grid_scene.cpp)
 target_sources(test_grid_scene PRIVATE
     src/h_problem/ui/h_grid_scene.cpp
