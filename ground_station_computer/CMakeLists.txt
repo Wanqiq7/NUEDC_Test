@@ -73,6 +73,10 @@ target_sources(test_zmq_subscriber_worker PRIVATE
 )
 add_ground_station_test(test_reliable_command_client tests/test_reliable_command_client.cpp)
 add_ground_station_test(test_architecture_boundaries tests/test_architecture_boundaries.cpp)
+# 注入源码根目录（= 顶层 project() 的 Ground/），使边界测试不依赖运行时工作目录，
+# 直接运行测试可执行文件也能正确定位待扫描的源文件。
+target_compile_definitions(test_architecture_boundaries PRIVATE
+    GROUND_PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_ground_station_test(test_envelope_codec tests/test_envelope_codec.cpp)
 add_ground_station_test(test_mission_load_adapter tests/test_mission_load_adapter.cpp)
 add_ground_station_test(test_mission_command_service tests/test_mission_command_service.cpp)

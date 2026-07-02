@@ -80,7 +80,7 @@ void MainWindowTests::configuredAdapterUsesEnvironmentVariableAndReportsUnknownI
     QVERIFY(error.isEmpty());
 
     qputenv("NUEDC_TASK_ADAPTER", QByteArray("missing_problem"));
-    adapter.reset(createConfiguredCompetitionTaskAdapter(&error));
+    adapter = createConfiguredCompetitionTaskAdapter(&error);
     QVERIFY(adapter == nullptr);
     QVERIFY(error.contains("unknown task adapter"));
     QVERIFY(error.contains("h_problem"));

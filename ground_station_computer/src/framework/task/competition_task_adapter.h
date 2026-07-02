@@ -9,6 +9,7 @@
 #include <QVector>
 
 #include <functional>
+#include <memory>
 #include <utility>
 
 class ZmqCommandClient;
@@ -72,12 +73,13 @@ private:
 struct CompetitionTaskAdapterDescriptor {
     QString adapter_id;
     QString display_name;
-    std::function<CompetitionTaskAdapter *()> create;
+    // 工厂返回 unique_ptr，明确移交所有权，避免裸指针泄漏或双重释放的歧义。
+    std::function<std::unique_ptr<CompetitionTaskAdapter>()> create;
 };
 
 QVector<CompetitionTaskAdapterDescriptor> availableCompetitionTaskAdapters();
 QString configuredCompetitionTaskAdapterId();
-CompetitionTaskAdapter *createCompetitionTaskAdapter(const QString &adapter_id, QString *error_message = nullptr);
-CompetitionTaskAdapter *createConfiguredCompetitionTaskAdapter(QString *error_message = nullptr);
-CompetitionTaskAdapter *createDefaultCompetitionTaskAdapter();
+std::unique_ptr<CompetitionTaskAdapter> createCompetitionTaskAdapter(const QString &adapter_id, QString *error_message = nullptr);
+std::unique_ptr<CompetitionTaskAdapter> createConfiguredCompetitionTaskAdapter(QString *error_message = nullptr);
+std::unique_ptr<CompetitionTaskAdapter> createDefaultCompetitionTaskAdapter();
 

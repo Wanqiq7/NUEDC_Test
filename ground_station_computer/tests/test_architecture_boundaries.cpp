@@ -3,6 +3,36 @@
 #include <QFile>
 #include <QRegularExpression>
 
+namespace {
+
+// 将相对于源码根的路径解析为绝对路径。构建时 CMake 通过 GROUND_PROJECT_SOURCE_DIR
+// 注入源码根（= 顶层 project() 的 Ground/），使测试不依赖 ctest 的运行工作目录；
+// 未定义时回退为相对路径（直接运行需在 Ground/ 下）。
+QString resolveSourcePath(const QString &relative_path) {
+#ifdef GROUND_PROJECT_SOURCE_DIR
+    return QStringLiteral(GROUND_PROJECT_SOURCE_DIR) + QLatin1Char('/') + relative_path;
+#else
+    return relative_path;
+#endif
+}
+
+// 打开待扫描的源文件并返回内容。文件缺失时给出明确诊断，与「架构约束被违反」区分开，
+// 避免路径问题伪装成边界回归。
+QString readSourceOrFail(const QString &relative_path) {
+    const QString absolute_path = resolveSourcePath(relative_path);
+    QFile file(absolute_path);
+    const bool opened = file.open(QIODevice::ReadOnly | QIODevice::Text);
+    [&]() {
+        QVERIFY2(
+            opened,
+            qPrintable(QStringLiteral("无法打开待扫描源文件（路径解析失败，非架构违规）: %1")
+                           .arg(absolute_path)));
+    }();
+    return QString::fromUtf8(file.readAll());
+}
+
+} // namespace
+
 class ArchitectureBoundaryTests : public QObject {
     Q_OBJECT
 
@@ -18,9 +48,7 @@ private slots:
 };
 
 void ArchitectureBoundaryTests::mainWindowDoesNotIncludeProblemSpecificHeaders() {
-    QFile file("ground_station_computer/src/app/main_window.cpp");
-    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString source = QString::fromUtf8(file.readAll());
+    const QString source = readSourceOrFail("ground_station_computer/src/app/main_window.cpp");
 
     const QRegularExpression forbidden_include(R"(#include\s+["<][^">]*h_problem[^">]*[">])");
     QVERIFY2(
@@ -29,21 +57,15 @@ void ArchitectureBoundaryTests::mainWindowDoesNotIncludeProblemSpecificHeaders()
 }
 
 void ArchitectureBoundaryTests::mainWindowUsesConfiguredTaskAdapterFactory() {
-    QFile source("ground_station_computer/src/app/main_window.cpp");
-    QVERIFY(source.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString source_text = QString::fromUtf8(source.readAll());
+    const QString source_text = readSourceOrFail("ground_station_computer/src/app/main_window.cpp");
     QVERIFY(source_text.contains("createConfiguredCompetitionTaskAdapter"));
     QVERIFY(source_text.contains("createDefaultCompetitionTaskAdapter"));
 }
 void ArchitectureBoundaryTests::mainWindowUsesReliableCommandClientForControlCommands() {
-    QFile header("ground_station_computer/src/app/main_window.h");
-    QVERIFY(header.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString header_source = QString::fromUtf8(header.readAll());
+    const QString header_source = readSourceOrFail("ground_station_computer/src/app/main_window.h");
     QVERIFY(header_source.contains("ReliableCommandClient"));
 
-    QFile source("ground_station_computer/src/app/main_window.cpp");
-    QVERIFY(source.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString source_text = QString::fromUtf8(source.readAll());
+    const QString source_text = readSourceOrFail("ground_station_computer/src/app/main_window.cpp");
     QVERIFY(source_text.contains("sendReliable"));
     QVERIFY(source_text.contains("reliable_command_client_->ping"));
 }
@@ -55,9 +77,7 @@ void ArchitectureBoundaryTests::frameworkCommunicationDoesNotIncludeProblemSpeci
     };
 
     for (const QString &path : paths) {
-        QFile file(path);
-        QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(path));
-        const QString source = QString::fromUtf8(file.readAll());
+        const QString source = readSourceOrFail(path);
         QVERIFY2(
             !source.contains("h_problem"),
             qPrintable(QString("%1 must not depend on h_problem").arg(path)));
@@ -65,9 +85,7 @@ void ArchitectureBoundaryTests::frameworkCommunicationDoesNotIncludeProblemSpeci
 }
 
 void ArchitectureBoundaryTests::subscriberWorkerPublishesGenericTaskSignals() {
-    QFile header("ground_station_computer/src/framework/communication/zmq_subscriber_worker.h");
-    QVERIFY(header.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString source = QString::fromUtf8(header.readAll());
+    const QString source = readSourceOrFail("ground_station_computer/src/framework/communication/zmq_subscriber_worker.h");
 
     QVERIFY(source.contains("taskPlanReceived"));
     QVERIFY(source.contains("taskEventReceived"));
@@ -79,9 +97,7 @@ void ArchitectureBoundaryTests::subscriberWorkerPublishesGenericTaskSignals() {
 }
 
 void ArchitectureBoundaryTests::competitionTaskAdapterExposesGenericProtocolHandlers() {
-    QFile header("ground_station_computer/src/framework/task/competition_task_adapter.h");
-    QVERIFY(header.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString source = QString::fromUtf8(header.readAll());
+    const QString source = readSourceOrFail("ground_station_computer/src/framework/task/competition_task_adapter.h");
 
     QVERIFY(source.contains("handleTaskPlan"));
     QVERIFY(source.contains("handleTaskEvent"));
@@ -93,18 +109,14 @@ void ArchitectureBoundaryTests::competitionTaskAdapterExposesGenericProtocolHand
 }
 
 void ArchitectureBoundaryTests::mainWindowDoesNotOwnProblemSpecificBusinessPanels() {
-    QFile header("ground_station_computer/src/app/main_window.h");
-    QVERIFY(header.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString header_source = QString::fromUtf8(header.readAll());
+    const QString header_source = readSourceOrFail("ground_station_computer/src/app/main_window.h");
     QVERIFY(!header_source.contains("handleGridConfig"));
     QVERIFY(!header_source.contains("handleTelemetry"));
     QVERIFY(!header_source.contains("handleDetection"));
     QVERIFY(!header_source.contains("QTableWidget"));
     QVERIFY(!header_source.contains("QListWidget"));
 
-    QFile source("ground_station_computer/src/app/main_window.cpp");
-    QVERIFY(source.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString source_text = QString::fromUtf8(source.readAll());
+    const QString source_text = readSourceOrFail("ground_station_computer/src/app/main_window.cpp");
     QVERIFY(!source_text.contains("实时检测记录"));
     QVERIFY(!source_text.contains("统计汇总"));
     QVERIFY(!source_text.contains("动物"));
@@ -112,9 +124,7 @@ void ArchitectureBoundaryTests::mainWindowDoesNotOwnProblemSpecificBusinessPanel
 }
 
 void ArchitectureBoundaryTests::documentsCanonicalTaskPlanStorage() {
-    QFile file("docs/framework_architecture.md");
-    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString contents = QString::fromUtf8(file.readAll());
+    const QString contents = readSourceOrFail("docs/framework_architecture.md");
     QVERIFY(contents.contains("运行时任务计划持久化统一使用 `competition::TaskPlan`"));
 }
 

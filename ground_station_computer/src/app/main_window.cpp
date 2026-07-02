@@ -14,13 +14,13 @@
 MainWindow::MainWindow(QWidget *parent, bool start_worker)
     : QMainWindow(parent) {
     QString adapter_error;
-    task_adapter_.reset(createConfiguredCompetitionTaskAdapter(&adapter_error));
+    task_adapter_ = createConfiguredCompetitionTaskAdapter(&adapter_error);
     if (!adapter_error.isEmpty()) {
         qWarning() << "Failed to create configured task adapter:" << adapter_error;
     }
     if (task_adapter_ == nullptr) {
         qWarning() << "Falling back to default task adapter";
-        task_adapter_.reset(createDefaultCompetitionTaskAdapter());
+        task_adapter_ = createDefaultCompetitionTaskAdapter();
     }
     const NetworkConfig network_config = NetworkConfig::fromEnvironment();
     command_sync_enabled_ = start_worker;

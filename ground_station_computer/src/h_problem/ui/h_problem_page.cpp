@@ -649,7 +649,7 @@ QVector<CompetitionTaskAdapterDescriptor> availableCompetitionTaskAdapters() {
         CompetitionTaskAdapterDescriptor{
             "h_problem",
             "H 题野生动物巡检",
-            []() -> CompetitionTaskAdapter * { return new HProblemTaskAdapter(); },
+            []() -> std::unique_ptr<CompetitionTaskAdapter> { return std::make_unique<HProblemTaskAdapter>(); },
         },
     };
 }
@@ -659,7 +659,7 @@ QString configuredCompetitionTaskAdapterId() {
     return configured_id.isEmpty() ? QStringLiteral("h_problem") : configured_id;
 }
 
-CompetitionTaskAdapter *createCompetitionTaskAdapter(const QString &adapter_id, QString *error_message) {
+std::unique_ptr<CompetitionTaskAdapter> createCompetitionTaskAdapter(const QString &adapter_id, QString *error_message) {
     const QString selected_id = adapter_id.trimmed().isEmpty() ? QStringLiteral("h_problem") : adapter_id.trimmed();
     QStringList available_ids;
     for (const CompetitionTaskAdapterDescriptor &descriptor : availableCompetitionTaskAdapters()) {
@@ -679,11 +679,11 @@ CompetitionTaskAdapter *createCompetitionTaskAdapter(const QString &adapter_id, 
     return nullptr;
 }
 
-CompetitionTaskAdapter *createConfiguredCompetitionTaskAdapter(QString *error_message) {
+std::unique_ptr<CompetitionTaskAdapter> createConfiguredCompetitionTaskAdapter(QString *error_message) {
     return createCompetitionTaskAdapter(configuredCompetitionTaskAdapterId(), error_message);
 }
 
-CompetitionTaskAdapter *createDefaultCompetitionTaskAdapter() {
+std::unique_ptr<CompetitionTaskAdapter> createDefaultCompetitionTaskAdapter() {
     return createCompetitionTaskAdapter(QStringLiteral("h_problem"));
 }
 
