@@ -67,12 +67,33 @@ ctest --test-dir build --output-on-failure
 
 ## 5. 双机网络配置
 
-地面站通过以下环境变量指定外部机载端地址：
+推荐网络拓扑为地面站 NUC 提供 Wi-Fi 热点，机载 NUC 作为客户端自动连接。默认网段和地址为：
+
+- 地面站热点：`10.42.0.1/24`
+- 机载端：`10.42.0.2/24`
+
+首次配置或更换 Wi-Fi 网卡后，先在地面站 NUC 执行：
 
 ```bash
-export NUEDC_AIRBORNE_HOST=192.168.10.20
-export NUEDC_TELEMETRY_PORT=5557
-export NUEDC_COMMAND_PORT=5558
+./scripts/start_ground_hotspot.sh \
+  --iface wlan0 --ssid NUEDC-Ground --password '12345678'
+```
+
+再在机载 NUC 执行：
+
+```bash
+cd /home/sb/Ground_station/point_lio_mid360_ros2
+./src/nuedc_airborne/airborne_bringup/scripts/connect_ground_hotspot.sh \
+  --iface wlan0 --ssid NUEDC-Ground --password '12345678'
+```
+
+两份 NetworkManager 配置均开启了自动连接。此后两台设备上电后会自动恢复热点和客户端连接，无需重复运行脚本。`wlan0` 仅为示例；脚本会自动检测 Wi-Fi 网卡，也可用 `--iface` 指定实际接口。
+
+地面站脚本会生成通信环境文件：
+
+```bash
+source runtime/ground_control_network.env
+./scripts/check_ground_control_network.sh --host 10.42.0.2
 ```
 
 端口约定：
@@ -80,7 +101,7 @@ export NUEDC_COMMAND_PORT=5558
 - `5557`：机载端 `PUB`，地面站 `SUB`，用于遥测和任务事件。
 - `5558`：机载端 `REP`，地面站 `REQ`，用于任务下发、PING、开始、停止和视觉控制命令。
 
-地面站侧可以使用脚本配置和检查网络：
+`setup_ground_control_network.sh` 保持可用，但仅用于旧的反向拓扑，即机载端提供热点、地面站连接机载热点：
 
 ```bash
 ./scripts/setup_ground_control_network.sh --host 192.168.10.20
@@ -93,16 +114,14 @@ source runtime/ground_control_network.env
 手动启动：
 
 ```bash
-export NUEDC_AIRBORNE_HOST=192.168.10.20
-export NUEDC_TELEMETRY_PORT=5557
-export NUEDC_COMMAND_PORT=5558
+source runtime/ground_control_network.env
 ./build/ground_station_computer/ground_station_app
 ```
 
-使用网络配置脚本后启动：
+配置地面热点后直接启动：
 
 ```bash
-./scripts/setup_ground_control_network.sh --host 192.168.10.20 --launch-app
+./scripts/start_ground_hotspot.sh --launch-app
 ```
 
 启动后，地面站会尝试 PING 外部机载端，并显示 `机载状态: 在线` 或 `机载状态: 离线`。
