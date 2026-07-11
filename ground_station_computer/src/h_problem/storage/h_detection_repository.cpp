@@ -5,6 +5,32 @@
 #include <QUuid>
 #include <QVariant>
 
+namespace {
+
+bool hasColumn(const QSqlDatabase &database, const QString &column_name) {
+    QSqlQuery query(database);
+    if (!query.exec("PRAGMA table_info(detections)")) {
+        return false;
+    }
+    while (query.next()) {
+        if (query.value(1).toString() == column_name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool addNullableColumnIfMissing(const QSqlDatabase &database, const QString &column_name) {
+    if (hasColumn(database, column_name)) {
+        return true;
+    }
+
+    QSqlQuery query(database);
+    return query.exec(QString("ALTER TABLE detections ADD COLUMN %1 TEXT").arg(column_name));
+}
+
+} // namespace
+
 DetectionRepository::DetectionRepository(const QString &database_path)
     : connection_name_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
       database_path_(database_path) {}
@@ -29,29 +55,67 @@ bool DetectionRepository::open() {
     }
 
     QSqlQuery query(database_);
-    return query.exec(
+    if (!query.exec(
         "CREATE TABLE IF NOT EXISTS detections ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "cell_code TEXT NOT NULL,"
         "animal_name TEXT NOT NULL,"
         "count INTEGER NOT NULL,"
-        "timestamp_ms INTEGER NOT NULL)");
+        "timestamp_ms INTEGER NOT NULL,"
+        "task_id TEXT,"
+        "track_id TEXT)")) {
+        return false;
+    }
+
+    if (!addNullableColumnIfMissing(database_, "task_id") || !addNullableColumnIfMissing(database_, "track_id")) {
+        return false;
+    }
+
+    return query.exec(
+        "CREATE UNIQUE INDEX IF NOT EXISTS detections_task_track_unique "
+        "ON detections(task_id, track_id) "
+        "WHERE task_id IS NOT NULL AND task_id <> '' "
+        "AND track_id IS NOT NULL AND track_id <> ''");
 }
 
-bool DetectionRepository::storeDetection(
+DetectionRepository::StoreResult DetectionRepository::storeDetection(
+    const QString &task_id,
+    const QString &track_id,
     const QString &cell_code,
     const QString &animal_name,
     int count,
     qint64 timestamp_ms) {
     QSqlQuery query(database_);
     query.prepare(
-        "INSERT INTO detections (cell_code, animal_name, count, timestamp_ms) "
-        "VALUES (?, ?, ?, ?)");
+        "INSERT OR IGNORE INTO detections "
+        "(task_id, track_id, cell_code, animal_name, count, timestamp_ms) "
+        "VALUES (?, ?, ?, ?, ?, ?)");
+    query.addBindValue(task_id);
+    query.addBindValue(track_id);
     query.addBindValue(cell_code);
     query.addBindValue(animal_name);
     query.addBindValue(count);
     query.addBindValue(timestamp_ms);
-    return query.exec();
+    if (!query.exec()) {
+        return StoreResult::Failed;
+    }
+    if (query.numRowsAffected() > 0) {
+        return StoreResult::Stored;
+    }
+
+    if (task_id.isEmpty() || track_id.isEmpty()) {
+        return StoreResult::Failed;
+    }
+
+    QSqlQuery duplicate_query(database_);
+    duplicate_query.prepare(
+        "SELECT 1 FROM detections WHERE task_id = ? AND track_id = ? LIMIT 1");
+    duplicate_query.addBindValue(task_id);
+    duplicate_query.addBindValue(track_id);
+    if (!duplicate_query.exec() || !duplicate_query.next()) {
+        return StoreResult::Failed;
+    }
+    return StoreResult::Duplicate;
 }
 
 QMap<QString, int> DetectionRepository::summarizeByAnimal() const {

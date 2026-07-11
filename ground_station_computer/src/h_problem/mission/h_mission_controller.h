@@ -27,12 +27,14 @@ class HMissionController {
 public:
     using TextCallback = std::function<void(const QString &)>;
     using RuntimeCallback = std::function<void()>;
+    using CommandLinkStateCallback = std::function<void(bool)>;
 
     HMissionController(
         HMissionViewSink *sink,
         TextCallback status_text_callback,
         TextCallback planning_button_text_callback,
-        RuntimeCallback runtime_callback);
+        RuntimeCallback runtime_callback,
+        CommandLinkStateCallback command_link_state_callback = {});
 
     // 查询。
     QString initialPlanningButtonText() const;
@@ -70,7 +72,20 @@ private:
         double takeoff_anchor_x_cm,
         double takeoff_anchor_y_cm);
     void applyTelemetry(const QString &current_cell, int step_index, int visited_cells);
-    void applyDetection(const QString &cell_code, const QString &animal_name, int count, qint64 timestamp_ms);
+    void applyDetection(
+        const QString &task_id,
+        const QString &track_id,
+        const QString &cell_code,
+        const QString &animal_name,
+        int count,
+        qint64 timestamp_ms);
+    void applyTargetUpdate(
+        const QString &track_id,
+        const QString &cell_code,
+        const QString &animal_name,
+        double score,
+        int target_offset_x_px,
+        int target_offset_y_px);
     void applySummary(const QMap<QString, int> &totals, int visited_cells);
     void enterNoFlySelectionMode();
     void generateMissionPlanFromCandidateSelection();
@@ -84,11 +99,13 @@ private:
     void notifyStatusText(const QString &text) const;
     void notifyPlanningButtonText(const QString &text) const;
     void notifyRuntimeChanged() const;
+    void notifyCommandLinkState(bool online) const;
 
     HMissionViewSink *sink_ = nullptr;
     TextCallback status_text_callback_;
     TextCallback planning_button_text_callback_;
     RuntimeCallback runtime_callback_;
+    CommandLinkStateCallback command_link_state_callback_;
 
     PlanningStateMachine planning_state_;
     MissionPlanBridge mission_plan_bridge_;

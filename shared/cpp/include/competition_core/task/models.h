@@ -57,6 +57,7 @@ struct AckResult {
     bool mission_loaded = false;
     bool mission_running = false;
     quint64 last_accepted_sequence = 0;
+    bool vision_armed = false;
 };
 
 struct CommandState {
@@ -66,6 +67,7 @@ struct CommandState {
         : start_requested_(other.isStartRequested()),
           stop_requested_(other.isStopRequested()),
           mission_loaded_(other.isMissionLoaded()),
+          vision_targeting_armed_(other.isVisionTargetingArmed()),
           last_accepted_sequence_(other.lastAcceptedSequence()),
           active_task_plan_(other.activeTaskPlan()) {}
 
@@ -76,6 +78,7 @@ struct CommandState {
         start_requested_.store(other.isStartRequested(), std::memory_order_relaxed);
         stop_requested_.store(other.isStopRequested(), std::memory_order_relaxed);
         mission_loaded_.store(other.isMissionLoaded(), std::memory_order_relaxed);
+        vision_targeting_armed_.store(other.isVisionTargetingArmed(), std::memory_order_relaxed);
         last_accepted_sequence_.store(other.lastAcceptedSequence(), std::memory_order_relaxed);
         setActiveTaskPlan(other.activeTaskPlan());
         return *this;
@@ -88,6 +91,7 @@ struct CommandState {
 
     void requestStop() {
         stop_requested_.store(true, std::memory_order_release);
+        resetVisionTargeting();
     }
 
     bool isStartRequested() const {
@@ -96,6 +100,18 @@ struct CommandState {
 
     bool isStopRequested() const {
         return stop_requested_.load(std::memory_order_acquire);
+    }
+
+    void armVisionTargeting() {
+        vision_targeting_armed_.store(true, std::memory_order_release);
+    }
+
+    void resetVisionTargeting() {
+        vision_targeting_armed_.store(false, std::memory_order_release);
+    }
+
+    bool isVisionTargetingArmed() const {
+        return vision_targeting_armed_.load(std::memory_order_acquire);
     }
 
     void setMissionLoaded(bool loaded) {
@@ -139,6 +155,7 @@ private:
     std::atomic_bool start_requested_{false};
     std::atomic_bool stop_requested_{false};
     std::atomic_bool mission_loaded_{false};
+    std::atomic_bool vision_targeting_armed_{false};
     std::atomic<quint64> last_accepted_sequence_{0};
     mutable QMutex command_mutex_;
     mutable QMutex active_task_plan_mutex_;

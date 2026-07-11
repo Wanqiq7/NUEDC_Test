@@ -19,7 +19,7 @@ public:
     // 「mission_synced_to_airborne_=false; mission_running_=false; clearCommandAckState();」组合。
     void reset();
 
-    // 应用机载端 Ack。无效 Ack（!ok 或 task_id 空且 seq==0）不改变既有状态，
+    // 应用机载端 Ack。携带 vision_armed=true 的成功状态 Ack 即使没有任务或序列字段也有效。
     // 返回 false 表示未应用（调用方据此决定是否刷新 UI）；成功应用返回 true。
     bool applyCommandAck(const CommandSendResult &result);
 
@@ -41,6 +41,7 @@ public:
     const QString &acknowledgedTaskId() const { return acknowledged_task_id_; }
     bool acknowledgedMissionLoaded() const { return acknowledged_mission_loaded_; }
     quint64 lastAcceptedSequence() const { return last_accepted_sequence_; }
+    bool visionArmed() const { return vision_armed_; }
     bool hasAck() const { return !acknowledged_task_id_.isEmpty() || last_accepted_sequence_ > 0; }
 
     // 把自身拥有的字段投射进通用运行态输入；调用方另行补齐 command_sync_enabled /
@@ -53,4 +54,5 @@ private:
     QString acknowledged_task_id_;
     bool acknowledged_mission_loaded_ = false;
     quint64 last_accepted_sequence_ = 0;
+    bool vision_armed_ = false;
 };

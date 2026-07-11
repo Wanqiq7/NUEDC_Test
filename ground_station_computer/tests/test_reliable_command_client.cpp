@@ -36,6 +36,9 @@ private slots:
     void treatsAcceptedMissionLoadStaleAckAsSuccess();
     void treatsAcceptedStartStaleAckAsSuccess();
     void treatsAcceptedStopStaleAckAsSuccess();
+    void treatsAcceptedArmStaleAckAsSuccess();
+    void treatsAcceptedResetStaleAckAsSuccess();
+    void doesNotTreatArmedStaleResetAckAsSuccess();
     void doesNotTreatWrongTargetStaleAckAsSuccess();
     void formatsIdempotentSuccessForOperatorStatus();
     void formatsNormalSuccessForOperatorStatus();
@@ -122,6 +125,48 @@ void ReliableCommandClientTests::treatsAcceptedStopStaleAckAsSuccess() {
     QVERIFY(result.ok);
     QCOMPARE(result.message, QString("command already accepted"));
     QCOMPARE(static_cast<int>(client.status()), static_cast<int>(CommandLinkStatus::Connected));
+}
+
+void ReliableCommandClientTests::treatsAcceptedArmStaleAckAsSuccess() {
+    ScriptedTransport transport({CommandSendResult{false, "stale command", "task-001", true, false, 14, true}});
+    ReliableCommandClient client(&transport, ReliableCommandPolicy{1, 0});
+
+    const Envelope envelope = ZmqCommandClient::buildControlCommandEnvelope(
+        14,
+        GroundControlCommandType::ArmTargeting,
+        "task-001");
+    const CommandSendResult result = client.sendReliable(envelope);
+
+    QVERIFY(result.ok);
+    QCOMPARE(result.message, QString("command already accepted"));
+}
+
+void ReliableCommandClientTests::treatsAcceptedResetStaleAckAsSuccess() {
+    ScriptedTransport transport({CommandSendResult{false, "stale command", "task-001", true, false, 15, false}});
+    ReliableCommandClient client(&transport, ReliableCommandPolicy{1, 0});
+
+    const Envelope envelope = ZmqCommandClient::buildControlCommandEnvelope(
+        15,
+        GroundControlCommandType::ResetTargeting,
+        "task-001");
+    const CommandSendResult result = client.sendReliable(envelope);
+
+    QVERIFY(result.ok);
+    QCOMPARE(result.message, QString("command already accepted"));
+}
+
+void ReliableCommandClientTests::doesNotTreatArmedStaleResetAckAsSuccess() {
+    ScriptedTransport transport({CommandSendResult{false, "stale command", "task-001", true, false, 16, true}});
+    ReliableCommandClient client(&transport, ReliableCommandPolicy{1, 0});
+
+    const Envelope envelope = ZmqCommandClient::buildControlCommandEnvelope(
+        16,
+        GroundControlCommandType::ResetTargeting,
+        "task-001");
+    const CommandSendResult result = client.sendReliable(envelope);
+
+    QVERIFY(!result.ok);
+    QCOMPARE(result.message, QString("stale command"));
 }
 
 void ReliableCommandClientTests::doesNotTreatWrongTargetStaleAckAsSuccess() {

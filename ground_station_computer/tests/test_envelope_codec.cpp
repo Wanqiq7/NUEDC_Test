@@ -9,6 +9,7 @@ class EnvelopeCodecTests : public QObject {
 
 private slots:
     void parsesAckPayload();
+    void parsesAckVisionArmed();
     void rejectsNonAckPayload();
     void keepsZmqCommandClientWrapperCompatible();
 };
@@ -26,6 +27,21 @@ void EnvelopeCodecTests::parsesAckPayload() {
     const auto result = EnvelopeCodec::parseAck(QByteArray::fromStdString(bytes));
     QVERIFY(result.ok);
     QCOMPARE(result.message, QString("ok"));
+}
+
+void EnvelopeCodecTests::parsesAckVisionArmed() {
+    Envelope envelope;
+    envelope.set_sequence(1);
+    auto *ack = envelope.mutable_ack();
+    ack->set_success(true);
+    ack->set_vision_armed(true);
+
+    std::string bytes;
+    envelope.SerializeToString(&bytes);
+
+    const auto result = EnvelopeCodec::parseAck(QByteArray::fromStdString(bytes));
+    QVERIFY(result.ok);
+    QVERIFY(result.vision_armed);
 }
 
 void EnvelopeCodecTests::rejectsNonAckPayload() {

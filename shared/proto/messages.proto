@@ -42,6 +42,7 @@ message Ack {
   bool mission_loaded = 4;
   bool mission_running = 5;
   uint64 last_accepted_sequence = 6;
+  bool vision_armed = 7;
 }
 
 enum CommandType {
@@ -49,6 +50,8 @@ enum CommandType {
   COMMAND_TYPE_START_MISSION = 1;
   COMMAND_TYPE_STOP_MISSION = 2;
   COMMAND_TYPE_PING = 3;
+  COMMAND_TYPE_ARM_TARGETING = 4;
+  COMMAND_TYPE_RESET_TARGETING = 5;
 }
 
 message ControlCommand {

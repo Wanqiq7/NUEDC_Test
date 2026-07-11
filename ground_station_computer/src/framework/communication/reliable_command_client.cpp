@@ -17,6 +17,7 @@ competition::AckResult toAckResult(const CommandSendResult &result) {
         result.mission_loaded,
         result.mission_running,
         result.last_accepted_sequence,
+        result.vision_armed,
     };
 }
 

@@ -20,5 +20,6 @@ CommandSendResult EnvelopeCodec::parseAck(const QByteArray &payload) {
     result.mission_loaded = ack.mission_loaded();
     result.mission_running = ack.mission_running();
     result.last_accepted_sequence = ack.last_accepted_sequence();
+    result.vision_armed = ack.vision_armed();
     return result;
 }

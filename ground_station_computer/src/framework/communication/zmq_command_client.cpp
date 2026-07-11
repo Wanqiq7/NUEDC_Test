@@ -31,6 +31,10 @@ CommandType toProtoCommandType(GroundControlCommandType command_type) {
         return CommandType::COMMAND_TYPE_STOP_MISSION;
     case GroundControlCommandType::Ping:
         return CommandType::COMMAND_TYPE_PING;
+    case GroundControlCommandType::ArmTargeting:
+        return CommandType::COMMAND_TYPE_ARM_TARGETING;
+    case GroundControlCommandType::ResetTargeting:
+        return CommandType::COMMAND_TYPE_RESET_TARGETING;
     }
     return CommandType::COMMAND_TYPE_UNSPECIFIED;
 }

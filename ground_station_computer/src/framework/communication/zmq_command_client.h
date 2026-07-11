@@ -11,6 +11,8 @@ enum class GroundControlCommandType {
     StartMission,
     StopMission,
     Ping,
+    ArmTargeting,
+    ResetTargeting,
 };
 
 class ZmqCommandClient {

@@ -148,6 +148,7 @@ Envelope buildAckEnvelope(const AckResult &result) {
     payload->set_mission_loaded(result.mission_loaded);
     payload->set_mission_running(result.mission_running);
     payload->set_last_accepted_sequence(result.last_accepted_sequence);
+    payload->set_vision_armed(result.vision_armed);
     return envelope;
 }
 
@@ -158,6 +159,7 @@ Envelope buildAckEnvelope(const AckResult &result, const CommandState &state) {
     stateful_result.mission_loaded = state.isMissionLoaded();
     stateful_result.mission_running = state.isStartRequested() && !state.isStopRequested();
     stateful_result.last_accepted_sequence = state.lastAcceptedSequence();
+    stateful_result.vision_armed = state.isVisionTargetingArmed();
     return buildAckEnvelope(stateful_result);
 }
 

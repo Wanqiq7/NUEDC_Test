@@ -6,6 +6,7 @@
 #include "framework/communication/reliable_command_client.h"
 #include "framework/communication/zmq_command_client.h"
 #include "framework/task/competition_task_adapter.h"
+#include "h_problem/mission/h_mission_command_service.h"
 
 #include <memory>
 
@@ -29,8 +30,14 @@ private:
     void handlePlanningButtonClicked();
     void handleExecuteMissionClicked();
     void handleStopMissionClicked();
+    void handleArmVisionClicked();
+    void handleResetVisionClicked();
+    void handleProbeAirborneLinkClicked();
+    void sendVisionControlCommand(GroundControlCommandType command_type, const QString &action_text);
 
     void probeAirborneAvailability(bool update_status_message = false);
+    void recordCommandLinkResult(bool online);
+    bool commandLinkHealthy() const;
     void refreshExecutionControls();
     void refreshAirborneStatusLabel();
 
@@ -40,12 +47,18 @@ private:
     QPushButton *planning_button_ = nullptr;
     QPushButton *execute_button_ = nullptr;
     QPushButton *stop_button_ = nullptr;
+    QPushButton *arm_vision_button_ = nullptr;
+    QPushButton *reset_vision_button_ = nullptr;
+    QPushButton *probe_airborne_link_button_ = nullptr;
     QLabel *airborne_status_label_ = nullptr;
     bool command_sync_enabled_ = true;
-    bool airborne_online_ = false;
+    bool command_link_online_ = false;
+    qint64 last_successful_command_reply_ms_ = 0;
+    bool telemetry_online_ = false;
     ZmqCommandClient command_client_;
     std::unique_ptr<ZmqCommandTransport> command_transport_;
     std::unique_ptr<ReliableCommandClient> reliable_command_client_;
+    std::unique_ptr<MissionCommandService> mission_command_service_;
 
     ZmqSubscriberWorker *worker_ = nullptr;
 };

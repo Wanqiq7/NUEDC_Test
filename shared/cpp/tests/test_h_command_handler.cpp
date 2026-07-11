@@ -37,6 +37,7 @@ private slots:
     void rejectsStaleControlCommandSequence();
     void rejectsLowerSequenceAfterHigherConcurrentCommand();
     void commandStateIsSafeForConcurrentCommandHandling();
+    void handlesVisionTargetingCommandsWithMonotonicSequences();
     void rejectsUnsupportedPayload();
     void rejectsInvalidProtobufBytes();
 };
@@ -162,6 +163,64 @@ void HCommandHandlerTests::commandStateIsSafeForConcurrentCommandHandling() {
         delete thread;
     }
     QVERIFY(!failed.load(std::memory_order_relaxed));
+}
+
+void HCommandHandlerTests::handlesVisionTargetingCommandsWithMonotonicSequences() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    hcore::CommandState state;
+    const QString output_path = QDir(dir.path()).filePath("plan.json");
+
+    Envelope arm;
+    arm.set_sequence(41);
+    arm.mutable_control_command()->set_type(COMMAND_TYPE_ARM_TARGETING);
+    const hcore::AckResult arm_ack = hcore::handleEnvelopeCommand(arm, output_path, &state);
+    QVERIFY(arm_ack.success);
+    QVERIFY(arm_ack.vision_armed);
+    QVERIFY(state.isVisionTargetingArmed());
+
+    Envelope stale_reset;
+    stale_reset.set_sequence(40);
+    stale_reset.mutable_control_command()->set_type(COMMAND_TYPE_RESET_TARGETING);
+    const hcore::AckResult stale_ack = hcore::handleEnvelopeCommand(stale_reset, output_path, &state);
+    QVERIFY(!stale_ack.success);
+    QCOMPARE(stale_ack.message, QString("stale command"));
+    QVERIFY(stale_ack.vision_armed);
+    QVERIFY(state.isVisionTargetingArmed());
+    QCOMPARE(state.lastAcceptedSequence(), 41ULL);
+
+    Envelope reset;
+    reset.set_sequence(42);
+    reset.mutable_control_command()->set_type(COMMAND_TYPE_RESET_TARGETING);
+    const hcore::AckResult reset_ack = hcore::handleEnvelopeCommand(reset, output_path, &state);
+    QVERIFY(reset_ack.success);
+    QVERIFY(!reset_ack.vision_armed);
+    QVERIFY(!state.isVisionTargetingArmed());
+
+    Envelope stale_arm;
+    stale_arm.set_sequence(41);
+    stale_arm.mutable_control_command()->set_type(COMMAND_TYPE_ARM_TARGETING);
+    const hcore::AckResult stale_arm_ack = hcore::handleEnvelopeCommand(stale_arm, output_path, &state);
+    QVERIFY(!stale_arm_ack.success);
+    QCOMPARE(stale_arm_ack.message, QString("stale command"));
+    QVERIFY(!stale_arm_ack.vision_armed);
+    QVERIFY(!state.isVisionTargetingArmed());
+    QCOMPARE(state.lastAcceptedSequence(), 42ULL);
+
+    Envelope rearm;
+    rearm.set_sequence(43);
+    rearm.mutable_control_command()->set_type(COMMAND_TYPE_ARM_TARGETING);
+    QVERIFY(hcore::handleEnvelopeCommand(rearm, output_path, &state).success);
+    QVERIFY(state.isVisionTargetingArmed());
+
+    Envelope stop;
+    stop.set_sequence(44);
+    stop.mutable_control_command()->set_type(COMMAND_TYPE_STOP_MISSION);
+    const hcore::AckResult stop_ack = hcore::handleEnvelopeCommand(stop, output_path, &state);
+    QVERIFY(stop_ack.success);
+    QVERIFY(!stop_ack.vision_armed);
+    QVERIFY(!state.isVisionTargetingArmed());
+    QVERIFY(!hcore::buildAckEnvelope(stop_ack, state).ack().vision_armed());
 }
 
 void HCommandHandlerTests::rejectsUnsupportedPayload() {

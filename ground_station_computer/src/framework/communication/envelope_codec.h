@@ -10,6 +10,7 @@ struct CommandSendResult {
     bool mission_loaded = false;
     bool mission_running = false;
     quint64 last_accepted_sequence = 0;
+    bool vision_armed = false;
 };
 
 class EnvelopeCodec {

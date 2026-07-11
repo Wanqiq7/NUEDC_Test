@@ -13,6 +13,7 @@ public:
 
     virtual void setCaseLabel(const QString &text) = 0;
     virtual void setMissionLabel(const QString &text) = 0;
+    virtual void setTargetStatus(const QString &text) = 0;
     virtual void showRoute(
         const QStringList &no_fly_cells,
         const QStringList &route,

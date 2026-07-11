@@ -32,6 +32,7 @@ public:
     // 概览标签。
     void setCaseLabel(const QString &text) override;
     void setMissionLabel(const QString &text) override;
+    void setTargetStatus(const QString &text) override;
 
     // 展示已规划航线（禁飞格 / 航线 / 起点 / 终点降落走廊），并关闭禁飞编辑。
     void showRoute(
@@ -62,6 +63,7 @@ private:
     GridScene *grid_scene_ = nullptr;
     QLabel *case_label_ = nullptr;
     QLabel *mission_label_ = nullptr;
+    QLabel *target_status_label_ = nullptr;
     QListWidget *detection_list_ = nullptr;
     QTableWidget *summary_table_ = nullptr;
     CellClickedHandler cell_clicked_handler_;

@@ -76,6 +76,8 @@ QWidget *HProblemView::buildWidget(QWidget *parent, const QMap<QString, int> &in
     case_label_->setObjectName("StatusText");
     mission_label_ = new QLabel("任务: 等待规划", parent);
     mission_label_->setObjectName("StatusText");
+    target_status_label_ = new QLabel("目标: 等待跟踪", parent);
+    target_status_label_->setObjectName("TargetStatusLabel");
 
     auto *legend_label = new QLabel(parent);
     legend_label->setWordWrap(true);
@@ -107,6 +109,7 @@ QWidget *HProblemView::buildWidget(QWidget *parent, const QMap<QString, int> &in
     overview_layout->addWidget(overview_title);
     overview_layout->addWidget(case_label_);
     overview_layout->addWidget(mission_label_);
+    overview_layout->addWidget(target_status_label_);
     overview_layout->addSpacing(4);
     overview_layout->addWidget(legend_label);
 
@@ -154,6 +157,12 @@ void HProblemView::setCaseLabel(const QString &text) {
 void HProblemView::setMissionLabel(const QString &text) {
     if (mission_label_ != nullptr) {
         mission_label_->setText(text);
+    }
+}
+
+void HProblemView::setTargetStatus(const QString &text) {
+    if (target_status_label_ != nullptr) {
+        target_status_label_->setText(text);
     }
 }
 

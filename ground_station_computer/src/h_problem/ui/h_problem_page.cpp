@@ -15,8 +15,8 @@ HProblemTaskAdapter::HProblemTaskAdapter()
           &view_,
           [this](const QString &text) { notifyStatusTextChanged(text); },
           [this](const QString &text) { notifyPlanningButtonTextChanged(text); },
-          [this]() { notifyRuntimeChanged(); })) {
-}
+          [this]() { notifyRuntimeChanged(); },
+          [this](bool online) { notifyCommandLinkStateChanged(online); })) {}
 
 QWidget *HProblemTaskAdapter::createTaskView(QWidget *parent) {
     view_.setCellClickedHandler([this](const QString &cell_code) {
@@ -89,8 +89,6 @@ void HProblemTaskAdapter::applyCommandAck(const CommandSendResult &result) {
     controller_->applyCommandAck(result);
 }
 
-// H 题只向框架注册表暴露自己的 descriptor；注册聚合与工厂选择逻辑已迁到
-// framework/task/competition_task_registry.cpp，新增题目无需再改动本文件。
 CompetitionTaskAdapterDescriptor hProblemTaskAdapterDescriptor() {
     return CompetitionTaskAdapterDescriptor{
         QStringLiteral("h_problem"),

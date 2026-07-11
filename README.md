@@ -67,6 +67,17 @@ export NUEDC_COMMAND_PORT=5558
 - `COMMAND_TYPE_PING`：机载端返回 `pong`
 - `COMMAND_TYPE_START_MISSION`：机载端记录开始执行请求
 - `COMMAND_TYPE_STOP_MISSION`：机载端记录停止请求
+- `COMMAND_TYPE_ARM_TARGETING`：机载端启用视觉瞄准，Ack 的 `vision_armed` 为 `true`
+- `COMMAND_TYPE_RESET_TARGETING`：机载端复位视觉瞄准，Ack 的 `vision_armed` 为 `false`
+
+### ARM / RESET Ack 合约
+
+所有命令回复均使用 `Envelope.ack`。对于 `ARM_TARGETING` 与 `RESET_TARGETING`，机载端必须在
+处理命令后返回当前完整状态：`success`、`message`、`task_id`、`mission_loaded`、
+`mission_running`、`last_accepted_sequence` 和 `vision_armed`。`last_accepted_sequence` 必须是
+已经接受的命令序列号；地面站用它和 `vision_armed` 判断超时重试是否已被机载端接收。命令链路
+在线状态只由 PING 或命令 Ack 更新，收到遥测不代表 REQ/REP 命令端口可用。
+命令链路状态过期后，可使用地面站的 `刷新机载链路` 操作发送 PING；成功 Ack 会恢复可用的执行和视觉控制。
 
 新增题目不需要复制主流程。先扩展 `shared/proto/messages.proto` 中已有通用字段能表达的元数据，
 再新增地面站 `CompetitionTaskAdapter` 实现；禁止把题目专有 UI 或解析逻辑直接写回 Shell。详细步骤见 `docs/adding_task_adapter.md`。

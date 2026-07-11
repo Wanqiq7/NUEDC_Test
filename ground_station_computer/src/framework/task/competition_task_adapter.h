@@ -19,12 +19,16 @@ class CompetitionTaskAdapter {
 public:
     using TextCallback = std::function<void(const QString &)>;
     using RuntimeCallback = std::function<void()>;
+    using CommandLinkStateCallback = std::function<void(bool)>;
 
     virtual ~CompetitionTaskAdapter() = default;
 
     void setStatusTextCallback(TextCallback callback) { status_text_callback_ = std::move(callback); }
     void setPlanningButtonTextCallback(TextCallback callback) { planning_button_text_callback_ = std::move(callback); }
     void setRuntimeCallback(RuntimeCallback callback) { runtime_callback_ = std::move(callback); }
+    void setCommandLinkStateCallback(CommandLinkStateCallback callback) {
+        command_link_state_callback_ = std::move(callback);
+    }
 
     virtual QWidget *createTaskView(QWidget *parent) = 0;
     virtual QString initialPlanningButtonText() const = 0;
@@ -64,10 +68,17 @@ protected:
         }
     }
 
+    void notifyCommandLinkStateChanged(bool online) const {
+        if (command_link_state_callback_) {
+            command_link_state_callback_(online);
+        }
+    }
+
 private:
     TextCallback status_text_callback_;
     TextCallback planning_button_text_callback_;
     RuntimeCallback runtime_callback_;
+    CommandLinkStateCallback command_link_state_callback_;
 };
 
 struct CompetitionTaskAdapterDescriptor {
@@ -82,4 +93,3 @@ QString configuredCompetitionTaskAdapterId();
 std::unique_ptr<CompetitionTaskAdapter> createCompetitionTaskAdapter(const QString &adapter_id, QString *error_message = nullptr);
 std::unique_ptr<CompetitionTaskAdapter> createConfiguredCompetitionTaskAdapter(QString *error_message = nullptr);
 std::unique_ptr<CompetitionTaskAdapter> createDefaultCompetitionTaskAdapter();
-

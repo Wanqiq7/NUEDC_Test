@@ -16,6 +16,7 @@ AckResult staleCommandResult(const CommandState *state) {
         result.mission_loaded = state->isMissionLoaded();
         result.mission_running = state->isStartRequested() && !state->isStopRequested();
         result.last_accepted_sequence = state->lastAcceptedSequence();
+        result.vision_armed = state->isVisionTargetingArmed();
     }
     return result;
 }
@@ -71,6 +72,30 @@ AckResult MissionCommandStateMachine::apply(const Envelope &envelope) {
         acceptEnvelopeSequence(envelope, state_);
         return {true, "stop accepted"};
     }
+    case COMMAND_TYPE_ARM_TARGETING: {
+        AckResult stale_result;
+        if (rejectStaleSequence(envelope, state_, &stale_result)) {
+            return stale_result;
+        }
+        if (state_ != nullptr) {
+            state_->armVisionTargeting();
+        }
+        acceptEnvelopeSequence(envelope, state_);
+        AckResult result{true, "vision armed"};
+        result.vision_armed = state_ != nullptr && state_->isVisionTargetingArmed();
+        return result;
+    }
+    case COMMAND_TYPE_RESET_TARGETING: {
+        AckResult stale_result;
+        if (rejectStaleSequence(envelope, state_, &stale_result)) {
+            return stale_result;
+        }
+        if (state_ != nullptr) {
+            state_->resetVisionTargeting();
+        }
+        acceptEnvelopeSequence(envelope, state_);
+        return {true, "vision reset"};
+    }
     case COMMAND_TYPE_PING:
         return {true, "pong"};
     default:
@@ -103,6 +128,10 @@ bool isCommandAlreadyAccepted(const Envelope &envelope, const AckResult &result)
             return result.mission_running;
         case COMMAND_TYPE_STOP_MISSION:
             return !result.mission_running;
+        case COMMAND_TYPE_ARM_TARGETING:
+            return result.vision_armed;
+        case COMMAND_TYPE_RESET_TARGETING:
+            return !result.vision_armed;
         default:
             return false;
         }

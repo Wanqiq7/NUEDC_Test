@@ -45,6 +45,16 @@ int firstInt(const QJsonObject &object, const QStringList &keys, int fallback = 
     return fallback;
 }
 
+double firstDouble(const QJsonObject &object, const QStringList &keys, double fallback = 0.0) {
+    for (const QString &key : keys) {
+        const QJsonValue value = object.value(key);
+        if (value.isDouble()) {
+            return value.toDouble();
+        }
+    }
+    return fallback;
+}
+
 } // namespace
 
 bool HProtocolAdapter::decodeGridConfig(const TaskPlanMessage &message, HGridConfigData *data, QString *error_message) {
@@ -110,9 +120,38 @@ bool HProtocolAdapter::decodeDetection(const TaskEventMessage &message, HDetecti
         return false;
     }
 
+    data->track_id = firstString(payload.value(), {"track_id"});
     data->cell_code = firstString(payload.value(), {"cell_code", "cell"}, QString::fromStdString(message.waypoint_id()));
     data->animal_name = firstString(payload.value(), {"animal_name", "animal"});
     data->count = firstInt(payload.value(), {"count"}, 0);
+    if (error_message != nullptr) {
+        error_message->clear();
+    }
+    return true;
+}
+
+bool HProtocolAdapter::decodeTargetUpdate(
+    const TaskEventMessage &message,
+    HTargetUpdateData *data,
+    QString *error_message) {
+    if (data == nullptr) {
+        if (error_message != nullptr) {
+            *error_message = "H 题目标更新输出参数为空";
+        }
+        return false;
+    }
+
+    const auto payload = payloadObject(QString::fromStdString(message.payload_json()), error_message);
+    if (!payload.has_value()) {
+        return false;
+    }
+
+    data->track_id = firstString(payload.value(), {"track_id"});
+    data->cell_code = firstString(payload.value(), {"cell_code", "cell"}, QString::fromStdString(message.waypoint_id()));
+    data->animal_name = firstString(payload.value(), {"animal_name", "animal"});
+    data->score = firstDouble(payload.value(), {"score"});
+    data->target_offset_x_px = firstInt(payload.value(), {"target_offset_x_px"});
+    data->target_offset_y_px = firstInt(payload.value(), {"target_offset_y_px"});
     if (error_message != nullptr) {
         error_message->clear();
     }

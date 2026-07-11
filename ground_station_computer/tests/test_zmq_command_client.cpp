@@ -12,6 +12,8 @@ private slots:
     void rejectsNonAckPayload();
     void parsesFailureAckPayload();
     void buildsControlCommandWithTaskId();
+    void buildsArmTargetingControlCommand();
+    void buildsResetTargetingControlCommand();
     void buildsControlCommandWithMonotonicSequence();
 };
 
@@ -89,6 +91,28 @@ void ZmqCommandClientTests::buildsControlCommandWithTaskId() {
 
     QCOMPARE(envelope.payload_case(), Envelope::kControlCommand);
     QCOMPARE(envelope.control_command().type(), CommandType::COMMAND_TYPE_START_MISSION);
+    QCOMPARE(QString::fromStdString(envelope.control_command().task_id()), QString("task-123"));
+}
+
+void ZmqCommandClientTests::buildsArmTargetingControlCommand() {
+    const Envelope envelope = ZmqCommandClient::buildControlCommandEnvelope(
+        101,
+        GroundControlCommandType::ArmTargeting,
+        "task-123");
+
+    QCOMPARE(envelope.payload_case(), Envelope::kControlCommand);
+    QCOMPARE(envelope.control_command().type(), CommandType::COMMAND_TYPE_ARM_TARGETING);
+    QCOMPARE(QString::fromStdString(envelope.control_command().task_id()), QString("task-123"));
+}
+
+void ZmqCommandClientTests::buildsResetTargetingControlCommand() {
+    const Envelope envelope = ZmqCommandClient::buildControlCommandEnvelope(
+        102,
+        GroundControlCommandType::ResetTargeting,
+        "task-123");
+
+    QCOMPARE(envelope.payload_case(), Envelope::kControlCommand);
+    QCOMPARE(envelope.control_command().type(), CommandType::COMMAND_TYPE_RESET_TARGETING);
     QCOMPARE(QString::fromStdString(envelope.control_command().task_id()), QString("task-123"));
 }
 

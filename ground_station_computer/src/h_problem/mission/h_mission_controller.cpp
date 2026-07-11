@@ -14,11 +14,13 @@ HMissionController::HMissionController(
     HMissionViewSink *sink,
     TextCallback status_text_callback,
     TextCallback planning_button_text_callback,
-    RuntimeCallback runtime_callback)
+    RuntimeCallback runtime_callback,
+    CommandLinkStateCallback command_link_state_callback)
     : sink_(sink),
       status_text_callback_(std::move(status_text_callback)),
       planning_button_text_callback_(std::move(planning_button_text_callback)),
       runtime_callback_(std::move(runtime_callback)),
+      command_link_state_callback_(std::move(command_link_state_callback)),
       repository_(RepositoryPaths::resolve(QStringLiteral("runtime/ground_control_results.db"))) {
     case_file_path_ = RepositoryPaths::resolve(case_file_path_);
     mission_plan_output_path_ = RepositoryPaths::resolve(mission_plan_output_path_);
@@ -41,6 +43,12 @@ void HMissionController::notifyPlanningButtonText(const QString &text) const {
 void HMissionController::notifyRuntimeChanged() const {
     if (runtime_callback_) {
         runtime_callback_();
+    }
+}
+
+void HMissionController::notifyCommandLinkState(bool online) const {
+    if (command_link_state_callback_) {
+        command_link_state_callback_(online);
     }
 }
 
@@ -121,16 +129,43 @@ void HMissionController::handleTaskEvent(const competition::TaskEvent &event, qi
             notifyStatusText(QString("错误: %1").arg(error_message));
             return;
         }
-        applyDetection(detection.cell_code, detection.animal_name, detection.count, timestamp_ms);
+        applyDetection(
+            event.task_id,
+            detection.track_id,
+            detection.cell_code,
+            detection.animal_name,
+            detection.count,
+            timestamp_ms);
         return;
     }
 
-    HTelemetryData telemetry;
-    if (!HProtocolAdapter::decodeTelemetry(message, &telemetry, &error_message)) {
-        notifyStatusText(QString("错误: %1").arg(error_message));
+    if (event.event_type == "target_update") {
+        HTargetUpdateData target_update;
+        if (!HProtocolAdapter::decodeTargetUpdate(message, &target_update, &error_message)) {
+            notifyStatusText(QString("错误: %1").arg(error_message));
+            return;
+        }
+        applyTargetUpdate(
+            target_update.track_id,
+            target_update.cell_code,
+            target_update.animal_name,
+            target_update.score,
+            target_update.target_offset_x_px,
+            target_update.target_offset_y_px);
         return;
     }
-    applyTelemetry(telemetry.current_cell, telemetry.step_index, telemetry.visited_cells);
+
+    if (event.event_type == "telemetry") {
+        HTelemetryData telemetry;
+        if (!HProtocolAdapter::decodeTelemetry(message, &telemetry, &error_message)) {
+            notifyStatusText(QString("错误: %1").arg(error_message));
+            return;
+        }
+        applyTelemetry(telemetry.current_cell, telemetry.step_index, telemetry.visited_cells);
+        return;
+    }
+
+    qWarning() << "Ignoring unknown H problem event type" << event.event_type;
 }
 
 void HMissionController::handleTaskSummary(const competition::TaskSummary &summary) {
@@ -191,12 +226,26 @@ void HMissionController::applyTelemetry(const QString &current_cell, int step_in
 }
 
 void HMissionController::applyDetection(
+    const QString &task_id,
+    const QString &track_id,
     const QString &cell_code,
     const QString &animal_name,
     int count,
     qint64 timestamp_ms) {
-    if (!repository_.storeDetection(cell_code, animal_name, count, timestamp_ms)) {
+    const DetectionRepository::StoreResult store_result = repository_.storeDetection(
+        task_id,
+        track_id,
+        cell_code,
+        animal_name,
+        count,
+        timestamp_ms);
+    if (store_result == DetectionRepository::StoreResult::Duplicate) {
+        qDebug() << "Ignoring duplicate detection" << task_id << track_id;
+        return;
+    }
+    if (store_result != DetectionRepository::StoreResult::Stored) {
         qWarning() << "Failed to store detection" << cell_code << animal_name << count;
+        return;
     }
     detection_totals_[animal_name] += count;
     sink_->appendDetection(QString("[%1] %2 -> %3 x %4")
@@ -204,6 +253,22 @@ void HMissionController::applyDetection(
                                .arg(cell_code, animal_name)
                                .arg(count));
     sink_->setSummaryTotals(detection_totals_);
+}
+
+void HMissionController::applyTargetUpdate(
+    const QString &track_id,
+    const QString &cell_code,
+    const QString &animal_name,
+    double score,
+    int target_offset_x_px,
+    int target_offset_y_px) {
+    sink_->setTargetStatus(
+        QString("目标: %1 | %2 | %3 | 置信度: %4 | 偏移: (%5, %6) px")
+            .arg(track_id, cell_code, animal_name)
+            .arg(score, 0, 'f', 2)
+            .arg(target_offset_x_px)
+            .arg(target_offset_y_px));
+    sink_->setCurrentCell(cell_code);
 }
 
 void HMissionController::applySummary(const QMap<QString, int> &totals, int visited_cells) {
@@ -354,6 +419,7 @@ void HMissionController::applyMissionPlanResult(const MissionPlanResult &result,
     }
 
     const auto send_result = command_service_.sendMissionPlan(result.plan);
+    notifyCommandLinkState(send_result.ok);
     if (send_result.ok) {
         applyCommandAck(send_result);
         if (send_result.task_id.isEmpty() && send_result.last_accepted_sequence == 0) {
@@ -395,8 +461,12 @@ void HMissionController::refreshMissionContextLabels() {
                                           : sync_state_.acknowledgedTaskId();
         const QString loaded_text = sync_state_.acknowledgedMissionLoaded() ? QStringLiteral("已加载") : QStringLiteral("未加载");
         const QString running_text = sync_state_.running() ? QStringLiteral("运行中") : QStringLiteral("待执行");
-        mission_text += QString(" | 机载Ack: %1 / %2 / %3 / seq %4")
-                            .arg(ack_task_text, loaded_text, running_text, QString::number(sync_state_.lastAcceptedSequence()));
+        const QString vision_text = sync_state_.visionArmed() ? QStringLiteral("已武装") : QStringLiteral("未武装");
+        mission_text += QString(" | 机载Ack: %1 / %2 / %3 / 视觉瞄准: %4 / seq %5")
+                            .arg(ack_task_text, loaded_text, running_text, vision_text,
+                                 QString::number(sync_state_.lastAcceptedSequence()));
+    } else if (sync_state_.visionArmed()) {
+        mission_text += QStringLiteral(" | 视觉瞄准: 已武装");
     }
     sink_->setMissionLabel(mission_text);
 }

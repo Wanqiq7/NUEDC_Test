@@ -4,6 +4,7 @@ void AirborneSyncState::clearAck() {
     acknowledged_task_id_.clear();
     acknowledged_mission_loaded_ = false;
     last_accepted_sequence_ = 0;
+    vision_armed_ = false;
 }
 
 void AirborneSyncState::reset() {
@@ -13,17 +14,26 @@ void AirborneSyncState::reset() {
 }
 
 bool AirborneSyncState::applyCommandAck(const CommandSendResult &result) {
-    if (!result.ok || (result.task_id.isEmpty() && result.last_accepted_sequence == 0)) {
+    if (!result.ok) {
         return false;
     }
 
-    if (!result.task_id.isEmpty()) {
-        acknowledged_task_id_ = result.task_id;
+    const bool has_ack_metadata = !result.task_id.isEmpty() || result.last_accepted_sequence != 0;
+    if (has_ack_metadata) {
+        if (!result.task_id.isEmpty()) {
+            acknowledged_task_id_ = result.task_id;
+        }
+        acknowledged_mission_loaded_ = result.mission_loaded;
+        synced_to_airborne_ = result.mission_loaded;
+        running_ = result.mission_running;
+        last_accepted_sequence_ = result.last_accepted_sequence;
     }
-    acknowledged_mission_loaded_ = result.mission_loaded;
-    synced_to_airborne_ = result.mission_loaded;
-    running_ = result.mission_running;
-    last_accepted_sequence_ = result.last_accepted_sequence;
+
+    if (!has_ack_metadata && !result.vision_armed) {
+        return false;
+    }
+
+    vision_armed_ = result.vision_armed;
     return true;
 }
 
@@ -53,4 +63,5 @@ void AirborneSyncState::fillRuntimeInputs(MissionRuntimeInputs &inputs) const {
     inputs.acknowledged_task_id = acknowledged_task_id_;
     inputs.acknowledged_mission_loaded = acknowledged_mission_loaded_;
     inputs.last_accepted_sequence = last_accepted_sequence_;
+    inputs.vision_armed = vision_armed_;
 }

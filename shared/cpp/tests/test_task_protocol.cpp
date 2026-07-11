@@ -52,6 +52,7 @@ private slots:
     void buildsMissionLoadWithExplicitSequence();
     void rejectsStaleMissionLoadSequence();
     void buildsAckWithRuntimeState();
+    void buildsAckWithVisionTargetingState();
 };
 
 void TaskProtocolTests::buildsAndParsesTaskPlanEnvelope() {
@@ -230,6 +231,16 @@ void TaskProtocolTests::buildsAckWithRuntimeState() {
     QCOMPARE(envelope.ack().mission_loaded(), true);
     QCOMPARE(envelope.ack().mission_running(), true);
     QCOMPARE(envelope.ack().last_accepted_sequence(), 15ULL);
+}
+
+void TaskProtocolTests::buildsAckWithVisionTargetingState() {
+    competition::CommandState state;
+    state.armVisionTargeting();
+
+    const Envelope envelope = competition::buildAckEnvelope({true, "vision armed"}, state);
+
+    QCOMPARE(envelope.payload_case(), Envelope::kAck);
+    QCOMPARE(envelope.ack().vision_armed(), true);
 }
 
 QTEST_MAIN(TaskProtocolTests)

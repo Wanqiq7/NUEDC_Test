@@ -38,7 +38,7 @@ class ArchitectureBoundaryTests : public QObject {
 
 private slots:
     void mainWindowDoesNotIncludeProblemSpecificHeaders();
-    void mainWindowUsesReliableCommandClientForControlCommands();
+    void mainWindowUsesMissionCommandServiceForControlCommands();
     void mainWindowUsesConfiguredTaskAdapterFactory();
     void adapterRegistryLivesInFrameworkNotProblemModule();
     void hProblemAdapterIsThinShimOverControllerAndView();
@@ -63,12 +63,13 @@ void ArchitectureBoundaryTests::mainWindowUsesConfiguredTaskAdapterFactory() {
     QVERIFY(source_text.contains("createConfiguredCompetitionTaskAdapter"));
     QVERIFY(source_text.contains("createDefaultCompetitionTaskAdapter"));
 }
-void ArchitectureBoundaryTests::mainWindowUsesReliableCommandClientForControlCommands() {
+void ArchitectureBoundaryTests::mainWindowUsesMissionCommandServiceForControlCommands() {
     const QString header_source = readSourceOrFail("ground_station_computer/src/app/main_window.h");
     QVERIFY(header_source.contains("ReliableCommandClient"));
+    QVERIFY(header_source.contains("MissionCommandService"));
 
     const QString source_text = readSourceOrFail("ground_station_computer/src/app/main_window.cpp");
-    QVERIFY(source_text.contains("sendReliable"));
+    QVERIFY(source_text.contains("mission_command_service_->sendControlCommand"));
     QVERIFY(source_text.contains("reliable_command_client_->ping"));
 }
 

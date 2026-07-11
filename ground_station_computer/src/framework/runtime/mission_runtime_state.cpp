@@ -16,12 +16,17 @@ MissionRuntimeControls MissionRuntimeState::controlsFor(const MissionRuntimeInpu
         return MissionRuntimeControls{
             ready && !inputs.mission_running,
             ready && inputs.mission_running,
+            ready,
+            ready,
         };
     }
 
+    const bool ready = inputs.mission_synced_to_airborne;
     return MissionRuntimeControls{
-        inputs.mission_synced_to_airborne && !inputs.mission_running,
-        inputs.mission_synced_to_airborne && inputs.mission_running,
+        ready && !inputs.mission_running,
+        ready && inputs.mission_running,
+        ready,
+        ready,
     };
 }
 
@@ -42,14 +47,18 @@ QString MissionRuntimeState::airborneStatusText(const MissionRuntimeInputs &inpu
     const QString running_text = inputs.mission_running
         ? QStringLiteral("运行中")
         : QStringLiteral("待执行");
+    const QString vision_text = inputs.vision_armed
+        ? QStringLiteral("视觉瞄准: 已武装")
+        : QStringLiteral("视觉瞄准: 未武装");
     const QString match_text = ackMatchesActiveTask(inputs)
         ? QString()
         : QStringLiteral(" | 任务不匹配");
 
-    return QStringLiteral("机载状态: 在线 | 任务: %1 | %2 | %3 | Ack序列: %4%5")
+    return QStringLiteral("机载状态: 在线 | 任务: %1 | %2 | %3 | %4 | Ack序列: %5%6")
         .arg(taskDisplayText(inputs.acknowledged_task_id),
              loaded_text,
              running_text,
+             vision_text,
              QString::number(inputs.last_accepted_sequence),
              match_text);
 }

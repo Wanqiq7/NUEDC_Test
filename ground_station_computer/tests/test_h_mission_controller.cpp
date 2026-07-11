@@ -7,6 +7,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QUuid>
 
 namespace {
 
@@ -15,6 +16,7 @@ class RecordingSink : public HMissionViewSink {
 public:
     void setCaseLabel(const QString &text) override { case_label = text; }
     void setMissionLabel(const QString &text) override { mission_label = text; }
+    void setTargetStatus(const QString &text) override { target_status = text; }
     void showRoute(
         const QStringList &no_fly_cells,
         const QStringList &route,
@@ -40,6 +42,7 @@ public:
 
     QString case_label;
     QString mission_label;
+    QString target_status;
     int show_route_calls = 0;
     int enter_edit_calls = 0;
     QStringList last_no_fly;
@@ -68,10 +71,15 @@ competition::TaskEvent makeTelemetryEvent(const QString &cell, int step, int vis
 }
 
 competition::TaskEvent makeDetectionEvent(const QString &cell, const QString &animal, int count) {
+    static int track_index = 0;
+    static const QString task_id = QStringLiteral("controller-test-task-%1")
+                                       .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     competition::TaskEvent event;
+    event.task_id = task_id;
     event.event_type = "detection";
     event.waypoint_id = cell;
     QJsonObject payload;
+    payload["track_id"] = QString("controller-track-%1").arg(++track_index);
     payload["cell_code"] = cell;
     payload["animal_name"] = animal;
     payload["count"] = count;

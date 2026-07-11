@@ -12,6 +12,8 @@ private slots:
     void rejectsAckStateForDifferentTask();
     void disablesExecuteWhenAckSaysMissionNotLoaded();
     void formatsAckStateForStatusDisplay();
+    void formatsVisionArmedStateForStatusDisplay();
+    void enablesVisionControlsOnlyForOnlineLoadedTask();
 };
 
 void MissionRuntimeStateTests::disablesBothControlsWhenCommandSyncDisabled() {
@@ -94,6 +96,63 @@ void MissionRuntimeStateTests::formatsAckStateForStatusDisplay() {
     QVERIFY(text.contains("已加载"));
     QVERIFY(text.contains("待执行"));
     QVERIFY(text.contains("42"));
+}
+
+void MissionRuntimeStateTests::formatsVisionArmedStateForStatusDisplay() {
+    const QString text = MissionRuntimeState::airborneStatusText(MissionRuntimeInputs{
+        true,
+        true,
+        true,
+        false,
+        "case-001",
+        "case-001",
+        true,
+        42,
+        true,
+    });
+
+    QVERIFY(text.contains("视觉瞄准: 已武装"));
+}
+
+void MissionRuntimeStateTests::enablesVisionControlsOnlyForOnlineLoadedTask() {
+    const MissionRuntimeControls ready_controls = MissionRuntimeState::controlsFor(MissionRuntimeInputs{
+        true,
+        true,
+        true,
+        false,
+        "case-001",
+        "case-001",
+        true,
+        42,
+    });
+    QVERIFY(ready_controls.can_arm_vision);
+    QVERIFY(ready_controls.can_reset_vision);
+
+    const MissionRuntimeControls offline_controls = MissionRuntimeState::controlsFor(MissionRuntimeInputs{
+        true,
+        false,
+        true,
+        false,
+        "case-001",
+        "case-001",
+        true,
+        42,
+    });
+    QVERIFY(!offline_controls.can_arm_vision);
+    QVERIFY(!offline_controls.can_reset_vision);
+
+    const MissionRuntimeControls unloaded_controls = MissionRuntimeState::controlsFor(MissionRuntimeInputs{
+        true,
+        true,
+        true,
+        false,
+        "case-001",
+        "case-001",
+        false,
+        42,
+    });
+    QVERIFY(!unloaded_controls.can_arm_vision);
+    QVERIFY(!unloaded_controls.can_reset_vision);
 }
 
 QTEST_MAIN(MissionRuntimeStateTests)
