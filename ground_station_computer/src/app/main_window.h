@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QMainWindow>
 #include <QPushButton>
 
@@ -13,6 +14,7 @@
 class QLabel;
 class QTimer;
 class ZmqSubscriberWorker;
+class MainWindowTests;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -28,6 +30,10 @@ private slots:
     void handleError(QString message);
 
 private:
+    friend class MainWindowTests;
+
+    static constexpr qint64 kTelemetryLinkTtlMs = 5000;
+
     void handlePlanningButtonClicked();
     void handleExecuteMissionClicked();
     void handleStopMissionClicked();
@@ -38,6 +44,10 @@ private:
     void probeAirborneAvailability(bool update_status_message = false);
     void recordCommandLinkResult(bool online);
     bool commandLinkHealthy() const;
+    void recordTelemetryReceived();
+    bool telemetryLinkHealthy(qint64 now_ms = QDateTime::currentMSecsSinceEpoch()) const;
+    bool telemetryLinkHealthyAt(qint64 now_ms) const;
+    QString telemetryStatusTextAt(qint64 now_ms) const;
     void refreshExecutionControls();
     void refreshAirborneStatusLabel();
 
@@ -54,7 +64,7 @@ private:
     bool command_link_online_ = false;
     qint64 last_successful_command_reply_ms_ = 0;
     QTimer *command_health_expiry_timer_ = nullptr;
-    bool telemetry_online_ = false;
+    qint64 last_successful_telemetry_ms_ = 0;
     ZmqCommandClient command_client_;
     std::unique_ptr<ZmqCommandTransport> command_transport_;
     std::unique_ptr<ReliableCommandClient> reliable_command_client_;

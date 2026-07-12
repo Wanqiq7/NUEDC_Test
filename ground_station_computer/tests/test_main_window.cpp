@@ -23,9 +23,7 @@
 #include "competition_core/protocol/envelope_codec.h"
 #include "h_problem/rules/h_grid_mapper.h"
 #include "h_problem/ui/h_problem_page.h"
-#define private public
 #include "app/main_window.h"
-#undef private
 
 #include <thread>
 
@@ -94,6 +92,17 @@ private:
     std::thread worker_;
     int reply_count_ = 1;
 };
+
+class FixedCommandTransport final : public CommandTransport {
+public:
+    explicit FixedCommandTransport(CommandSendResult result)
+        : result_(std::move(result)) {}
+
+    CommandSendResult sendEnvelope(const Envelope &) const override { return result_; }
+
+private:
+    CommandSendResult result_;
+};
 }
 
 class MainWindowTests : public QObject {
@@ -104,7 +113,8 @@ private slots:
     void configuredAdapterUsesEnvironmentVariableAndReportsUnknownIds();
     void shellUsesCompetitionTaskAdapterBoundary();
     void defaultAdapterConsumesCommandAckRuntimeState();
-    void defaultAdapterConsumesStateOnlyVisionAck();
+    void defaultAdapterIgnoresStateOnlyVisionAckWithoutIdentity();
+    void legacyStartAckWithoutIdentityDoesNotMarkMissionRunning();
     void exposesManualVisionArmWithoutStandaloneReset();
     void executionControlsExistAndAreDisabledInTestMode();
     void taskMapExpandsInsideLargeShellWindow();
@@ -112,6 +122,7 @@ private slots:
     void targetUpdateOnlyUpdatesLiveTargetStatus();
     void duplicateDetectionDoesNotDuplicateUiTotals();
     void unknownEventDoesNotFallThroughToTelemetry();
+    void telemetryHealthExpiresAfterTtl();
     void telemetryCannotEnableCommandControlsWhenCommandLinkIsOffline();
     void staleCommandHealthDisablesVisionControlsDespiteTelemetry();
     void probeActionRecoversExpiredCommandHealth();
@@ -154,18 +165,21 @@ void MainWindowTests::shellUsesCompetitionTaskAdapterBoundary() {
 void MainWindowTests::defaultAdapterConsumesCommandAckRuntimeState() {
     std::unique_ptr<CompetitionTaskAdapter> adapter(createDefaultCompetitionTaskAdapter());
     QVERIFY(adapter != nullptr);
+    adapter->loadInitialPreview();
+    QVERIFY(!adapter->activeTaskId().isEmpty());
 
-    adapter->applyCommandAck(CommandSendResult{true, "start accepted", "case-001", true, true, 88, true});
+    adapter->applyCommandAck(
+        CommandSendResult{true, "start accepted", adapter->activeTaskId(), true, true, 88, true});
     const MissionRuntimeInputs inputs = adapter->missionRuntimeInputs();
 
-    QCOMPARE(inputs.acknowledged_task_id, QString("case-001"));
+    QCOMPARE(inputs.acknowledged_task_id, adapter->activeTaskId());
     QVERIFY(inputs.acknowledged_mission_loaded);
     QVERIFY(inputs.mission_running);
     QCOMPARE(inputs.last_accepted_sequence, 88ULL);
     QVERIFY(inputs.vision_armed);
 }
 
-void MainWindowTests::defaultAdapterConsumesStateOnlyVisionAck() {
+void MainWindowTests::defaultAdapterIgnoresStateOnlyVisionAckWithoutIdentity() {
     HProblemTaskAdapter adapter;
     QWidget parent;
     std::unique_ptr<QWidget> task_view(adapter.createTaskView(&parent));
@@ -174,14 +188,38 @@ void MainWindowTests::defaultAdapterConsumesStateOnlyVisionAck() {
 
     adapter.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
 
-    QVERIFY(adapter.missionRuntimeInputs().vision_armed);
+    QVERIFY(!adapter.missionRuntimeInputs().vision_armed);
     bool vision_state_displayed = false;
     for (QLabel *label : task_view->findChildren<QLabel *>()) {
         if (label->text().startsWith("任务:") && label->text().contains("已武装")) {
             vision_state_displayed = true;
         }
     }
-    QVERIFY(vision_state_displayed);
+    QVERIFY(!vision_state_displayed);
+}
+
+void MainWindowTests::legacyStartAckWithoutIdentityDoesNotMarkMissionRunning() {
+    MainWindow window(nullptr, false);
+    window.task_adapter_->loadInitialPreview();
+    window.command_sync_enabled_ = true;
+    window.task_adapter_->setCommandSyncEnabled(true);
+    window.task_adapter_->applyCommandAck(CommandSendResult{
+        true,
+        "mission loaded",
+        window.task_adapter_->activeTaskId(),
+        true,
+        false,
+        87,
+        false,
+    });
+    window.recordCommandLinkResult(true);
+
+    FixedCommandTransport transport(CommandSendResult{true, "legacy start accepted"});
+    window.mission_command_service_ = std::make_unique<MissionCommandService>(&transport);
+
+    window.handleExecuteMissionClicked();
+
+    QVERIFY(!window.task_adapter_->missionRunning());
 }
 
 void MainWindowTests::exposesManualVisionArmWithoutStandaloneReset() {
@@ -291,6 +329,8 @@ void MainWindowTests::targetUpdateOnlyUpdatesLiveTargetStatus() {
     QWidget parent;
     std::unique_ptr<QWidget> task_view(adapter.createTaskView(&parent));
     QVERIFY(task_view != nullptr);
+    adapter.loadInitialPreview();
+    QVERIFY(!adapter.activeTaskId().isEmpty());
 
     auto *detection_list = task_view->findChild<QListWidget *>();
     auto *summary_table = task_view->findChild<QTableWidget *>();
@@ -303,7 +343,7 @@ void MainWindowTests::targetUpdateOnlyUpdatesLiveTargetStatus() {
 
     adapter.handleTaskEvent(
         competition::TaskEvent{
-            "mission-target-update",
+            adapter.activeTaskId(),
             "target_update",
             17,
             "A3B2",
@@ -325,20 +365,25 @@ void MainWindowTests::duplicateDetectionDoesNotDuplicateUiTotals() {
     QWidget parent;
     std::unique_ptr<QWidget> task_view(adapter.createTaskView(&parent));
     QVERIFY(task_view != nullptr);
+    adapter.loadInitialPreview();
+    QVERIFY(!adapter.activeTaskId().isEmpty());
 
     auto *detection_list = task_view->findChild<QListWidget *>();
     auto *summary_table = task_view->findChild<QTableWidget *>();
     QVERIFY(detection_list != nullptr);
     QVERIFY(summary_table != nullptr);
     const int initial_detection_count = detection_list->count();
-    const QString task_id = QString("mission-ui-dedup-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    const QString task_id = adapter.activeTaskId();
+    const QString track_id =
+        QString("track-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     const QString animal_name = QString("ui-dedup-falcon-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     const competition::TaskEvent event{
         task_id,
         "detection",
         1,
         "A2B1",
-        QString(R"({"track_id":"track-7","cell":"A2B1","animal":"%1","count":3})").arg(animal_name)};
+        QString(R"({"track_id":"%1","cell":"A2B1","animal":"%2","count":3})")
+            .arg(track_id, animal_name)};
 
     adapter.handleTaskEvent(event, 2000);
     adapter.handleTaskEvent(event, 2000);
@@ -369,6 +414,19 @@ void MainWindowTests::unknownEventDoesNotFallThroughToTelemetry() {
         3000);
 
     QVERIFY(status_text.isEmpty());
+}
+
+void MainWindowTests::telemetryHealthExpiresAfterTtl() {
+    MainWindow window(nullptr, false);
+
+    QCOMPARE(window.telemetryStatusTextAt(10000), QStringLiteral("遥测: 等待"));
+
+    window.recordTelemetryReceived();
+    const qint64 received_at_ms = QDateTime::currentMSecsSinceEpoch();
+    QVERIFY(window.telemetryLinkHealthyAt(received_at_ms));
+    QCOMPARE(window.telemetryStatusTextAt(received_at_ms), QStringLiteral("遥测: 已接收"));
+    QVERIFY(!window.telemetryLinkHealthyAt(received_at_ms + 5001));
+    QCOMPARE(window.telemetryStatusTextAt(received_at_ms + 5001), QStringLiteral("遥测: 超时"));
 }
 
 void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffline() {
