@@ -65,7 +65,7 @@ export NUEDC_COMMAND_PORT=5558
 
 - `mission_load`：地面站下发通用 `TaskPlan` 任务计划
 - `COMMAND_TYPE_PING`：机载端返回 `pong`
-- `COMMAND_TYPE_START_MISSION`：机载端记录开始执行请求
+- `COMMAND_TYPE_START_MISSION`：机载端仅在真实 `FlightExecutor` 接受任务后确认开始；未配置执行器时返回失败
 - `COMMAND_TYPE_STOP_MISSION`：机载端记录停止请求
 - `COMMAND_TYPE_ARM_TARGETING`：机载端启用视觉瞄准，Ack 的 `vision_armed` 为 `true`
 - `COMMAND_TYPE_RESET_TARGETING`：机载端复位视觉瞄准，Ack 的 `vision_armed` 为 `false`
