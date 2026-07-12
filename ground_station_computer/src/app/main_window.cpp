@@ -180,21 +180,21 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::handleTaskPlan(competition::TaskPlan plan) {
-    telemetry_online_ = true;
+    recordTelemetryReceived();
     task_adapter_->handleTaskPlan(plan);
     refreshAirborneStatusLabel();
     refreshExecutionControls();
 }
 
 void MainWindow::handleTaskEvent(competition::TaskEvent event, qint64 timestamp_ms) {
-    telemetry_online_ = true;
+    recordTelemetryReceived();
     task_adapter_->handleTaskEvent(event, timestamp_ms);
     refreshAirborneStatusLabel();
     refreshExecutionControls();
 }
 
 void MainWindow::handleTaskSummary(competition::TaskSummary summary) {
-    telemetry_online_ = true;
+    recordTelemetryReceived();
     task_adapter_->handleTaskSummary(summary);
     refreshAirborneStatusLabel();
     refreshExecutionControls();
@@ -347,7 +347,7 @@ void MainWindow::refreshAirborneStatusLabel() {
     inputs.airborne_online = commandLinkHealthy();
     QString status = MissionRuntimeState::airborneStatusText(inputs);
     if (command_sync_enabled_) {
-        status += telemetry_online_ ? QStringLiteral(" | 遥测: 已接收") : QStringLiteral(" | 遥测: 等待");
+        status += QStringLiteral(" | ") + telemetryStatusTextAt(QDateTime::currentMSecsSinceEpoch());
     }
     airborne_status_label_->setText(status);
 }
@@ -373,4 +373,26 @@ bool MainWindow::commandLinkHealthy() const {
         return false;
     }
     return QDateTime::currentMSecsSinceEpoch() - last_successful_command_reply_ms_ <= kCommandLinkTtlMs;
+}
+
+void MainWindow::recordTelemetryReceived() {
+    last_successful_telemetry_ms_ = QDateTime::currentMSecsSinceEpoch();
+}
+
+bool MainWindow::telemetryLinkHealthy(qint64 now_ms) const {
+    return last_successful_telemetry_ms_ > 0
+        && now_ms - last_successful_telemetry_ms_ <= kTelemetryLinkTtlMs;
+}
+
+bool MainWindow::telemetryLinkHealthyAt(qint64 now_ms) const {
+    return telemetryLinkHealthy(now_ms);
+}
+
+QString MainWindow::telemetryStatusTextAt(qint64 now_ms) const {
+    if (last_successful_telemetry_ms_ <= 0) {
+        return QStringLiteral("遥测: 等待");
+    }
+    return telemetryLinkHealthyAt(now_ms)
+        ? QStringLiteral("遥测: 已接收")
+        : QStringLiteral("遥测: 超时");
 }

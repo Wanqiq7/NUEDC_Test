@@ -23,9 +23,7 @@
 #include "competition_core/protocol/envelope_codec.h"
 #include "h_problem/rules/h_grid_mapper.h"
 #include "h_problem/ui/h_problem_page.h"
-#define private public
 #include "app/main_window.h"
-#undef private
 
 #include <thread>
 
@@ -112,6 +110,7 @@ private slots:
     void targetUpdateOnlyUpdatesLiveTargetStatus();
     void duplicateDetectionDoesNotDuplicateUiTotals();
     void unknownEventDoesNotFallThroughToTelemetry();
+    void telemetryHealthExpiresAfterTtl();
     void telemetryCannotEnableCommandControlsWhenCommandLinkIsOffline();
     void staleCommandHealthDisablesVisionControlsDespiteTelemetry();
     void probeActionRecoversExpiredCommandHealth();
@@ -369,6 +368,19 @@ void MainWindowTests::unknownEventDoesNotFallThroughToTelemetry() {
         3000);
 
     QVERIFY(status_text.isEmpty());
+}
+
+void MainWindowTests::telemetryHealthExpiresAfterTtl() {
+    MainWindow window(nullptr, false);
+
+    QCOMPARE(window.telemetryStatusTextAt(10000), QStringLiteral("遥测: 等待"));
+
+    window.recordTelemetryReceived();
+    const qint64 received_at_ms = QDateTime::currentMSecsSinceEpoch();
+    QVERIFY(window.telemetryLinkHealthyAt(received_at_ms));
+    QCOMPARE(window.telemetryStatusTextAt(received_at_ms), QStringLiteral("遥测: 已接收"));
+    QVERIFY(!window.telemetryLinkHealthyAt(received_at_ms + 5001));
+    QCOMPARE(window.telemetryStatusTextAt(received_at_ms + 5001), QStringLiteral("遥测: 超时"));
 }
 
 void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffline() {
