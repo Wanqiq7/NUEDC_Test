@@ -37,6 +37,29 @@ void acceptEnvelopeSequence(const Envelope &envelope, CommandState *state) {
     }
 }
 
+bool rejectInvalidControlState(
+    const Envelope &envelope,
+    CommandState *state,
+    bool require_loaded_mission,
+    AckResult *result) {
+    if (require_loaded_mission && (state == nullptr || !state->isMissionLoaded())) {
+        if (result != nullptr) {
+            *result = {false, "mission not loaded"};
+        }
+        return true;
+    }
+
+    const QString task_id = state != nullptr ? state->activeTaskPlan().task_id : QString{};
+    if (task_id.isEmpty()
+        || task_id != QString::fromStdString(envelope.control_command().task_id())) {
+        if (result != nullptr) {
+            *result = {false, "control command task mismatch"};
+        }
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 MissionCommandStateMachine::MissionCommandStateMachine(CommandState *state)
@@ -55,6 +78,10 @@ AckResult MissionCommandStateMachine::apply(const Envelope &envelope) {
         if (rejectStaleSequence(envelope, state_, &stale_result)) {
             return stale_result;
         }
+        AckResult invalid_state_result;
+        if (rejectInvalidControlState(envelope, state_, true, &invalid_state_result)) {
+            return invalid_state_result;
+        }
         if (state_ != nullptr) {
             state_->requestStart();
         }
@@ -66,6 +93,10 @@ AckResult MissionCommandStateMachine::apply(const Envelope &envelope) {
         if (rejectStaleSequence(envelope, state_, &stale_result)) {
             return stale_result;
         }
+        AckResult invalid_state_result;
+        if (rejectInvalidControlState(envelope, state_, false, &invalid_state_result)) {
+            return invalid_state_result;
+        }
         if (state_ != nullptr) {
             state_->requestStop();
         }
@@ -76,6 +107,10 @@ AckResult MissionCommandStateMachine::apply(const Envelope &envelope) {
         AckResult stale_result;
         if (rejectStaleSequence(envelope, state_, &stale_result)) {
             return stale_result;
+        }
+        AckResult invalid_state_result;
+        if (rejectInvalidControlState(envelope, state_, false, &invalid_state_result)) {
+            return invalid_state_result;
         }
         if (state_ != nullptr) {
             state_->armVisionTargeting();
@@ -89,6 +124,10 @@ AckResult MissionCommandStateMachine::apply(const Envelope &envelope) {
         AckResult stale_result;
         if (rejectStaleSequence(envelope, state_, &stale_result)) {
             return stale_result;
+        }
+        AckResult invalid_state_result;
+        if (rejectInvalidControlState(envelope, state_, false, &invalid_state_result)) {
+            return invalid_state_result;
         }
         if (state_ != nullptr) {
             state_->resetVisionTargeting();
@@ -163,8 +202,7 @@ AckResult handleEnvelopeCommand(const Envelope &envelope, const QString &output_
             return {false, error};
         }
         if (state != nullptr) {
-            state->setActiveTaskPlan(plan.value());
-            state->setMissionLoaded(true);
+            state->replaceMission(plan.value());
         }
         acceptEnvelopeSequence(envelope, state);
         return {true, "task plan stored"};

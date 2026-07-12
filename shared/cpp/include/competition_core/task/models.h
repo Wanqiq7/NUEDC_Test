@@ -122,6 +122,23 @@ struct CommandState {
         return mission_loaded_.load(std::memory_order_acquire);
     }
 
+    void replaceMission(const TaskPlan &plan) {
+        QMutexLocker<QMutex> locker(&active_task_plan_mutex_);
+        mission_loaded_.store(false, std::memory_order_release);
+        active_task_plan_ = plan;
+        start_requested_.store(false, std::memory_order_release);
+        stop_requested_.store(false, std::memory_order_release);
+        vision_targeting_armed_.store(false, std::memory_order_release);
+        mission_loaded_.store(true, std::memory_order_release);
+    }
+
+    void completeMission() {
+        mission_loaded_.store(false, std::memory_order_release);
+        start_requested_.store(false, std::memory_order_release);
+        stop_requested_.store(false, std::memory_order_release);
+        vision_targeting_armed_.store(false, std::memory_order_release);
+    }
+
     void setActiveTaskPlan(const TaskPlan &plan) {
         QMutexLocker<QMutex> locker(&active_task_plan_mutex_);
         active_task_plan_ = plan;

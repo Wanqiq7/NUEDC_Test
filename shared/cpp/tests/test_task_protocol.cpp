@@ -54,6 +54,11 @@ private slots:
     void rejectsHProblemMissionLoadWithoutMutatingState();
     void commandStateMachineRejectsStaleStartWithoutMutatingState();
     void commandStateMachineAcceptsStopAfterStart();
+    void startWithoutLoadedMissionIsRejected();
+    void controlForAnotherTaskIsRejected();
+    void missionReplacementResetsRunningStopAndVision();
+    void completingMissionClearsLifecycleState();
+    void pingDoesNotRequireMatchingTaskId();
     void commandSemanticsClassifiesAcceptedStaleStartAck();
     void commandSemanticsRejectsWrongStateStaleStartAck();
     void buildsMissionLoadWithExplicitSequence();
@@ -173,6 +178,100 @@ void TaskProtocolTests::commandStateMachineAcceptsStopAfterStart() {
     QVERIFY(state.isStartRequested());
     QVERIFY(state.isStopRequested());
     QCOMPARE(state.lastAcceptedSequence(), 14ULL);
+}
+
+void TaskProtocolTests::startWithoutLoadedMissionIsRejected() {
+    competition::CommandState state;
+    state.setActiveTaskPlan(makeTaskPlan());
+    state.acceptSequence(4);
+
+    Envelope start;
+    start.set_sequence(5);
+    start.mutable_control_command()->set_type(COMMAND_TYPE_START_MISSION);
+    start.mutable_control_command()->set_task_id("task-demo");
+    competition::MissionCommandStateMachine state_machine(&state);
+    const competition::AckResult ack = state_machine.apply(start);
+
+    QVERIFY(!ack.success);
+    QVERIFY(ack.message.contains("loaded"));
+    QVERIFY(!state.isStartRequested());
+    QCOMPARE(state.lastAcceptedSequence(), 4ULL);
+}
+
+void TaskProtocolTests::controlForAnotherTaskIsRejected() {
+    const QList<CommandType> command_types{
+        COMMAND_TYPE_START_MISSION,
+        COMMAND_TYPE_STOP_MISSION,
+        COMMAND_TYPE_ARM_TARGETING,
+        COMMAND_TYPE_RESET_TARGETING,
+    };
+
+    for (const CommandType command_type : command_types) {
+        competition::CommandState state;
+        state.replaceMission(makeTaskPlan());
+        state.acceptSequence(10);
+
+        Envelope control;
+        control.set_sequence(11);
+        control.mutable_control_command()->set_type(command_type);
+        control.mutable_control_command()->set_task_id("another-task");
+        competition::MissionCommandStateMachine state_machine(&state);
+        const competition::AckResult ack = state_machine.apply(control);
+
+        QVERIFY(!ack.success);
+        QVERIFY(ack.message.contains("task"));
+        QCOMPARE(state.lastAcceptedSequence(), 10ULL);
+    }
+}
+
+void TaskProtocolTests::missionReplacementResetsRunningStopAndVision() {
+    competition::CommandState state;
+    state.replaceMission(makeTaskPlan());
+    state.requestStart();
+    state.requestStop();
+    state.armVisionTargeting();
+
+    competition::TaskPlan replacement = makeTaskPlan();
+    replacement.task_id = "replacement-task";
+    state.replaceMission(replacement);
+
+    QVERIFY(state.isMissionLoaded());
+    QCOMPARE(state.activeTaskPlan().task_id, QString("replacement-task"));
+    QVERIFY(!state.isStartRequested());
+    QVERIFY(!state.isStopRequested());
+    QVERIFY(!state.isVisionTargetingArmed());
+}
+
+void TaskProtocolTests::completingMissionClearsLifecycleState() {
+    competition::CommandState state;
+    state.replaceMission(makeTaskPlan());
+    state.requestStart();
+    state.requestStop();
+    state.armVisionTargeting();
+
+    state.completeMission();
+
+    QVERIFY(!state.isMissionLoaded());
+    QVERIFY(!state.isStartRequested());
+    QVERIFY(!state.isStopRequested());
+    QVERIFY(!state.isVisionTargetingArmed());
+}
+
+void TaskProtocolTests::pingDoesNotRequireMatchingTaskId() {
+    competition::CommandState state;
+    state.replaceMission(makeTaskPlan());
+    state.acceptSequence(20);
+
+    Envelope ping;
+    ping.set_sequence(21);
+    ping.mutable_control_command()->set_type(COMMAND_TYPE_PING);
+    ping.mutable_control_command()->set_task_id("another-task");
+    competition::MissionCommandStateMachine state_machine(&state);
+    const competition::AckResult ack = state_machine.apply(ping);
+
+    QVERIFY2(ack.success, qPrintable(ack.message));
+    QCOMPARE(ack.message, QString("pong"));
+    QCOMPARE(state.lastAcceptedSequence(), 20ULL);
 }
 
 void TaskProtocolTests::commandSemanticsClassifiesAcceptedStaleStartAck() {
