@@ -135,6 +135,12 @@ void HMissionController::handleTaskPlan(const competition::TaskPlan &plan) {
 }
 
 void HMissionController::handleTaskEvent(const competition::TaskEvent &event, qint64 timestamp_ms) {
+    if (!isCurrentTaskMessage(event.task_id)) {
+        qDebug() << "Ignoring H problem event for another task" << event.task_id
+                 << "current task" << current_case_id_;
+        return;
+    }
+
     const TaskEventMessage message = competition::taskEventToMessage(event);
     QString error_message;
     if (event.event_type == "detection") {
@@ -183,6 +189,12 @@ void HMissionController::handleTaskEvent(const competition::TaskEvent &event, qi
 }
 
 void HMissionController::handleTaskSummary(const competition::TaskSummary &summary) {
+    if (!isCurrentTaskMessage(summary.task_id) || summary.task_type != "h_problem") {
+        qDebug() << "Ignoring H problem summary for another task or task type"
+                 << summary.task_id << summary.task_type << "current task" << current_case_id_;
+        return;
+    }
+
     const TaskSummaryMessage message = competition::taskSummaryToMessage(summary);
     HSummaryData data;
     QString error_message;
@@ -240,8 +252,6 @@ void HMissionController::applyGridConfig(
 }
 
 void HMissionController::applyTelemetry(const QString &current_cell, int step_index, int visited_cells) {
-    sync_state_.setRunning(true);
-    emitRuntimeChanged();
     notifyStatusText(QString("状态: 巡查中 | 当前方格: %1 | 步数: %2 | 已访问: %3")
                          .arg(current_cell)
                          .arg(step_index)
@@ -345,11 +355,21 @@ void HMissionController::markAirborneSyncState(bool online, bool synced) {
 }
 
 void HMissionController::applyCommandAck(const CommandSendResult &result) {
+    if (!result.task_id.isEmpty() && !isCurrentTaskMessage(result.task_id)) {
+        qDebug() << "Ignoring command ACK for another task" << result.task_id
+                 << "current task" << current_case_id_;
+        return;
+    }
+
     if (!sync_state_.applyCommandAck(result)) {
         return;
     }
     refreshMissionContextLabels();
     emitRuntimeChanged();
+}
+
+bool HMissionController::isCurrentTaskMessage(const QString &task_id) const {
+    return !task_id.isEmpty() && task_id == current_case_id_;
 }
 
 void HMissionController::handleGridSceneCellClicked(const QString &cell_code) {

@@ -153,11 +153,14 @@ void MainWindowTests::shellUsesCompetitionTaskAdapterBoundary() {
 void MainWindowTests::defaultAdapterConsumesCommandAckRuntimeState() {
     std::unique_ptr<CompetitionTaskAdapter> adapter(createDefaultCompetitionTaskAdapter());
     QVERIFY(adapter != nullptr);
+    adapter->loadInitialPreview();
+    QVERIFY(!adapter->activeTaskId().isEmpty());
 
-    adapter->applyCommandAck(CommandSendResult{true, "start accepted", "case-001", true, true, 88, true});
+    adapter->applyCommandAck(
+        CommandSendResult{true, "start accepted", adapter->activeTaskId(), true, true, 88, true});
     const MissionRuntimeInputs inputs = adapter->missionRuntimeInputs();
 
-    QCOMPARE(inputs.acknowledged_task_id, QString("case-001"));
+    QCOMPARE(inputs.acknowledged_task_id, adapter->activeTaskId());
     QVERIFY(inputs.acknowledged_mission_loaded);
     QVERIFY(inputs.mission_running);
     QCOMPARE(inputs.last_accepted_sequence, 88ULL);
@@ -290,6 +293,8 @@ void MainWindowTests::targetUpdateOnlyUpdatesLiveTargetStatus() {
     QWidget parent;
     std::unique_ptr<QWidget> task_view(adapter.createTaskView(&parent));
     QVERIFY(task_view != nullptr);
+    adapter.loadInitialPreview();
+    QVERIFY(!adapter.activeTaskId().isEmpty());
 
     auto *detection_list = task_view->findChild<QListWidget *>();
     auto *summary_table = task_view->findChild<QTableWidget *>();
@@ -302,7 +307,7 @@ void MainWindowTests::targetUpdateOnlyUpdatesLiveTargetStatus() {
 
     adapter.handleTaskEvent(
         competition::TaskEvent{
-            "mission-target-update",
+            adapter.activeTaskId(),
             "target_update",
             17,
             "A3B2",
@@ -324,20 +329,25 @@ void MainWindowTests::duplicateDetectionDoesNotDuplicateUiTotals() {
     QWidget parent;
     std::unique_ptr<QWidget> task_view(adapter.createTaskView(&parent));
     QVERIFY(task_view != nullptr);
+    adapter.loadInitialPreview();
+    QVERIFY(!adapter.activeTaskId().isEmpty());
 
     auto *detection_list = task_view->findChild<QListWidget *>();
     auto *summary_table = task_view->findChild<QTableWidget *>();
     QVERIFY(detection_list != nullptr);
     QVERIFY(summary_table != nullptr);
     const int initial_detection_count = detection_list->count();
-    const QString task_id = QString("mission-ui-dedup-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    const QString task_id = adapter.activeTaskId();
+    const QString track_id =
+        QString("track-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     const QString animal_name = QString("ui-dedup-falcon-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     const competition::TaskEvent event{
         task_id,
         "detection",
         1,
         "A2B1",
-        QString(R"({"track_id":"track-7","cell":"A2B1","animal":"%1","count":3})").arg(animal_name)};
+        QString(R"({"track_id":"%1","cell":"A2B1","animal":"%2","count":3})")
+            .arg(track_id, animal_name)};
 
     adapter.handleTaskEvent(event, 2000);
     adapter.handleTaskEvent(event, 2000);

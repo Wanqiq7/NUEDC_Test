@@ -107,6 +107,7 @@ private:
     void notifyPlanningButtonText(const QString &text) const;
     void notifyRuntimeChanged() const;
     void notifyCommandLinkState(bool online) const;
+    bool isCurrentTaskMessage(const QString &task_id) const;
 
     HMissionViewSink *sink_ = nullptr;
     TextCallback status_text_callback_;

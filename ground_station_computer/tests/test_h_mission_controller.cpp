@@ -64,8 +64,10 @@ public:
     QMap<QString, int> last_totals;
 };
 
-competition::TaskEvent makeTelemetryEvent(const QString &cell, int step, int visited) {
+competition::TaskEvent makeTelemetryEvent(
+    const QString &task_id, const QString &cell, int step, int visited) {
     competition::TaskEvent event;
+    event.task_id = task_id;
     event.event_type = "telemetry";
     event.sequence_index = static_cast<quint32>(step);
     event.waypoint_id = cell;
@@ -76,16 +78,17 @@ competition::TaskEvent makeTelemetryEvent(const QString &cell, int step, int vis
     return event;
 }
 
-competition::TaskEvent makeDetectionEvent(const QString &cell, const QString &animal, int count) {
+competition::TaskEvent makeDetectionEvent(
+    const QString &task_id, const QString &cell, const QString &animal, int count) {
     static int track_index = 0;
-    static const QString task_id = QStringLiteral("controller-test-task-%1")
-                                       .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     competition::TaskEvent event;
     event.task_id = task_id;
     event.event_type = "detection";
     event.waypoint_id = cell;
     QJsonObject payload;
-    payload["track_id"] = QString("controller-track-%1").arg(++track_index);
+    payload["track_id"] = QString("controller-track-%1-%2")
+                              .arg(++track_index)
+                              .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     payload["cell_code"] = cell;
     payload["animal_name"] = animal;
     payload["count"] = count;
@@ -93,8 +96,11 @@ competition::TaskEvent makeDetectionEvent(const QString &cell, const QString &an
     return event;
 }
 
-competition::TaskSummary makeSummary(const QMap<QString, int> &totals, int visited) {
+competition::TaskSummary makeSummary(
+    const QString &task_id, const QMap<QString, int> &totals, int visited) {
     competition::TaskSummary summary;
+    summary.task_id = task_id;
+    summary.task_type = "h_problem";
     summary.visited_waypoints = static_cast<quint32>(visited);
     QJsonObject totals_object;
     for (auto it = totals.begin(); it != totals.end(); ++it) {
@@ -106,8 +112,9 @@ competition::TaskSummary makeSummary(const QMap<QString, int> &totals, int visit
     return summary;
 }
 
-competition::TaskEvent makeTargetUpdateEvent() {
+competition::TaskEvent makeTargetUpdateEvent(const QString &task_id) {
     competition::TaskEvent event;
+    event.task_id = task_id;
     event.event_type = "target_update";
     event.waypoint_id = "A2B2";
     event.payload_json = R"({"track_id":"tracked-animal","cell":"A2B2","animal":"deer","score":0.91,"target_offset_x_px":12,"target_offset_y_px":-4,"visited_cells":0})";
@@ -168,7 +175,11 @@ class HMissionControllerTests : public QObject {
 private slots:
     void loadInitialPreviewShowsRouteAndStatus();
     void loadInitialPreviewShowsPlanningOptimalityToOperator();
-    void telemetryUpdatesCurrentCellAndRunning();
+    void telemetryDoesNotStartMission();
+    void telemetryAfterStopDoesNotRestartMission();
+    void ignoresEventsFromAnotherTask();
+    void ignoresSummaryFromAnotherTask();
+    void ignoresAckFromAnotherTask();
     void detectionAppendsAndAccumulatesTotals();
     void summaryStopsRunningAndReplacesTotals();
     void missionCompletionDisarmsVisionAndClearsTarget();
@@ -223,7 +234,7 @@ void HMissionControllerTests::loadInitialPreviewShowsPlanningOptimalityToOperato
     QVERIFY(sink.last_anchor_y != 0.0);
 }
 
-void HMissionControllerTests::telemetryUpdatesCurrentCellAndRunning() {
+void HMissionControllerTests::telemetryDoesNotStartMission() {
     RecordingSink sink;
     int runtime_changes = 0;
     HMissionController controller(
@@ -232,11 +243,110 @@ void HMissionControllerTests::telemetryUpdatesCurrentCellAndRunning() {
         [&](const QString &) {},
         [&]() { ++runtime_changes; });
 
-    controller.handleTaskEvent(makeTelemetryEvent("C3", 5, 9), 1000);
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+    const int runtime_changes_before = runtime_changes;
+
+    controller.handleTaskEvent(
+        makeTelemetryEvent(controller.activeTaskId(), "C3", 5, 9), 1000);
 
     QCOMPARE(sink.last_current_cell, QStringLiteral("C3"));
+    QVERIFY(!controller.missionRunning());
+    QCOMPARE(runtime_changes, runtime_changes_before);
+}
+
+void HMissionControllerTests::telemetryAfterStopDoesNotRestartMission() {
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {});
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+    controller.setCommandSyncEnabled(false);
+    controller.markControlCommandStarted();
     QVERIFY(controller.missionRunning());
-    QVERIFY(runtime_changes >= 1);
+    controller.markControlCommandStopped();
+    QVERIFY(!controller.missionRunning());
+
+    controller.handleTaskEvent(
+        makeTelemetryEvent(controller.activeTaskId(), "D4", 8, 13), 1000);
+
+    QCOMPARE(sink.last_current_cell, QStringLiteral("D4"));
+    QVERIFY(!controller.missionRunning());
+}
+
+void HMissionControllerTests::ignoresEventsFromAnotherTask() {
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {});
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+
+    const QString current_cell_before = sink.last_current_cell;
+    const QMap<QString, int> detection_totals_before = controller.detectionTotals();
+    const QString target_text_before = sink.target_status;
+    const QMap<QString, int> summary_totals_before = sink.last_totals;
+
+    controller.handleTaskEvent(makeTelemetryEvent("other-task", "E5", 9, 14), 1000);
+    controller.handleTaskEvent(makeDetectionEvent("other-task", "B2", "tiger", 7), 2000);
+    controller.handleTaskEvent(makeTargetUpdateEvent("other-task"), 3000);
+
+    QCOMPARE(sink.last_current_cell, current_cell_before);
+    QCOMPARE(controller.detectionTotals(), detection_totals_before);
+    QCOMPARE(sink.target_status, target_text_before);
+    QVERIFY(!controller.missionRunning());
+    QCOMPARE(sink.last_totals, summary_totals_before);
+}
+
+void HMissionControllerTests::ignoresSummaryFromAnotherTask() {
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {});
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+    controller.setCommandSyncEnabled(false);
+    controller.markControlCommandStarted();
+    const QMap<QString, int> detection_totals_before = controller.detectionTotals();
+    const QMap<QString, int> summary_totals_before = sink.last_totals;
+
+    controller.handleTaskSummary(makeSummary("other-task", {{"deer", 99}}, 99));
+
+    QVERIFY(controller.missionRunning());
+    QCOMPARE(controller.detectionTotals(), detection_totals_before);
+    QCOMPARE(sink.last_totals, summary_totals_before);
+
+    competition::TaskSummary wrong_type =
+        makeSummary(controller.activeTaskId(), {{"deer", 88}}, 88);
+    wrong_type.task_type = "other_problem";
+    controller.handleTaskSummary(wrong_type);
+
+    QVERIFY(controller.missionRunning());
+    QCOMPARE(controller.detectionTotals(), detection_totals_before);
+    QCOMPARE(sink.last_totals, summary_totals_before);
+}
+
+void HMissionControllerTests::ignoresAckFromAnotherTask() {
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {});
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+    controller.markControlCommandStarted();
+    const MissionRuntimeInputs runtime_before = controller.missionRuntimeInputs();
+
+    controller.applyCommandAck(
+        CommandSendResult{true, "stale stop", "other-task", true, false, 91, false});
+
+    const MissionRuntimeInputs runtime_after = controller.missionRuntimeInputs();
+    QVERIFY(controller.missionRunning());
+    QCOMPARE(runtime_after.acknowledged_task_id, runtime_before.acknowledged_task_id);
+    QCOMPARE(runtime_after.last_accepted_sequence, runtime_before.last_accepted_sequence);
 }
 
 void HMissionControllerTests::detectionAppendsAndAccumulatesTotals() {
@@ -247,11 +357,14 @@ void HMissionControllerTests::detectionAppendsAndAccumulatesTotals() {
         [&](const QString &) {},
         [&]() {});
 
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
     const QMap<QString, int> baseline = controller.detectionTotals();
     const int baseline_tiger = baseline.value("tiger", 0);
 
-    controller.handleTaskEvent(makeDetectionEvent("B2", "tiger", 2), 2000);
-    controller.handleTaskEvent(makeDetectionEvent("B3", "tiger", 3), 3000);
+    controller.handleTaskEvent(
+        makeDetectionEvent(controller.activeTaskId(), "B2", "tiger", 2), 2000);
+    controller.handleTaskEvent(
+        makeDetectionEvent(controller.activeTaskId(), "B3", "tiger", 3), 3000);
 
     QCOMPARE(sink.detections.size(), 2);
     QCOMPARE(controller.detectionTotals().value("tiger"), baseline_tiger + 5);
@@ -266,10 +379,12 @@ void HMissionControllerTests::summaryStopsRunningAndReplacesTotals() {
         [&](const QString &) {},
         [&]() {});
 
-    controller.handleTaskEvent(makeTelemetryEvent("C3", 5, 9), 1000);
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+    controller.setCommandSyncEnabled(false);
+    controller.markControlCommandStarted();
     QVERIFY(controller.missionRunning());
 
-    controller.handleTaskSummary(makeSummary({{"deer", 4}}, 12));
+    controller.handleTaskSummary(makeSummary(controller.activeTaskId(), {{"deer", 4}}, 12));
 
     QVERIFY(!controller.missionRunning());
     QCOMPARE(sink.last_totals.value("deer"), 4);
@@ -287,11 +402,11 @@ void HMissionControllerTests::missionCompletionDisarmsVisionAndClearsTarget() {
     RecordingCommandTransport transport;
     controller.setCommandTransport(&transport);
     controller.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
-    controller.handleTaskEvent(makeTargetUpdateEvent(), 1000);
+    controller.handleTaskEvent(makeTargetUpdateEvent(controller.activeTaskId()), 1000);
     QVERIFY(controller.missionRuntimeInputs().vision_armed);
     QVERIFY(sink.target_status.contains("tracked-animal"));
 
-    controller.handleTaskSummary(makeSummary({{"deer", 4}}, 12));
+    controller.handleTaskSummary(makeSummary(controller.activeTaskId(), {{"deer", 4}}, 12));
 
     QCOMPARE(transport.sentControlTypes(), QVector<CommandType>{COMMAND_TYPE_RESET_TARGETING});
     QVERIFY(!controller.missionRuntimeInputs().vision_armed);
@@ -310,7 +425,7 @@ void HMissionControllerTests::missionStopDisarmsVisionAndClearsTarget() {
     RecordingCommandTransport transport;
     controller.setCommandTransport(&transport);
     controller.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
-    controller.handleTaskEvent(makeTargetUpdateEvent(), 1000);
+    controller.handleTaskEvent(makeTargetUpdateEvent(controller.activeTaskId()), 1000);
 
     controller.markControlCommandStopped();
 
@@ -331,7 +446,7 @@ void HMissionControllerTests::taskPlanReplacementDisarmsVisionAndClearsTarget() 
     RecordingCommandTransport transport;
     controller.setCommandTransport(&transport);
     controller.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
-    controller.handleTaskEvent(makeTargetUpdateEvent(), 1000);
+    controller.handleTaskEvent(makeTargetUpdateEvent(controller.activeTaskId()), 1000);
 
     controller.handleTaskPlan(makeCanonicalTaskPlan());
 
@@ -352,7 +467,7 @@ void HMissionControllerTests::regeneratedTaskPlanDisarmsVisionAndClearsTarget() 
     RecordingCommandTransport transport;
     controller.setCommandTransport(&transport);
     controller.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
-    controller.handleTaskEvent(makeTargetUpdateEvent(), 1000);
+    controller.handleTaskEvent(makeTargetUpdateEvent(controller.activeTaskId()), 1000);
 
     controller.handlePlanningButtonClicked();
     controller.handleGridSceneCellClicked("A1B2");
