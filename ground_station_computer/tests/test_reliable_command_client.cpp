@@ -37,8 +37,8 @@ private slots:
     void treatsAcceptedStartStaleAckAsSuccess();
     void treatsAcceptedStopStaleAckAsSuccess();
     void treatsAcceptedArmStaleAckAsSuccess();
-    void treatsAcceptedResetStaleAckAsSuccess();
-    void doesNotTreatArmedStaleResetAckAsSuccess();
+    void treatsAcceptedDisarmStaleAckAsSuccess();
+    void doesNotTreatArmedStaleDisarmAckAsSuccess();
     void doesNotTreatWrongTargetStaleAckAsSuccess();
     void formatsIdempotentSuccessForOperatorStatus();
     void formatsNormalSuccessForOperatorStatus();
@@ -141,13 +141,13 @@ void ReliableCommandClientTests::treatsAcceptedArmStaleAckAsSuccess() {
     QCOMPARE(result.message, QString("command already accepted"));
 }
 
-void ReliableCommandClientTests::treatsAcceptedResetStaleAckAsSuccess() {
+void ReliableCommandClientTests::treatsAcceptedDisarmStaleAckAsSuccess() {
     ScriptedTransport transport({CommandSendResult{false, "stale command", "task-001", true, false, 15, false}});
     ReliableCommandClient client(&transport, ReliableCommandPolicy{1, 0});
 
     const Envelope envelope = ZmqCommandClient::buildControlCommandEnvelope(
         15,
-        GroundControlCommandType::ResetTargeting,
+        GroundControlCommandType::DisarmTargeting,
         "task-001");
     const CommandSendResult result = client.sendReliable(envelope);
 
@@ -155,13 +155,13 @@ void ReliableCommandClientTests::treatsAcceptedResetStaleAckAsSuccess() {
     QCOMPARE(result.message, QString("command already accepted"));
 }
 
-void ReliableCommandClientTests::doesNotTreatArmedStaleResetAckAsSuccess() {
+void ReliableCommandClientTests::doesNotTreatArmedStaleDisarmAckAsSuccess() {
     ScriptedTransport transport({CommandSendResult{false, "stale command", "task-001", true, false, 16, true}});
     ReliableCommandClient client(&transport, ReliableCommandPolicy{1, 0});
 
     const Envelope envelope = ZmqCommandClient::buildControlCommandEnvelope(
         16,
-        GroundControlCommandType::ResetTargeting,
+        GroundControlCommandType::DisarmTargeting,
         "task-001");
     const CommandSendResult result = client.sendReliable(envelope);
 

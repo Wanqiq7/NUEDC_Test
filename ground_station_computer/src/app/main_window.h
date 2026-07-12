@@ -11,6 +11,7 @@
 #include <memory>
 
 class QLabel;
+class QTimer;
 class ZmqSubscriberWorker;
 
 class MainWindow : public QMainWindow {
@@ -31,9 +32,8 @@ private:
     void handleExecuteMissionClicked();
     void handleStopMissionClicked();
     void handleArmVisionClicked();
-    void handleResetVisionClicked();
     void handleProbeAirborneLinkClicked();
-    void sendVisionControlCommand(GroundControlCommandType command_type, const QString &action_text);
+    void sendManualVisionArmCommand();
 
     void probeAirborneAvailability(bool update_status_message = false);
     void recordCommandLinkResult(bool online);
@@ -48,12 +48,12 @@ private:
     QPushButton *execute_button_ = nullptr;
     QPushButton *stop_button_ = nullptr;
     QPushButton *arm_vision_button_ = nullptr;
-    QPushButton *reset_vision_button_ = nullptr;
     QPushButton *probe_airborne_link_button_ = nullptr;
     QLabel *airborne_status_label_ = nullptr;
     bool command_sync_enabled_ = true;
     bool command_link_online_ = false;
     qint64 last_successful_command_reply_ms_ = 0;
+    QTimer *command_health_expiry_timer_ = nullptr;
     bool telemetry_online_ = false;
     ZmqCommandClient command_client_;
     std::unique_ptr<ZmqCommandTransport> command_transport_;

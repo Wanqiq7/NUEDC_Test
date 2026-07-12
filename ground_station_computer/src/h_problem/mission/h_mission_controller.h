@@ -47,6 +47,7 @@ public:
     // 配置。
     void setCommandSyncEnabled(bool enabled);
     void setCommandClient(const ZmqCommandClient &client);
+    void setCommandTransport(const CommandTransport *transport);
 
     // 生命周期 / 事件。
     void loadInitialPreview();
@@ -70,7 +71,12 @@ private:
         bool landing_enabled,
         double descent_angle_deg,
         double takeoff_anchor_x_cm,
-        double takeoff_anchor_y_cm);
+        double takeoff_anchor_y_cm,
+        double touchdown_x_cm,
+        double touchdown_y_cm,
+        double estimated_mission_time_s,
+        const QString &planning_optimality,
+        const QStringList &planning_warnings);
     void applyTelemetry(const QString &current_cell, int step_index, int visited_cells);
     void applyDetection(
         const QString &task_id,
@@ -87,9 +93,10 @@ private:
         int target_offset_x_px,
         int target_offset_y_px);
     void applySummary(const QMap<QString, int> &totals, int visited_cells);
+    CommandSendResult disarmVisionTargetingForLifecycle();
     void enterNoFlySelectionMode();
-    void generateMissionPlanFromCandidateSelection();
-    void applyMissionPlanResult(const MissionPlanResult &result, bool sync_to_airborne = false);
+    void generateTaskPlanFromCandidateSelection();
+    void applyTaskPlan(const competition::TaskPlan &plan, bool sync_to_airborne = false);
     void refreshMissionContextLabels();
     void refreshPlanningButtonText();
     void emitRuntimeChanged();
@@ -108,7 +115,7 @@ private:
     CommandLinkStateCallback command_link_state_callback_;
 
     PlanningStateMachine planning_state_;
-    MissionPlanBridge mission_plan_bridge_;
+    HRoutePlanner route_planner_;
     MissionCommandService command_service_;
     QString case_file_path_ = "shared/cases/sample_case.json";
     QString mission_plan_output_path_ = "runtime/active_mission_plan.json";
@@ -121,6 +128,11 @@ private:
     double current_descent_angle_deg_ = 0.0;
     double current_takeoff_anchor_x_cm_ = 0.0;
     double current_takeoff_anchor_y_cm_ = 0.0;
+    double current_touchdown_x_cm_ = 0.0;
+    double current_touchdown_y_cm_ = 0.0;
+    double current_estimated_mission_time_s_ = 0.0;
+    QString current_planning_optimality_;
+    QStringList current_planning_warnings_;
     bool command_sync_enabled_ = true;
     AirborneSyncState sync_state_;
     DetectionRepository repository_;

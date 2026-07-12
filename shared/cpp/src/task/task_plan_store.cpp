@@ -40,6 +40,12 @@ QJsonObject taskPlanToJson(const TaskPlan &plan) {
 }
 
 std::optional<TaskPlan> taskPlanFromJsonObject(const QJsonObject &object, QString *error_message) {
+    if (!object.contains("message_type") || object.value("message_type").toString() != "task_plan") {
+        if (error_message != nullptr) {
+            *error_message = "unsupported message_type: expected task_plan";
+        }
+        return std::nullopt;
+    }
     TaskPlan plan;
     if (!requiredString(object, "task_id", &plan.task_id, error_message)) {
         return std::nullopt;

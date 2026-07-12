@@ -8,7 +8,6 @@ set(GROUND_STATION_CORE_SOURCES
     src/framework/runtime/mission_runtime_state.cpp
     src/h_problem/mission/h_mission_command_service.cpp
     src/h_problem/mission/h_mission_controller.cpp
-    src/h_problem/mission/h_mission_load_adapter.cpp
     src/h_problem/mission/h_no_fly_planning_state.cpp
     src/h_problem/mission/h_protocol_adapter.cpp
     src/h_problem/mission/h_route_planner_bridge.cpp
@@ -16,7 +15,6 @@ set(GROUND_STATION_CORE_SOURCES
     src/h_problem/rules/h_no_fly_zone_rules.cpp
     src/h_problem/rules/h_route_validator.cpp
     src/h_problem/storage/h_detection_repository.cpp
-    src/h_problem/storage/h_mission_plan_store.cpp
     src/h_problem/ui/h_route_visualizer.cpp
 )
 
@@ -71,7 +69,6 @@ add_ground_station_test(test_route_validator tests/test_route_validator.cpp)
 add_ground_station_test(test_route_visualizer tests/test_route_visualizer.cpp)
 add_ground_station_test(test_no_fly_zone_rules tests/test_no_fly_zone_rules.cpp)
 add_ground_station_test(test_planning_state_machine tests/test_planning_state_machine.cpp)
-add_ground_station_test(test_mission_plan_bridge tests/test_mission_plan_bridge.cpp)
 add_ground_station_test(test_zmq_command_client tests/test_zmq_command_client.cpp)
 add_ground_station_test(test_zmq_command_client_integration tests/test_zmq_command_client_integration.cpp)
 add_ground_station_test(test_zmq_subscriber_worker tests/test_zmq_subscriber_worker.cpp)
@@ -85,9 +82,7 @@ add_ground_station_test(test_architecture_boundaries tests/test_architecture_bou
 target_compile_definitions(test_architecture_boundaries PRIVATE
     GROUND_PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_ground_station_test(test_envelope_codec tests/test_envelope_codec.cpp)
-add_ground_station_test(test_mission_load_adapter tests/test_mission_load_adapter.cpp)
 add_ground_station_test(test_mission_command_service tests/test_mission_command_service.cpp)
-add_ground_station_test(test_mission_plan_store tests/test_mission_plan_store.cpp)
 add_ground_station_test(test_mission_runtime_state tests/test_mission_runtime_state.cpp)
 add_ground_station_test(test_airborne_sync_state tests/test_airborne_sync_state.cpp)
 add_ground_station_test(test_h_mission_controller tests/test_h_mission_controller.cpp)

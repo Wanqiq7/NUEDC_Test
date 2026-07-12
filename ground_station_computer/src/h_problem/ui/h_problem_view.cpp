@@ -74,10 +74,13 @@ QWidget *HProblemView::buildWidget(QWidget *parent, const QMap<QString, int> &in
 
     case_label_ = new QLabel("案例: 未加载", parent);
     case_label_->setObjectName("StatusText");
+    case_label_->setWordWrap(true);
     mission_label_ = new QLabel("任务: 等待规划", parent);
     mission_label_->setObjectName("StatusText");
+    mission_label_->setWordWrap(true);
     target_status_label_ = new QLabel("目标: 等待跟踪", parent);
     target_status_label_->setObjectName("TargetStatusLabel");
+    target_status_label_->setWordWrap(true);
 
     auto *legend_label = new QLabel(parent);
     legend_label->setWordWrap(true);

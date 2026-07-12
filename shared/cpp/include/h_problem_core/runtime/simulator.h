@@ -12,7 +12,7 @@ struct SimulatedTaskStream {
 
 std::optional<SimulatedTaskStream> simulateTaskStream(
     const CaseConfig &case_config,
-    std::optional<MissionPlan> mission_plan = std::nullopt,
+    std::optional<competition::TaskPlan> task_plan = std::nullopt,
     QString *error_message = nullptr);
 
 } // namespace hcore

@@ -13,7 +13,7 @@ private slots:
     void parsesFailureAckPayload();
     void buildsControlCommandWithTaskId();
     void buildsArmTargetingControlCommand();
-    void buildsResetTargetingControlCommand();
+    void buildsDisarmTargetingControlCommand();
     void buildsControlCommandWithMonotonicSequence();
 };
 
@@ -105,10 +105,10 @@ void ZmqCommandClientTests::buildsArmTargetingControlCommand() {
     QCOMPARE(QString::fromStdString(envelope.control_command().task_id()), QString("task-123"));
 }
 
-void ZmqCommandClientTests::buildsResetTargetingControlCommand() {
+void ZmqCommandClientTests::buildsDisarmTargetingControlCommand() {
     const Envelope envelope = ZmqCommandClient::buildControlCommandEnvelope(
         102,
-        GroundControlCommandType::ResetTargeting,
+        GroundControlCommandType::DisarmTargeting,
         "task-123");
 
     QCOMPARE(envelope.payload_case(), Envelope::kControlCommand);

@@ -101,16 +101,12 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
     arm_vision_button_ = new QPushButton("视觉武装", this);
     arm_vision_button_->setObjectName("ArmVisionButton");
     arm_vision_button_->setCursor(Qt::PointingHandCursor);
-    reset_vision_button_ = new QPushButton("视觉复位", this);
-    reset_vision_button_->setObjectName("ResetVisionButton");
-    reset_vision_button_->setCursor(Qt::PointingHandCursor);
     probe_airborne_link_button_ = new QPushButton("刷新机载链路", this);
     probe_airborne_link_button_->setObjectName("ProbeAirborneLinkButton");
     probe_airborne_link_button_->setCursor(Qt::PointingHandCursor);
     action_layout->addWidget(execute_button_);
     action_layout->addWidget(stop_button_);
     action_layout->addWidget(arm_vision_button_);
-    action_layout->addWidget(reset_vision_button_);
     action_layout->addWidget(probe_airborne_link_button_);
     root_layout->addLayout(action_layout);
 
@@ -146,13 +142,20 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
             refreshExecutionControls();
         });
         command_health_timer->start();
+
+        command_health_expiry_timer_ = new QTimer(this);
+        command_health_expiry_timer_->setSingleShot(true);
+        command_health_expiry_timer_->setTimerType(Qt::PreciseTimer);
+        connect(command_health_expiry_timer_, &QTimer::timeout, this, [this] {
+            refreshAirborneStatusLabel();
+            refreshExecutionControls();
+        });
     }
 
     connect(planning_button_, &QPushButton::clicked, this, &MainWindow::handlePlanningButtonClicked);
     connect(execute_button_, &QPushButton::clicked, this, &MainWindow::handleExecuteMissionClicked);
     connect(stop_button_, &QPushButton::clicked, this, &MainWindow::handleStopMissionClicked);
     connect(arm_vision_button_, &QPushButton::clicked, this, &MainWindow::handleArmVisionClicked);
-    connect(reset_vision_button_, &QPushButton::clicked, this, &MainWindow::handleResetVisionClicked);
     connect(probe_airborne_link_button_, &QPushButton::clicked, this, &MainWindow::handleProbeAirborneLinkClicked);
     task_adapter_->loadInitialPreview();
     refreshExecutionControls();
@@ -254,56 +257,44 @@ void MainWindow::handleStopMissionClicked() {
         return;
     }
 
+    status_label_->setText(ReliableCommandClient::operatorStatusText("停止执行命令", result));
     task_adapter_->applyCommandAck(result);
-    if (result.task_id.isEmpty() && result.last_accepted_sequence == 0) {
-        task_adapter_->markControlCommandStopped();
-    }
+    task_adapter_->markControlCommandStopped();
     refreshAirborneStatusLabel();
     refreshExecutionControls();
-    status_label_->setText(ReliableCommandClient::operatorStatusText("停止执行命令", result));
 }
 
 void MainWindow::handleArmVisionClicked() {
-    sendVisionControlCommand(GroundControlCommandType::ArmTargeting, "视觉武装命令");
-}
-
-void MainWindow::handleResetVisionClicked() {
-    sendVisionControlCommand(GroundControlCommandType::ResetTargeting, "视觉复位命令");
+    sendManualVisionArmCommand();
 }
 
 void MainWindow::handleProbeAirborneLinkClicked() {
     probeAirborneAvailability(true);
 }
 
-void MainWindow::sendVisionControlCommand(
-    GroundControlCommandType command_type,
-    const QString &action_text) {
+void MainWindow::sendManualVisionArmCommand() {
     MissionRuntimeInputs inputs = task_adapter_->missionRuntimeInputs();
     inputs.command_sync_enabled = command_sync_enabled_;
     inputs.airborne_online = commandLinkHealthy();
-    const MissionRuntimeControls controls = MissionRuntimeState::controlsFor(inputs);
-    const bool allowed = command_type == GroundControlCommandType::ArmTargeting
-        ? controls.can_arm_vision
-        : controls.can_reset_vision;
-    if (!allowed) {
+    if (!MissionRuntimeState::controlsFor(inputs).can_arm_vision) {
         status_label_->setText("状态: 请先同步已加载的任务到在线机载端");
         return;
     }
 
     const auto result = mission_command_service_->sendControlCommand(
-        command_type, task_adapter_->activeTaskId());
+        GroundControlCommandType::ArmTargeting, task_adapter_->activeTaskId());
     recordCommandLinkResult(result.ok);
     if (!result.ok) {
         refreshAirborneStatusLabel();
         refreshExecutionControls();
-        status_label_->setText(ReliableCommandClient::operatorStatusText(action_text, result));
+        status_label_->setText(ReliableCommandClient::operatorStatusText("视觉武装命令", result));
         return;
     }
 
     task_adapter_->applyCommandAck(result);
     refreshAirborneStatusLabel();
     refreshExecutionControls();
-    status_label_->setText(ReliableCommandClient::operatorStatusText(action_text, result));
+    status_label_->setText(ReliableCommandClient::operatorStatusText("视觉武装命令", result));
 }
 
 void MainWindow::probeAirborneAvailability(bool update_status_message) {
@@ -341,9 +332,6 @@ void MainWindow::refreshExecutionControls() {
     if (arm_vision_button_ != nullptr) {
         arm_vision_button_->setEnabled(controls.can_arm_vision);
     }
-    if (reset_vision_button_ != nullptr) {
-        reset_vision_button_->setEnabled(controls.can_reset_vision);
-    }
     if (probe_airborne_link_button_ != nullptr) {
         probe_airborne_link_button_->setEnabled(command_sync_enabled_);
     }
@@ -366,7 +354,18 @@ void MainWindow::refreshAirborneStatusLabel() {
 
 void MainWindow::recordCommandLinkResult(bool online) {
     command_link_online_ = online;
-    last_successful_command_reply_ms_ = online ? QDateTime::currentMSecsSinceEpoch() : 0;
+    if (!online) {
+        last_successful_command_reply_ms_ = 0;
+        if (command_health_expiry_timer_ != nullptr) {
+            command_health_expiry_timer_->stop();
+        }
+        return;
+    }
+
+    last_successful_command_reply_ms_ = QDateTime::currentMSecsSinceEpoch();
+    if (command_health_expiry_timer_ != nullptr) {
+        command_health_expiry_timer_->start(static_cast<int>(kCommandLinkTtlMs + 1));
+    }
 }
 
 bool MainWindow::commandLinkHealthy() const {

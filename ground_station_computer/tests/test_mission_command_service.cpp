@@ -39,12 +39,13 @@ private:
     mutable QString last_task_id_;
 };
 
-MissionPlanData makePlan() {
-    MissionPlanData plan;
-    plan.case_id = "case-123";
-    plan.start_cell = "A1B1";
-    plan.route = {"A1B1", "A1B2"};
-    plan.terminal_cell = "A1B2";
+competition::TaskPlan makePlan() {
+    competition::TaskPlan plan;
+    plan.task_id = "case-123";
+    plan.task_type = "h_problem";
+    plan.start_waypoint_id = "A1B1";
+    plan.terminal_waypoint_id = "A1B2";
+    plan.waypoints = {{"A1B1", 0}, {"A1B2", 1}};
     return plan;
 }
 
@@ -54,20 +55,20 @@ class MissionCommandServiceTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void missionPlanSyncUsesReliableTransport();
-    void missionPlanSyncReturnsAckRuntimeState();
+    void taskPlanSyncUsesReliableTransport();
+    void taskPlanSyncReturnsAckRuntimeState();
     void armTargetingSendsControlCommand();
-    void resetTargetingSendsControlCommand();
+    void disarmTargetingSendsControlCommand();
 };
 
-void MissionCommandServiceTests::missionPlanSyncUsesReliableTransport() {
+void MissionCommandServiceTests::taskPlanSyncUsesReliableTransport() {
     ScriptedTransport transport({
         CommandSendResult{false, "timeout"},
         CommandSendResult{true, "task plan stored"},
     });
     MissionCommandService service(&transport);
 
-    const CommandSendResult result = service.sendMissionPlan(makePlan());
+    const CommandSendResult result = service.sendTaskPlan(makePlan());
 
     QVERIFY(result.ok);
     QCOMPARE(result.message, QString("task plan stored"));
@@ -78,13 +79,13 @@ void MissionCommandServiceTests::missionPlanSyncUsesReliableTransport() {
 }
 
 
-void MissionCommandServiceTests::missionPlanSyncReturnsAckRuntimeState() {
+void MissionCommandServiceTests::taskPlanSyncReturnsAckRuntimeState() {
     ScriptedTransport transport({
         CommandSendResult{true, "task plan stored", "case-123", true, false, 77},
     });
     MissionCommandService service(&transport);
 
-    const CommandSendResult result = service.sendMissionPlan(makePlan());
+    const CommandSendResult result = service.sendTaskPlan(makePlan());
 
     QVERIFY(result.ok);
     QCOMPARE(result.task_id, QString("case-123"));
@@ -106,12 +107,11 @@ void MissionCommandServiceTests::armTargetingSendsControlCommand() {
     QCOMPARE(transport.lastTaskId(), QString("case-123"));
 }
 
-void MissionCommandServiceTests::resetTargetingSendsControlCommand() {
+void MissionCommandServiceTests::disarmTargetingSendsControlCommand() {
     ScriptedTransport transport({CommandSendResult{true, "vision reset"}});
     MissionCommandService service(&transport);
 
-    const CommandSendResult result = service.sendControlCommand(
-        GroundControlCommandType::ResetTargeting, "case-123");
+    const CommandSendResult result = service.disarmVisionTargeting("case-123");
 
     QVERIFY(result.ok);
     QCOMPARE(static_cast<int>(transport.lastPayloadCase()), static_cast<int>(Envelope::kControlCommand));

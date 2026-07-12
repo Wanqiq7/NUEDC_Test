@@ -30,6 +30,9 @@ public:
     void markControlStarted();
     void markControlStopped();
 
+    // 生命周期结束或任务替换时，本地立即停止显示视觉瞄准状态；机载端确认由调用方处理。
+    void disarmVisionTargeting() { vision_armed_ = false; }
+
     // 单字段设置，对应事件处理流里的内联赋值（applyGridConfig / applyTelemetry / applySummary
     // 以及本地生成成功后的置位），保持逐字段迁移的忠实度。
     void setSyncedToAirborne(bool synced) { synced_to_airborne_ = synced; }

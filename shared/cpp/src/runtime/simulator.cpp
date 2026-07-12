@@ -1,7 +1,6 @@
 #include "h_problem_core/runtime/simulator.h"
 
 #include "h_problem_core/mission/mission_planning.h"
-#include "h_problem_core/protocol/envelope_builder.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,21 +17,21 @@ QString compactJson(const QJsonObject &object) {
 
 std::optional<SimulatedTaskStream> simulateTaskStream(
     const CaseConfig &case_config,
-    std::optional<MissionPlan> mission_plan,
+    std::optional<competition::TaskPlan> task_plan,
     QString *error_message) {
-    MissionPlan config_payload;
-    if (!mission_plan.has_value() || mission_plan->route.isEmpty()) {
-        const auto generated_plan = buildMissionPlan(case_config, std::nullopt, error_message);
+    competition::TaskPlan config_payload;
+    if (!task_plan.has_value() || task_plan->waypoints.isEmpty()) {
+        const auto generated_plan = buildTaskPlan(case_config, std::nullopt, error_message);
         if (!generated_plan.has_value()) {
             return std::nullopt;
         }
         config_payload = generated_plan.value();
     } else {
-        config_payload = mission_plan.value();
+        config_payload = task_plan.value();
     }
 
     SimulatedTaskStream stream;
-    stream.plan = taskPlanFromMissionPlan(config_payload);
+    stream.plan = config_payload;
 
     QMap<QString, Animal> animals_by_cell;
     for (const Animal &animal : case_config.animals) {
@@ -42,8 +41,8 @@ std::optional<SimulatedTaskStream> simulateTaskStream(
     QSet<QString> visited_cells;
     QSet<QString> reported_detection_cells;
     QMap<QString, quint32> totals;
-    for (int index = 0; index < config_payload.route.size(); ++index) {
-        const QString cell = config_payload.route.at(index);
+    for (int index = 0; index < config_payload.waypoints.size(); ++index) {
+        const QString cell = config_payload.waypoints.at(index).id;
         visited_cells.insert(cell);
 
         QJsonObject telemetry_payload;

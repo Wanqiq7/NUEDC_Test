@@ -4,6 +4,7 @@
 #include <QString>
 #include <QStringList>
 
+#include "competition_core/task/models.h"
 #include "messages.pb.h"
 
 struct HGridConfigData {
@@ -16,6 +17,13 @@ struct HGridConfigData {
     double descent_angle_deg = 0.0;
     double takeoff_anchor_x_cm = 0.0;
     double takeoff_anchor_y_cm = 0.0;
+    double touchdown_x_cm = 0.0;
+    double touchdown_y_cm = 0.0;
+    double descent_run_cm = 0.0;
+    double descent_heading_deg = 0.0;
+    double estimated_mission_time_s = 0.0;
+    QString planning_optimality;
+    QStringList planning_warnings;
 };
 
 struct HTelemetryData {
@@ -47,7 +55,8 @@ struct HSummaryData {
 
 class HProtocolAdapter {
 public:
-    static bool decodeGridConfig(const TaskPlanMessage &message, HGridConfigData *data, QString *error_message = nullptr);
+    static bool validateTaskPlan(const competition::TaskPlan &plan, QString *error_message = nullptr);
+    static bool decodeTaskPlan(const competition::TaskPlan &plan, HGridConfigData *data, QString *error_message = nullptr);
     static bool decodeTelemetry(const TaskEventMessage &message, HTelemetryData *data, QString *error_message = nullptr);
     static bool decodeDetection(const TaskEventMessage &message, HDetectionData *data, QString *error_message = nullptr);
     static bool decodeTargetUpdate(const TaskEventMessage &message, HTargetUpdateData *data, QString *error_message = nullptr);

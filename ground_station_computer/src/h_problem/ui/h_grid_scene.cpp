@@ -139,10 +139,7 @@ void GridScene::setRoute(const QStringList &route) {
     clearRouteItems();
 
     QString error_message;
-    const bool is_closed_route = !route.isEmpty() && route.first() == route.last();
-    const bool route_is_valid = is_closed_route
-        ? RouteValidator::validateClosedRoute(route, no_fly_cells_, route.first(), &error_message)
-        : RouteValidator::validateRoute(route, no_fly_cells_, &error_message);
+    const bool route_is_valid = RouteValidator::validateRoute(route, no_fly_cells_, &error_message);
     if (!route_is_valid) {
         qWarning() << "Invalid route received:" << error_message;
     }

@@ -84,11 +84,11 @@ class ZmqCommandClientIntegrationTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void armAndResetUseWireEnumsAndReceiveStatefulAcks();
+    void armAndDisarmUseWireEnumsAndReceiveStatefulAcks();
     void serverCleanupIsBoundedWhenSecondRequestIsMissing();
 };
 
-void ZmqCommandClientIntegrationTests::armAndResetUseWireEnumsAndReceiveStatefulAcks() {
+void ZmqCommandClientIntegrationTests::armAndDisarmUseWireEnumsAndReceiveStatefulAcks() {
     LocalCommandServer server;
     ZmqCommandClient client(server.endpoint());
 
@@ -107,7 +107,7 @@ void ZmqCommandClientIntegrationTests::armAndResetUseWireEnumsAndReceiveStateful
     const CommandSendResult reset_result = client.sendEnvelope(
         ZmqCommandClient::buildControlCommandEnvelope(
             502,
-            GroundControlCommandType::ResetTargeting,
+            GroundControlCommandType::DisarmTargeting,
             "local-rep-task"));
     QVERIFY2(reset_result.ok, qPrintable(reset_result.message));
     QCOMPARE(reset_result.task_id, QString("local-rep-task"));

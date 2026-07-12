@@ -20,7 +20,6 @@
 
 #include <memory>
 
-#include "h_problem_core/protocol/envelope_builder.h"
 #include "competition_core/protocol/envelope_codec.h"
 #include "h_problem/rules/h_grid_mapper.h"
 #include "h_problem/ui/h_problem_page.h"
@@ -106,6 +105,7 @@ private slots:
     void shellUsesCompetitionTaskAdapterBoundary();
     void defaultAdapterConsumesCommandAckRuntimeState();
     void defaultAdapterConsumesStateOnlyVisionAck();
+    void exposesManualVisionArmWithoutStandaloneReset();
     void executionControlsExistAndAreDisabledInTestMode();
     void taskMapExpandsInsideLargeShellWindow();
     void manualNoFlyFlowPersistsPlan();
@@ -183,6 +183,16 @@ void MainWindowTests::defaultAdapterConsumesStateOnlyVisionAck() {
     }
     QVERIFY(vision_state_displayed);
 }
+
+void MainWindowTests::exposesManualVisionArmWithoutStandaloneReset() {
+    MainWindow window(nullptr, false);
+    window.show();
+    QTest::qWait(50);
+
+    QVERIFY(window.findChild<QPushButton *>("ArmVisionButton") != nullptr);
+    QVERIFY(window.findChild<QPushButton *>("ResetVisionButton") == nullptr);
+}
+
 void MainWindowTests::executionControlsExistAndAreDisabledInTestMode() {
     MainWindow window(nullptr, false);
     window.show();
@@ -191,21 +201,18 @@ void MainWindowTests::executionControlsExistAndAreDisabledInTestMode() {
     auto *execute_button = window.findChild<QPushButton *>("ExecuteMissionButton");
     auto *stop_button = window.findChild<QPushButton *>("StopMissionButton");
     auto *arm_vision_button = window.findChild<QPushButton *>("ArmVisionButton");
-    auto *reset_vision_button = window.findChild<QPushButton *>("ResetVisionButton");
     auto *airborne_status = window.findChild<QLabel *>("AirborneStatusLabel");
     auto *planning_button = window.findChild<QPushButton *>("PlanningButton");
 
     QVERIFY(execute_button != nullptr);
     QVERIFY(stop_button != nullptr);
     QVERIFY(arm_vision_button != nullptr);
-    QVERIFY(reset_vision_button != nullptr);
     QVERIFY(airborne_status != nullptr);
     QVERIFY(planning_button != nullptr);
     QVERIFY(planning_button->isEnabled());
     QVERIFY(!execute_button->isEnabled());
     QVERIFY(!stop_button->isEnabled());
     QVERIFY(!arm_vision_button->isEnabled());
-    QVERIFY(!reset_vision_button->isEnabled());
     QVERIFY(airborne_status->text().contains("测试模式"));
 }
 
@@ -217,7 +224,15 @@ void MainWindowTests::taskMapExpandsInsideLargeShellWindow() {
 
     auto *view = window.findChild<QGraphicsView *>("TaskView");
     QVERIFY(view != nullptr);
-    QVERIFY(view->viewport()->width() > 900);
+    QVERIFY2(
+        view->viewport()->width() > 900,
+        qPrintable(QString("window=%1x%2, view=%3x%4, viewport=%5x%6")
+                       .arg(window.width())
+                       .arg(window.height())
+                       .arg(view->width())
+                       .arg(view->height())
+                       .arg(view->viewport()->width())
+                       .arg(view->viewport()->height())));
 
     const QRectF mapped_scene = view->mapToScene(view->viewport()->rect()).boundingRect();
     QVERIFY(mapped_scene.width() < 700.0);
@@ -257,7 +272,10 @@ void MainWindowTests::manualNoFlyFlowPersistsPlan() {
         QVERIFY(file.open(QIODevice::ReadOnly));
         const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
         const QJsonObject object = document.object();
-        const QJsonArray array = object.value("no_fly_cells").toArray();
+        QCOMPARE(object.value("message_type").toString(), QString("task_plan"));
+        const QJsonObject metadata = QJsonDocument::fromJson(
+            object.value("metadata_json").toString().toUtf8()).object();
+        const QJsonArray array = metadata.value("no_fly_cells").toArray();
         QStringList persisted_cells;
         for (const QJsonValue &entry : array) {
             persisted_cells.append(entry.toString());
@@ -364,11 +382,9 @@ void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffli
     auto *execute_button = window.findChild<QPushButton *>("ExecuteMissionButton");
     auto *stop_button = window.findChild<QPushButton *>("StopMissionButton");
     auto *arm_vision_button = window.findChild<QPushButton *>("ArmVisionButton");
-    auto *reset_vision_button = window.findChild<QPushButton *>("ResetVisionButton");
     QVERIFY(execute_button != nullptr);
     QVERIFY(stop_button != nullptr);
     QVERIFY(arm_vision_button != nullptr);
-    QVERIFY(reset_vision_button != nullptr);
 
     window.task_adapter_->applyCommandAck(CommandSendResult{
         true,
@@ -383,7 +399,6 @@ void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffli
     QVERIFY(!execute_button->isEnabled());
     QVERIFY(!stop_button->isEnabled());
     QVERIFY(!arm_vision_button->isEnabled());
-    QVERIFY(!reset_vision_button->isEnabled());
 
     window.handleTaskEvent(
         competition::TaskEvent{
@@ -397,7 +412,6 @@ void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffli
     QVERIFY(!execute_button->isEnabled());
     QVERIFY(!stop_button->isEnabled());
     QVERIFY(!arm_vision_button->isEnabled());
-    QVERIFY(!reset_vision_button->isEnabled());
 
     qunsetenv("NUEDC_AIRBORNE_HOST");
     qunsetenv("NUEDC_COMMAND_PORT");
@@ -413,9 +427,7 @@ void MainWindowTests::staleCommandHealthDisablesVisionControlsDespiteTelemetry()
     QTest::qWait(50);
 
     auto *arm_vision_button = window.findChild<QPushButton *>("ArmVisionButton");
-    auto *reset_vision_button = window.findChild<QPushButton *>("ResetVisionButton");
     QVERIFY(arm_vision_button != nullptr);
-    QVERIFY(reset_vision_button != nullptr);
 
     window.task_adapter_->applyCommandAck(CommandSendResult{
         true,
@@ -427,7 +439,6 @@ void MainWindowTests::staleCommandHealthDisablesVisionControlsDespiteTelemetry()
         false,
     });
     QVERIFY(arm_vision_button->isEnabled());
-    QVERIFY(reset_vision_button->isEnabled());
 
     window.last_successful_command_reply_ms_ = QDateTime::currentMSecsSinceEpoch() - 6000;
     window.refreshExecutionControls();
@@ -441,7 +452,6 @@ void MainWindowTests::staleCommandHealthDisablesVisionControlsDespiteTelemetry()
         2000);
 
     QVERIFY(!arm_vision_button->isEnabled());
-    QVERIFY(!reset_vision_button->isEnabled());
 
     qunsetenv("NUEDC_AIRBORNE_HOST");
     qunsetenv("NUEDC_COMMAND_PORT");
@@ -457,10 +467,8 @@ void MainWindowTests::probeActionRecoversExpiredCommandHealth() {
     QTest::qWait(50);
 
     auto *arm_vision_button = window.findChild<QPushButton *>("ArmVisionButton");
-    auto *reset_vision_button = window.findChild<QPushButton *>("ResetVisionButton");
     auto *probe_button = window.findChild<QPushButton *>("ProbeAirborneLinkButton");
     QVERIFY(arm_vision_button != nullptr);
-    QVERIFY(reset_vision_button != nullptr);
     QVERIFY(probe_button != nullptr);
     QVERIFY(probe_button->isEnabled());
 
@@ -474,17 +482,14 @@ void MainWindowTests::probeActionRecoversExpiredCommandHealth() {
         false,
     });
     QVERIFY(arm_vision_button->isEnabled());
-    QVERIFY(reset_vision_button->isEnabled());
 
     QTest::qWait(5500);
     QVERIFY(!arm_vision_button->isEnabled());
-    QVERIFY(!reset_vision_button->isEnabled());
 
     probe_button->click();
     QCoreApplication::processEvents();
 
     QVERIFY(arm_vision_button->isEnabled());
-    QVERIFY(reset_vision_button->isEnabled());
 
     qunsetenv("NUEDC_AIRBORNE_HOST");
     qunsetenv("NUEDC_COMMAND_PORT");

@@ -2,78 +2,90 @@
 
 #include "h_problem_core/planning/mission_geometry.h"
 
+#include <cmath>
+#include <limits>
+
 namespace hcore {
 
 namespace {
 
-QPoint stepVector(const QString &from_cell, const QString &to_cell) {
-    const auto from = decodeCell(from_cell);
-    const auto to = decodeCell(to_cell);
-    if (!from.has_value() || !to.has_value()) {
-        return {};
-    }
-    return {to->x() - from->x(), to->y() - from->y()};
+bool timingIsValid(const MissionTiming &timing) {
+    return std::isfinite(timing.cruise_speed_cm_per_s)
+        && std::isfinite(timing.ascent_speed_cm_per_s)
+        && std::isfinite(timing.descent_speed_cm_per_s)
+        && std::isfinite(timing.takeoff_fixed_time_s)
+        && std::isfinite(timing.landing_fixed_time_s)
+        && std::isfinite(timing.per_cell_dwell_time_s)
+        && timing.cruise_speed_cm_per_s > 0.0
+        && timing.ascent_speed_cm_per_s > 0.0
+        && timing.descent_speed_cm_per_s > 0.0
+        && timing.takeoff_fixed_time_s >= 0.0
+        && timing.landing_fixed_time_s >= 0.0
+        && timing.per_cell_dwell_time_s >= 0.0;
 }
 
-}
-
-int countHeadingChanges(const QStringList &route) {
-    int heading_changes = 0;
-    std::optional<QPoint> previous_vector;
-    for (int index = 1; index < route.size(); ++index) {
-        const QPoint current_vector = stepVector(route.at(index - 1), route.at(index));
-        if (previous_vector.has_value() && previous_vector.value() != current_vector) {
-            ++heading_changes;
-        }
-        previous_vector = current_vector;
-    }
-    return heading_changes;
-}
-
-double estimateRouteCost(
-    const QStringList &route,
-    int height,
-    double turn_penalty_cm,
-    double repeated_cell_penalty_cm,
-    std::optional<LandingProfile> landing_profile,
-    int width,
-    QSet<QString> no_fly_cells) {
-    if (route.size() <= 1) {
-        return 0.0;
-    }
-
-    double distance_cost = 0.0;
-    QMap<QString, int> visit_counts;
+double routeDistanceCm(const QStringList &route, int height) {
+    double distance_cm = 0.0;
     for (int index = 1; index < route.size(); ++index) {
         const auto previous_center = cellCodeCenterCm(route.at(index - 1), height);
         const auto current_center = cellCodeCenterCm(route.at(index), height);
         if (previous_center.has_value() && current_center.has_value()) {
-            distance_cost += euclideanDistanceCm(previous_center.value(), current_center.value());
-        }
-        visit_counts[route.at(index)] = visit_counts.value(route.at(index)) + 1;
-    }
-
-    int repeat_count = 0;
-    for (const int count : visit_counts) {
-        repeat_count += std::max(count - 1, 0);
-    }
-
-    double total_cost = distance_cost
-        + (repeat_count * repeated_cell_penalty_cm)
-        + (countHeadingChanges(route) * turn_penalty_cm);
-
-    if (landing_profile.has_value()) {
-        const auto terminal_center = cellCodeCenterCm(route.last(), height);
-        if (terminal_center.has_value()) {
-            total_cost += euclideanDistanceCm(terminal_center.value(), landing_profile->takeoff_anchor_cm);
-        }
-        const QSet<QString> landing_cells = terminalCellsForLanding(width, height, no_fly_cells, landing_profile.value());
-        if (!landing_cells.contains(route.last())) {
-            total_cost += 10000.0;
+            distance_cm += euclideanDistanceCm(previous_center.value(), current_center.value());
         }
     }
+    return distance_cm;
+}
 
-    return total_cost;
+}
+
+double estimateMissionTimeSeconds(
+    const QStringList &route,
+    int height,
+    std::optional<LandingProfile> landing_profile,
+    int width,
+    QSet<QString> no_fly_cells,
+    MissionTiming timing) {
+    if (route.isEmpty() || !timingIsValid(timing)) {
+        return route.isEmpty() ? 0.0 : std::numeric_limits<double>::infinity();
+    }
+
+    const QSet<QString> visited_cells(route.begin(), route.end());
+    double total_time_s = timing.takeoff_fixed_time_s
+        + (routeDistanceCm(route, height) / timing.cruise_speed_cm_per_s)
+        + (visited_cells.size() * timing.per_cell_dwell_time_s);
+
+    if (!landing_profile.has_value()) {
+        return total_time_s;
+    }
+
+    const auto start_center = cellCodeCenterCm(route.first(), height);
+    if (!start_center.has_value()
+        || !descentCorridorIsClear(
+            width,
+            height,
+            landing_profile->takeoff_anchor_cm,
+            start_center.value(),
+            no_fly_cells)) {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    total_time_s += euclideanDistanceCm(
+        landing_profile->takeoff_anchor_cm,
+        start_center.value()) / timing.cruise_speed_cm_per_s;
+    const auto approach = landingApproachForTerminal(
+        width,
+        height,
+        route.last(),
+        no_fly_cells,
+        landing_profile.value());
+    if (!approach.has_value()) {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    total_time_s += landing_profile->cruise_height_cm / timing.ascent_speed_cm_per_s;
+    total_time_s += approach->descent_distance_cm / timing.descent_speed_cm_per_s;
+    total_time_s += timing.landing_fixed_time_s;
+    return total_time_s;
 }
 
 } // namespace hcore

@@ -1,7 +1,14 @@
 {
   "case_id": "wildlife-demo",
   "start_cell": "A9B1",
-  "return_to_start": false,
+  "mission_timing": {
+    "cruise_speed_cm_per_s": 125.0,
+    "ascent_speed_cm_per_s": 80.0,
+    "descent_speed_cm_per_s": 70.0,
+    "takeoff_fixed_time_s": 2.0,
+    "landing_fixed_time_s": 3.0,
+    "per_cell_dwell_time_s": 0.1
+  },
   "landing": {
     "takeoff_anchor_cm": [450.0, 350.0],
     "cruise_height_cm": 120.0,

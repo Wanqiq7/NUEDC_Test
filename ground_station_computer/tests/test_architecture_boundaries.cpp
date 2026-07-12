@@ -107,7 +107,7 @@ void ArchitectureBoundaryTests::hProblemAdapterIsThinShimOverControllerAndView()
     // 工作流逻辑（规划状态机 / 航线桥 / 命令服务）不应再直接出现在 adapter TU。
     QVERIFY2(!adapter.contains("PlanningStateMachine"),
              "planning workflow must live in the controller, not the adapter");
-    QVERIFY2(!adapter.contains("MissionPlanBridge"),
+    QVERIFY2(!adapter.contains("HRoutePlanner"),
              "plan generation must live in the controller, not the adapter");
     QVERIFY2(!adapter.contains("DetectionRepository"),
              "detection persistence must live in the controller, not the adapter");

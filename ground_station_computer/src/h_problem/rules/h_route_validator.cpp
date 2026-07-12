@@ -13,6 +13,13 @@ bool RouteValidator::validateRoute(
     const QStringList &route,
     const QStringList &no_fly_cells,
     QString *error_message) {
+    if (route.size() > 1 && route.first() == route.last()) {
+        if (error_message != nullptr) {
+            *error_message = "open route must not return to its start cell";
+        }
+        return false;
+    }
+
     for (const QString &cell : route) {
         if (no_fly_cells.contains(cell)) {
             if (error_message != nullptr) {
@@ -35,33 +42,4 @@ bool RouteValidator::validateRoute(
         error_message->clear();
     }
     return true;
-}
-
-bool RouteValidator::validateClosedRoute(
-    const QStringList &route,
-    const QStringList &no_fly_cells,
-    const QString &start_cell,
-    QString *error_message) {
-    if (route.isEmpty()) {
-        if (error_message != nullptr) {
-            *error_message = "route is empty";
-        }
-        return false;
-    }
-
-    if (route.first() != start_cell) {
-        if (error_message != nullptr) {
-            *error_message = QString("closed route must start at %1").arg(start_cell);
-        }
-        return false;
-    }
-
-    if (route.last() != start_cell) {
-        if (error_message != nullptr) {
-            *error_message = QString("closed route must end at %1").arg(start_cell);
-        }
-        return false;
-    }
-
-    return validateRoute(route, no_fly_cells, error_message);
 }

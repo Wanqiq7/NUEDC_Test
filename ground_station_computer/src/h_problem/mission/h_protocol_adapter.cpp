@@ -1,11 +1,17 @@
 #include "h_problem/mission/h_protocol_adapter.h"
 
-#include "h_problem_core/protocol/envelope_builder.h"
+#include "competition_core/mission/task_plan_store.h"
+#include "h_problem_core/mission/mission_planning.h"
+#include "h_problem_core/planning/mission_geometry.h"
 
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QSet>
+#include <QtMath>
 
+#include <cmath>
 #include <optional>
 
 namespace {
@@ -55,9 +61,268 @@ double firstDouble(const QJsonObject &object, const QStringList &keys, double fa
     return fallback;
 }
 
+constexpr double ValidationEpsilon = 1e-4;
+
+bool reject(QString *error_message, const QString &message) {
+    if (error_message != nullptr) {
+        *error_message = message;
+    }
+    return false;
+}
+
+bool nearlyEqual(double left, double right, double tolerance = ValidationEpsilon) {
+    return std::abs(left - right) <= tolerance;
+}
+
+double headingDifferenceDeg(double left, double right) {
+    const double normalized = std::fmod(left - right + 540.0, 360.0) - 180.0;
+    return std::abs(normalized);
+}
+
+bool isGridCell(const QString &cell) {
+    const auto decoded = hcore::decodeCell(cell);
+    return decoded.has_value()
+        && decoded->x() >= 0
+        && decoded->x() < hcore::MapWidth
+        && decoded->y() >= 0
+        && decoded->y() < hcore::MapHeight;
+}
+
+bool requiredString(const QJsonObject &metadata, const char *key, QString *value, QString *error_message) {
+    const QString field_name = QString::fromUtf8(key);
+    const QJsonValue field = metadata.value(field_name);
+    if (!field.isString() || field.toString().isEmpty()) {
+        return reject(error_message, QString("H 题任务计划缺少或错误的 metadata 字段: %1").arg(field_name));
+    }
+    *value = field.toString();
+    return true;
+}
+
+bool requiredFiniteNumber(const QJsonObject &metadata, const char *key, double *value, QString *error_message) {
+    const QString field_name = QString::fromUtf8(key);
+    const QJsonValue field = metadata.value(field_name);
+    if (!field.isDouble() || !std::isfinite(field.toDouble())) {
+        return reject(error_message, QString("H 题任务计划缺少或错误的 metadata 数值字段: %1").arg(field_name));
+    }
+    *value = field.toDouble();
+    return true;
+}
+
+bool routeCoversEveryLegalCell(const QStringList &route, const QSet<QString> &no_fly_cells) {
+    QSet<QString> legal_cells;
+    for (int y_index = 0; y_index < hcore::MapHeight; ++y_index) {
+        for (int x_index = 0; x_index < hcore::MapWidth; ++x_index) {
+            const QString cell = hcore::encodeCell(x_index, y_index);
+            if (!no_fly_cells.contains(cell)) {
+                legal_cells.insert(cell);
+            }
+        }
+    }
+    return QSet<QString>(route.cbegin(), route.cend()) == legal_cells;
+}
+
+bool validateLandingMetadata(
+    const QString &start_cell,
+    const QString &terminal_cell,
+    const QSet<QString> &no_fly_cells,
+    double descent_angle_deg,
+    double takeoff_anchor_x_cm,
+    double takeoff_anchor_y_cm,
+    double touchdown_x_cm,
+    double touchdown_y_cm,
+    double descent_run_cm,
+    double descent_heading_deg,
+    double estimated_mission_time_s,
+    QString *error_message) {
+    if (descent_angle_deg <= 0.0
+        || descent_angle_deg >= 90.0
+        || descent_run_cm <= 0.0
+        || estimated_mission_time_s < 0.0) {
+        return reject(error_message, "H 题降落 metadata 数值范围非法");
+    }
+
+    const hcore::PointCm takeoff_anchor{takeoff_anchor_x_cm, takeoff_anchor_y_cm};
+    const hcore::PointCm touchdown{touchdown_x_cm, touchdown_y_cm};
+    const auto start_center = hcore::cellCodeCenterCm(start_cell, hcore::MapHeight);
+    const auto terminal_center = hcore::cellCodeCenterCm(terminal_cell, hcore::MapHeight);
+    if (!start_center.has_value() || !terminal_center.has_value()) {
+        return reject(error_message, "H 题起飞格或终点格不在固定网格内");
+    }
+    if (!hcore::descentCorridorIsClear(
+            hcore::MapWidth, hcore::MapHeight, takeoff_anchor, start_center.value(), no_fly_cells)) {
+        return reject(error_message, "起飞锚点到起飞格的通道穿过禁飞区");
+    }
+
+    const double actual_run_cm = hcore::euclideanDistanceCm(terminal_center.value(), touchdown);
+    const double actual_heading_deg = hcore::headingDegrees(terminal_center.value(), touchdown);
+    if (!nearlyEqual(actual_run_cm, descent_run_cm)
+        || headingDifferenceDeg(actual_heading_deg, descent_heading_deg) > ValidationEpsilon) {
+        return reject(error_message, "降落 metadata 与终点下降向量不一致");
+    }
+    if (!hcore::descentCorridorIsClear(
+            hcore::MapWidth, hcore::MapHeight, terminal_center.value(), touchdown, no_fly_cells)) {
+        return reject(error_message, "终点下降通道穿过禁飞区");
+    }
+
+    hcore::LandingProfile landing;
+    landing.takeoff_anchor_cm = takeoff_anchor;
+    landing.cruise_height_cm = descent_run_cm * std::tan(qDegreesToRadians(descent_angle_deg));
+    landing.descent_angle_deg = descent_angle_deg;
+    landing.descent_angle_tolerance_deg = 0.0;
+    landing.touchdown_radius_cm = hcore::euclideanDistanceCm(takeoff_anchor, touchdown);
+    landing.preferred_heading_deg = descent_heading_deg;
+    landing.heading_tolerance_deg = 0.0;
+    const auto approach = hcore::landingApproachForTerminal(
+        hcore::MapWidth, hcore::MapHeight, terminal_cell, no_fly_cells, landing);
+    if (!approach.has_value()
+        || !nearlyEqual(approach->horizontal_run_cm, descent_run_cm)
+        || !nearlyEqual(approach->touchdown_point_cm.x_cm, touchdown.x_cm)
+        || !nearlyEqual(approach->touchdown_point_cm.y_cm, touchdown.y_cm)) {
+        return reject(error_message, "降落 metadata 未定义有效的下降进场");
+    }
+    return true;
+}
+
 } // namespace
 
-bool HProtocolAdapter::decodeGridConfig(const TaskPlanMessage &message, HGridConfigData *data, QString *error_message) {
+bool HProtocolAdapter::validateTaskPlan(const competition::TaskPlan &plan, QString *error_message) {
+    if (!competition::validateTaskPlan(plan, error_message)) {
+        return false;
+    }
+    if (plan.task_type != "h_problem") {
+        return reject(error_message, "任务计划类型不是 H 题");
+    }
+
+    const auto metadata = payloadObject(plan.metadata_json, error_message);
+    if (!metadata.has_value()) {
+        return false;
+    }
+
+    QString case_id;
+    QString start_cell;
+    QString terminal_cell;
+    if (!requiredString(metadata.value(), "case_id", &case_id, error_message)
+        || !requiredString(metadata.value(), "start_cell", &start_cell, error_message)
+        || !requiredString(metadata.value(), "terminal_cell", &terminal_cell, error_message)) {
+        return false;
+    }
+    if (!metadata->value("landing_enabled").isBool() || !metadata->value("landing_enabled").toBool()) {
+        return reject(error_message, "H 题任务计划 landing_enabled 必须为 true");
+    }
+
+    const QJsonValue no_fly_value = metadata->value("no_fly_cells");
+    if (!no_fly_value.isArray()) {
+        return reject(error_message, "H 题任务计划 no_fly_cells 必须为数组");
+    }
+    QSet<QString> no_fly_cells;
+    for (const QJsonValue &entry : no_fly_value.toArray()) {
+        if (!entry.isString() || !isGridCell(entry.toString()) || no_fly_cells.contains(entry.toString())) {
+            return reject(error_message, "H 题任务计划 no_fly_cells 必须是唯一的合法网格");
+        }
+        no_fly_cells.insert(entry.toString());
+    }
+
+    double descent_angle_deg = 0.0;
+    double takeoff_anchor_x_cm = 0.0;
+    double takeoff_anchor_y_cm = 0.0;
+    double touchdown_x_cm = 0.0;
+    double touchdown_y_cm = 0.0;
+    double descent_run_cm = 0.0;
+    double descent_heading_deg = 0.0;
+    double estimated_mission_time_s = 0.0;
+    if (!requiredFiniteNumber(metadata.value(), "descent_angle_deg", &descent_angle_deg, error_message)
+        || !requiredFiniteNumber(metadata.value(), "takeoff_anchor_x_cm", &takeoff_anchor_x_cm, error_message)
+        || !requiredFiniteNumber(metadata.value(), "takeoff_anchor_y_cm", &takeoff_anchor_y_cm, error_message)
+        || !requiredFiniteNumber(metadata.value(), "touchdown_x_cm", &touchdown_x_cm, error_message)
+        || !requiredFiniteNumber(metadata.value(), "touchdown_y_cm", &touchdown_y_cm, error_message)
+        || !requiredFiniteNumber(metadata.value(), "descent_run_cm", &descent_run_cm, error_message)
+        || !requiredFiniteNumber(metadata.value(), "descent_heading_deg", &descent_heading_deg, error_message)
+        || !requiredFiniteNumber(metadata.value(), "estimated_mission_time_s", &estimated_mission_time_s, error_message)) {
+        return false;
+    }
+
+    const QJsonValue optimality = metadata->value("planning_optimality");
+    if (!optimality.isString()
+        || !QSet<QString>{"proven_optimal", "best_effort", "search_limit_reached"}.contains(optimality.toString())) {
+        return reject(error_message, "H 题任务计划 planning_optimality 非法");
+    }
+    const QJsonValue warnings = metadata->value("planning_warnings");
+    if (!warnings.isArray()) {
+        return reject(error_message, "H 题任务计划 planning_warnings 必须为数组");
+    }
+    for (const QJsonValue &warning : warnings.toArray()) {
+        if (!warning.isString()) {
+            return reject(error_message, "H 题任务计划 planning_warnings 只能包含字符串");
+        }
+    }
+
+    if (case_id != plan.task_id) {
+        return reject(error_message, "task_id 与 metadata case_id 不一致");
+    }
+    if (start_cell != plan.start_waypoint_id || terminal_cell != plan.terminal_waypoint_id) {
+        return reject(error_message, "任务计划端点与 metadata 不一致");
+    }
+    if (!isGridCell(start_cell) || !isGridCell(terminal_cell)) {
+        return reject(error_message, "H 题起飞格或终点格不在固定网格内");
+    }
+    if (no_fly_cells.contains(start_cell) || no_fly_cells.contains(terminal_cell)) {
+        return reject(error_message, "H 题起飞格或终点格位于禁飞区");
+    }
+
+    QStringList route;
+    route.reserve(plan.waypoints.size());
+    for (int index = 0; index < plan.waypoints.size(); ++index) {
+        const competition::TaskWaypoint &waypoint = plan.waypoints.at(index);
+        if (waypoint.sequence_index != static_cast<quint32>(index)) {
+            return reject(error_message, "H 题航点序号必须连续");
+        }
+        if (!isGridCell(waypoint.id)) {
+            return reject(error_message, "H 题航线包含网格外的方格");
+        }
+        if (no_fly_cells.contains(waypoint.id)) {
+            return reject(error_message, "H 题航线穿过禁飞区");
+        }
+        if (!route.isEmpty()) {
+            const QPoint previous = hcore::decodeCell(route.last()).value();
+            const QPoint current = hcore::decodeCell(waypoint.id).value();
+            if (std::abs(current.x() - previous.x()) + std::abs(current.y() - previous.y()) != 1) {
+                return reject(error_message, "H 题航线必须按正交相邻方格移动");
+            }
+        }
+        route.append(waypoint.id);
+    }
+    if (route.first() != start_cell || route.last() != terminal_cell) {
+        return reject(error_message, "H 题航线必须从起飞格开始并在终点格结束");
+    }
+    if (!routeCoversEveryLegalCell(route, no_fly_cells)) {
+        return reject(error_message, "H 题航线未覆盖全部合法方格");
+    }
+    if (!validateLandingMetadata(
+            start_cell,
+            terminal_cell,
+            no_fly_cells,
+            descent_angle_deg,
+            takeoff_anchor_x_cm,
+            takeoff_anchor_y_cm,
+            touchdown_x_cm,
+            touchdown_y_cm,
+            descent_run_cm,
+            descent_heading_deg,
+            estimated_mission_time_s,
+            error_message)) {
+        return false;
+    }
+
+    if (error_message != nullptr) {
+        error_message->clear();
+    }
+    return true;
+}
+
+bool HProtocolAdapter::decodeTaskPlan(
+    const competition::TaskPlan &plan,
+    HGridConfigData *data,
+    QString *error_message) {
     if (data == nullptr) {
         if (error_message != nullptr) {
             *error_message = "H 题任务计划输出参数为空";
@@ -65,20 +330,45 @@ bool HProtocolAdapter::decodeGridConfig(const TaskPlanMessage &message, HGridCon
         return false;
     }
 
-    const auto plan = hcore::missionPlanFromGridConfig(message, error_message);
-    if (!plan.has_value()) {
+    if (!validateTaskPlan(plan, error_message)) {
+        return false;
+    }
+    const auto metadata = payloadObject(plan.metadata_json, error_message);
+    if (!metadata.has_value()) {
         return false;
     }
 
-    data->case_id = plan->case_id;
-    data->start_cell = plan->start_cell;
-    data->no_fly_cells = plan->no_fly_cells;
-    data->route = plan->route;
-    data->terminal_cell = plan->terminal_cell;
-    data->landing_enabled = plan->landing_enabled;
-    data->descent_angle_deg = plan->descent_angle_deg.value_or(0.0);
-    data->takeoff_anchor_x_cm = plan->takeoff_anchor_x_cm.value_or(0.0);
-    data->takeoff_anchor_y_cm = plan->takeoff_anchor_y_cm.value_or(0.0);
+    data->case_id = metadata->value("case_id").toString();
+    data->start_cell = metadata->value("start_cell").toString();
+    data->no_fly_cells.clear();
+    const QJsonArray no_fly_cells = metadata->value("no_fly_cells").toArray();
+    for (const QJsonValue &cell : no_fly_cells) {
+        if (cell.isString()) {
+            data->no_fly_cells.append(cell.toString());
+        }
+    }
+    data->route.clear();
+    for (const competition::TaskWaypoint &waypoint : plan.waypoints) {
+        data->route.append(waypoint.id);
+    }
+    data->terminal_cell = metadata->value("terminal_cell").toString();
+    data->landing_enabled = metadata->value("landing_enabled").toBool();
+    data->descent_angle_deg = metadata->value("descent_angle_deg").toDouble();
+    data->takeoff_anchor_x_cm = metadata->value("takeoff_anchor_x_cm").toDouble();
+    data->takeoff_anchor_y_cm = metadata->value("takeoff_anchor_y_cm").toDouble();
+    data->touchdown_x_cm = metadata->value("touchdown_x_cm").toDouble();
+    data->touchdown_y_cm = metadata->value("touchdown_y_cm").toDouble();
+    data->descent_run_cm = metadata->value("descent_run_cm").toDouble();
+    data->descent_heading_deg = metadata->value("descent_heading_deg").toDouble();
+    data->estimated_mission_time_s = metadata->value("estimated_mission_time_s").toDouble();
+    data->planning_optimality = metadata->value("planning_optimality").toString();
+    data->planning_warnings.clear();
+    const QJsonArray warnings = metadata->value("planning_warnings").toArray();
+    for (const QJsonValue &warning : warnings) {
+        if (warning.isString()) {
+            data->planning_warnings.append(warning.toString());
+        }
+    }
     if (error_message != nullptr) {
         error_message->clear();
     }

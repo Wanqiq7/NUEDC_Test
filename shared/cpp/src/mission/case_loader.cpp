@@ -5,6 +5,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
+#include <cmath>
+
 namespace hcore {
 
 namespace {
@@ -44,6 +46,29 @@ QStringList optionalStringList(const QJsonObject &object, const char *key, QStri
     return result;
 }
 
+bool optionalTimingValue(
+    const QJsonObject &object,
+    const char *key,
+    double *target,
+    bool must_be_positive,
+    QString *error_message) {
+    if (!object.contains(key)) {
+        return true;
+    }
+    const QJsonValue value = object.value(key);
+    const double number = value.toDouble(std::numeric_limits<double>::quiet_NaN());
+    if (!value.isDouble()
+        || !std::isfinite(number)
+        || (must_be_positive ? number <= 0.0 : number < 0.0)) {
+        if (error_message != nullptr) {
+            *error_message = QString("invalid mission_timing.%1").arg(QString::fromUtf8(key));
+        }
+        return false;
+    }
+    *target = number;
+    return true;
+}
+
 }
 
 std::optional<CaseConfig> caseFromJsonObject(const QJsonObject &object, QString *error_message) {
@@ -63,7 +88,61 @@ std::optional<CaseConfig> caseFromJsonObject(const QJsonObject &object, QString 
     }
 
     config.tick_interval_ms = object.value("tick_interval_ms").toInt(100);
-    config.return_to_start = object.value("return_to_start").toBool(false);
+    if (object.contains("return_to_start") && object.value("return_to_start").toBool(false)) {
+        if (error_message != nullptr) {
+            *error_message = "return_to_start is unsupported; H missions use a landing-compatible open route";
+        }
+        return std::nullopt;
+    }
+
+    if (object.contains("mission_timing")) {
+        const QJsonValue timing_value = object.value("mission_timing");
+        if (!timing_value.isObject()) {
+            if (error_message != nullptr) {
+                *error_message = "invalid mission_timing";
+            }
+            return std::nullopt;
+        }
+        const QJsonObject timing_object = timing_value.toObject();
+        if (!optionalTimingValue(
+                timing_object,
+                "cruise_speed_cm_per_s",
+                &config.mission_timing.cruise_speed_cm_per_s,
+                true,
+                error_message)
+            || !optionalTimingValue(
+                timing_object,
+                "ascent_speed_cm_per_s",
+                &config.mission_timing.ascent_speed_cm_per_s,
+                true,
+                error_message)
+            || !optionalTimingValue(
+                timing_object,
+                "descent_speed_cm_per_s",
+                &config.mission_timing.descent_speed_cm_per_s,
+                true,
+                error_message)
+            || !optionalTimingValue(
+                timing_object,
+                "takeoff_fixed_time_s",
+                &config.mission_timing.takeoff_fixed_time_s,
+                false,
+                error_message)
+            || !optionalTimingValue(
+                timing_object,
+                "landing_fixed_time_s",
+                &config.mission_timing.landing_fixed_time_s,
+                false,
+                error_message)
+            || !optionalTimingValue(
+                timing_object,
+                "per_cell_dwell_time_s",
+                &config.mission_timing.per_cell_dwell_time_s,
+                false,
+                error_message)) {
+            return std::nullopt;
+        }
+    }
 
     const QJsonValue animals_value = object.value("animals");
     if (animals_value.isArray()) {
@@ -103,8 +182,10 @@ std::optional<CaseConfig> caseFromJsonObject(const QJsonObject &object, QString 
         };
         landing.cruise_height_cm = landing_object.value("cruise_height_cm").toDouble();
         landing.descent_angle_deg = landing_object.value("descent_angle_deg").toDouble();
+        landing.descent_angle_tolerance_deg = landing_object.value("descent_angle_tolerance_deg").toDouble(5.0);
         landing.touchdown_radius_cm = landing_object.value("touchdown_radius_cm").toDouble();
         landing.preferred_heading_deg = landing_object.value("preferred_heading_deg").toDouble(45.0);
+        landing.heading_tolerance_deg = landing_object.value("heading_tolerance_deg").toDouble(35.0);
         config.landing = landing;
     }
 

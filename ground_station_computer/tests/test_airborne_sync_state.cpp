@@ -58,7 +58,7 @@ void AirborneSyncStateTests::resetClearsEverything() {
 }
 
 void AirborneSyncStateTests::clearAckKeepsSyncedAndRunning() {
-    // clearAck 仅清 ack 字段，保留 synced/running（对应 applyMissionPlanResult 中途的
+    // clearAck 仅清 ack 字段，保留 synced/running（对应任务计划应用中途的
     // sync_state_.clearAck()，此处不应连带清掉刚设置的同步/运行态）。
     AirborneSyncState state;
     state.setSyncedToAirborne(true);

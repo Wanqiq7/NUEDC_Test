@@ -17,7 +17,6 @@ MissionRuntimeControls MissionRuntimeState::controlsFor(const MissionRuntimeInpu
             ready && !inputs.mission_running,
             ready && inputs.mission_running,
             ready,
-            ready,
         };
     }
 
@@ -25,7 +24,6 @@ MissionRuntimeControls MissionRuntimeState::controlsFor(const MissionRuntimeInpu
     return MissionRuntimeControls{
         ready && !inputs.mission_running,
         ready && inputs.mission_running,
-        ready,
         ready,
     };
 }

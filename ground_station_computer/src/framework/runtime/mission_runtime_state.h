@@ -19,7 +19,6 @@ struct MissionRuntimeControls {
     bool can_execute = false;
     bool can_stop = false;
     bool can_arm_vision = false;
-    bool can_reset_vision = false;
 };
 
 class MissionRuntimeState {

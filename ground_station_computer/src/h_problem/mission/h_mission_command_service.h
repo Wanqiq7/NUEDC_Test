@@ -4,7 +4,7 @@
 
 #include "framework/communication/envelope_codec.h"
 #include "framework/communication/reliable_command_client.h"
-#include "h_problem/mission/h_route_planner_bridge.h"
+#include "competition_core/task/models.h"
 #include "framework/communication/zmq_command_client.h"
 
 #include <memory>
@@ -16,8 +16,10 @@ public:
     MissionCommandService(const MissionCommandService &other);
     MissionCommandService &operator=(const MissionCommandService &other);
 
-    CommandSendResult sendMissionPlan(const MissionPlanData &plan);
+    void setCommandTransport(const CommandTransport *transport);
+    CommandSendResult sendTaskPlan(const competition::TaskPlan &plan);
     CommandSendResult sendControlCommand(GroundControlCommandType command_type, const QString &task_id = {});
+    CommandSendResult disarmVisionTargeting(const QString &task_id = {});
     CommandLinkStatus linkStatus() const;
 
 private:

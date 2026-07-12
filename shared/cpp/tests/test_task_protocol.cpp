@@ -37,6 +37,12 @@ competition::TaskPlan makeTaskPlan() {
     return plan;
 }
 
+competition::TaskPlan makeGenericTaskPlan() {
+    competition::TaskPlan plan = makeTaskPlan();
+    plan.task_type = "generic_task";
+    return plan;
+}
+
 }
 
 class TaskProtocolTests : public QObject {
@@ -45,6 +51,7 @@ class TaskProtocolTests : public QObject {
 private slots:
     void buildsAndParsesTaskPlanEnvelope();
     void storesGenericMissionLoad();
+    void rejectsHProblemMissionLoadWithoutMutatingState();
     void commandStateMachineRejectsStaleStartWithoutMutatingState();
     void commandStateMachineAcceptsStopAfterStart();
     void commandSemanticsClassifiesAcceptedStaleStartAck();
@@ -53,6 +60,7 @@ private slots:
     void rejectsStaleMissionLoadSequence();
     void buildsAckWithRuntimeState();
     void buildsAckWithVisionTargetingState();
+    void rejectsLegacyConfigJson();
 };
 
 void TaskProtocolTests::buildsAndParsesTaskPlanEnvelope() {
@@ -80,7 +88,7 @@ void TaskProtocolTests::storesGenericMissionLoad() {
     competition::CommandState state;
     const QString output_path = QDir(dir.path()).filePath("runtime/task_plan.json");
     const competition::AckResult ack = competition::handleEnvelopeCommand(
-        competition::buildMissionLoadEnvelope(makeTaskPlan()),
+        competition::buildMissionLoadEnvelope(makeGenericTaskPlan()),
         output_path,
         &state);
 
@@ -98,7 +106,25 @@ void TaskProtocolTests::storesGenericMissionLoad() {
     QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
     const QJsonObject object = QJsonDocument::fromJson(file.readAll()).object();
     QCOMPARE(object.value("message_type").toString(), QString("task_plan"));
-    QCOMPARE(object.value("task_type").toString(), QString("h_problem"));
+    QCOMPARE(object.value("task_type").toString(), QString("generic_task"));
+}
+
+void TaskProtocolTests::rejectsHProblemMissionLoadWithoutMutatingState() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    competition::CommandState state;
+    const QString output_path = QDir(dir.path()).filePath("runtime/task_plan.json");
+    const competition::AckResult ack = competition::handleEnvelopeCommand(
+        competition::buildMissionLoadEnvelope(9, makeTaskPlan()),
+        output_path,
+        &state);
+
+    QVERIFY(!ack.success);
+    QVERIFY(ack.message.contains("h_problem"));
+    QVERIFY(!state.isMissionLoaded());
+    QCOMPARE(state.lastAcceptedSequence(), 0ULL);
+    QVERIFY(!QFile::exists(output_path));
 }
 
 void TaskProtocolTests::commandStateMachineRejectsStaleStartWithoutMutatingState() {
@@ -200,14 +226,14 @@ void TaskProtocolTests::rejectsStaleMissionLoadSequence() {
     competition::CommandState state;
     const QString output_path = QDir(dir.path()).filePath("runtime/task_plan.json");
     const competition::AckResult first_ack = competition::handleEnvelopeCommand(
-        competition::buildMissionLoadEnvelope(8, makeTaskPlan()),
+        competition::buildMissionLoadEnvelope(8, makeGenericTaskPlan()),
         output_path,
         &state);
     QVERIFY2(first_ack.success, qPrintable(first_ack.message));
     QCOMPARE(state.lastAcceptedSequence(), 8ULL);
 
     const competition::AckResult stale_ack = competition::handleEnvelopeCommand(
-        competition::buildMissionLoadEnvelope(8, makeTaskPlan()),
+        competition::buildMissionLoadEnvelope(8, makeGenericTaskPlan()),
         output_path,
         &state);
     QVERIFY(!stale_ack.success);
@@ -241,6 +267,19 @@ void TaskProtocolTests::buildsAckWithVisionTargetingState() {
 
     QCOMPARE(envelope.payload_case(), Envelope::kAck);
     QCOMPARE(envelope.ack().vision_armed(), true);
+}
+
+void TaskProtocolTests::rejectsLegacyConfigJson() {
+    QJsonObject legacy;
+    legacy["message_type"] = "config";
+    legacy["task_id"] = "legacy";
+    legacy["waypoints"] = QJsonArray{};
+
+    QString error;
+    const auto parsed = competition::taskPlanFromJsonObject(legacy, &error);
+
+    QVERIFY(!parsed.has_value());
+    QVERIFY(error.contains("message_type"));
 }
 
 QTEST_MAIN(TaskProtocolTests)

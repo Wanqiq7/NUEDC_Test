@@ -20,13 +20,10 @@ target_link_libraries(competition_core PUBLIC
 
 set(H_PROBLEM_CORE_SOURCES
     src/mission/case_loader.cpp
-    src/mission/mission_plan_store.cpp
     src/mission/mission_planning.cpp
     src/planning/mission_geometry.cpp
     src/planning/route_cost.cpp
     src/planning/route_planner.cpp
-    src/protocol/command_handler.cpp
-    src/protocol/envelope_builder.cpp
     src/runtime/simulator.cpp
 )
 
@@ -83,7 +80,4 @@ add_competition_core_test(test_json_codec tests/test_json_codec.cpp)
 add_h_problem_core_test(test_h_case_loader tests/test_h_case_loader.cpp)
 add_h_problem_core_test(test_h_route_planner tests/test_h_route_planner.cpp)
 add_h_problem_core_test(test_h_planning_result tests/test_h_planning_result.cpp)
-add_h_problem_core_test(test_h_mission_plan_store tests/test_h_mission_plan_store.cpp)
-add_h_problem_core_test(test_h_envelope_builder tests/test_h_envelope_builder.cpp)
-add_h_problem_core_test(test_h_command_handler tests/test_h_command_handler.cpp)
 add_h_problem_core_test(test_h_simulator tests/test_h_simulator.cpp)

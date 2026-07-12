@@ -155,6 +155,9 @@ AckResult handleEnvelopeCommand(const Envelope &envelope, const QString &output_
         if (!plan.has_value()) {
             return {false, parse_error};
         }
+        if (plan->task_type == "h_problem") {
+            return {false, "h_problem task plans require task-specific validation"};
+        }
         QString error;
         if (!storeTaskPlan(plan.value(), output_path, &error)) {
             return {false, error};

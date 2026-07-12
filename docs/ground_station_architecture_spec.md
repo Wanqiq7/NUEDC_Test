@@ -44,7 +44,7 @@ Ground/
 │  │  ├─ protocol/command_handler.h    #   机载侧命令处理（地面站不直接用）
 │  │  └─ storage/json_codec.h, mission/task_plan_store.h  # 通用 TaskPlan JSON 落盘（唯一长期格式）
 │  └─ include/h_problem_core/          # 【H题内核】题目算法，可依赖 competition_core，反向禁止
-│     ├─ mission/case_loader.h, mission_planning.h  # 案例加载 + buildMissionPlan（规划主入口）
+│     ├─ mission/case_loader.h, mission_planning.h  # 案例加载 + buildTaskPlan（规划主入口）
 │     ├─ planning/route_planner.h, route_cost.h, mission_geometry.h  # 路径规划算法
 │     └─ protocol/envelope_builder.h   #   H题 payload↔通用模型转换（复用 competition_core 符号）
 │
@@ -69,7 +69,7 @@ Ground/
       ├─ mission/h_mission_controller.{h,cpp}   #   工作流控制器：状态/解码/规划/持久化，经 sink 驱动UI
       ├─ mission/h_mission_view_sink.h #   控制器→视图的窄接口（IoC 点，可 mock 单测）
       ├─ mission/h_protocol_adapter.*  #   题目 payload_json 解码（telemetry/detection/summary/gridconfig）
-      ├─ mission/h_route_planner_bridge.* #  MissionPlanData/Result + generatePlan（进程内调 h_problem_core）
+      ├─ mission/h_route_planner_bridge.* #  TaskPlanningResult + generatePlan（进程内调 h_problem_core）
       ├─ mission/h_mission_command_service.*  # 封装 ReliableCommandClient 做任务/控制下发
       ├─ mission/h_no_fly_planning_state.*    # PlanningStateMachine（规划按钮 UI 状态机）
       ├─ mission/h_mission_load_adapter.*     # 任务计划加载适配
@@ -122,9 +122,9 @@ flowchart LR
 ```
 
 ### 规划数据流（进程内，无子进程）
-`HMissionController::generateMissionPlanFromCandidateSelection()` → `MissionPlanBridge::generatePlan(case_path, no_fly_cells)` → `hcore::loadCase` + `hcore::buildMissionPlan`（`h_problem_core` 纯算法）→ `MissionPlanData` → `sink_->showRoute()` + `MissionPlanStore` 落盘 + 可选 `MissionCommandService::sendMissionPlan()`。
+`HMissionController::generateTaskPlanFromCandidateSelection()` → `HRoutePlanner::generatePlan(case_path, no_fly_cells)` → `hcore::loadCase` + `hcore::buildTaskPlan`（`h_problem_core` 纯算法）→ `competition::TaskPlan` → `sink_->showRoute()` + `storeTaskPlan` 落盘 + 可选 `MissionCommandService::sendTaskPlan()`。
 
-> 注意：`MissionPlanBridge` 是**进程内直接调用** `h_problem_core`，不是外部 planner 进程。`parsePlannerOutput()` 仅用于解析 JSON 输入。
+> 注意：`HRoutePlanner` 是**进程内直接调用** `h_problem_core`，不是外部 planner 进程，也不接受旧 JSON 规划输出。
 
 ---
 

@@ -2,6 +2,11 @@
 
 #include <QtMath>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <tuple>
+
 namespace hcore {
 
 QString encodeCell(int x_index, int y_index) {
@@ -71,15 +76,208 @@ QPair<double, double> computeDescentRunBoundsCm(double cruise_height_cm, double 
 
 namespace {
 
+constexpr double GeometryEpsilon = 1e-8;
+constexpr double LandingAngleSampleStepDeg = 0.25;
+
 double normalizeHeadingDifferenceDeg(double delta_deg) {
     const double normalized = std::fmod(delta_deg + 180.0 + 360.0, 360.0) - 180.0;
     return std::abs(normalized);
 }
 
+bool pointWithinCellBounds(int x_index, int y_index, int width, int height) {
+    return x_index >= 0 && x_index < width && y_index >= 0 && y_index < height;
+}
+
+bool segmentIntersectsClosedRectangle(
+    const PointCm &from_point,
+    const PointCm &to_point,
+    double min_x,
+    double max_x,
+    double min_y,
+    double max_y) {
+    const double delta_x = to_point.x_cm - from_point.x_cm;
+    const double delta_y = to_point.y_cm - from_point.y_cm;
+    double enter_t = 0.0;
+    double leave_t = 1.0;
+
+    const auto clip_axis = [&](double start, double delta, double minimum, double maximum) {
+        if (std::abs(delta) <= GeometryEpsilon) {
+            return start >= minimum - GeometryEpsilon && start <= maximum + GeometryEpsilon;
+        }
+        double first = (minimum - start) / delta;
+        double second = (maximum - start) / delta;
+        if (first > second) {
+            std::swap(first, second);
+        }
+        enter_t = std::max(enter_t, first);
+        leave_t = std::min(leave_t, second);
+        return enter_t <= leave_t + GeometryEpsilon;
+    };
+
+    return clip_axis(from_point.x_cm, delta_x, min_x, max_x)
+        && clip_axis(from_point.y_cm, delta_y, min_y, max_y);
+}
+
+bool angleIsPermitted(double angle_deg, const LandingProfile &landing_profile) {
+    return normalizeHeadingDifferenceDeg(angle_deg - landing_profile.preferred_heading_deg)
+        <= std::min(180.0, std::max(0.0, landing_profile.heading_tolerance_deg)) + GeometryEpsilon;
+}
+
+void appendCandidateAngle(QVector<double> *angles, double angle_deg, const LandingProfile &landing_profile) {
+    if (!angleIsPermitted(angle_deg, landing_profile)) {
+        return;
+    }
+    for (const double existing : *angles) {
+        if (normalizeHeadingDifferenceDeg(existing - angle_deg) <= GeometryEpsilon) {
+            return;
+        }
+    }
+    angles->append(angle_deg);
+}
+
+}
+
+bool descentCorridorIsClear(
+    int width,
+    int height,
+    const PointCm &descent_start_cm,
+    const PointCm &touchdown_point_cm,
+    const QSet<QString> &no_fly_cells) {
+    for (const QString &cell : no_fly_cells) {
+        const auto decoded = decodeCell(cell);
+        if (!decoded.has_value() || !pointWithinCellBounds(decoded->x(), decoded->y(), width, height)) {
+            continue;
+        }
+        const double min_x = FieldMarginCm + (decoded->x() * CellSizeCm);
+        const double max_x = min_x + CellSizeCm;
+        const double min_y = FieldMarginCm + ((height - decoded->y() - 1) * CellSizeCm);
+        const double max_y = min_y + CellSizeCm;
+        if (segmentIntersectsClosedRectangle(
+                descent_start_cm,
+                touchdown_point_cm,
+                min_x,
+                max_x,
+                min_y,
+                max_y)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<LandingApproach> landingApproachForTerminal(
+    int width,
+    int height,
+    const QString &terminal_cell,
+    const QSet<QString> &no_fly_cells,
+    const LandingProfile &landing_profile) {
+    const auto terminal = decodeCell(terminal_cell);
+    if (!terminal.has_value()
+        || !pointWithinCellBounds(terminal->x(), terminal->y(), width, height)
+        || no_fly_cells.contains(terminal_cell)
+        || landing_profile.cruise_height_cm <= 0.0
+        || landing_profile.descent_angle_deg <= 0.0
+        || landing_profile.descent_angle_tolerance_deg < 0.0
+        || landing_profile.touchdown_radius_cm < 0.0) {
+        return std::nullopt;
+    }
+
+    const auto bounds = computeDescentRunBoundsCm(
+        landing_profile.cruise_height_cm,
+        landing_profile.descent_angle_deg,
+        landing_profile.descent_angle_tolerance_deg);
+    const double minimum_run_cm = bounds.first;
+    const double maximum_run_cm = bounds.second;
+    if (!std::isfinite(minimum_run_cm)
+        || !std::isfinite(maximum_run_cm)
+        || minimum_run_cm < 0.0
+        || maximum_run_cm < minimum_run_cm) {
+        return std::nullopt;
+    }
+
+    const PointCm terminal_center = cellCenterCm(terminal->x(), terminal->y(), height);
+    QVector<double> angles;
+    const double heading_tolerance_deg = std::min(180.0, std::max(0.0, landing_profile.heading_tolerance_deg));
+    const int sample_count = std::max(
+        1,
+        static_cast<int>(std::ceil((2.0 * heading_tolerance_deg) / LandingAngleSampleStepDeg)));
+    for (int sample_index = 0; sample_index <= sample_count; ++sample_index) {
+        const double fraction = static_cast<double>(sample_index) / static_cast<double>(sample_count);
+        appendCandidateAngle(
+            &angles,
+            landing_profile.preferred_heading_deg - heading_tolerance_deg
+                + (fraction * 2.0 * heading_tolerance_deg),
+            landing_profile);
+    }
+    appendCandidateAngle(
+        &angles,
+        headingDegrees(terminal_center, landing_profile.takeoff_anchor_cm),
+        landing_profile);
+
+    for (const QString &cell : no_fly_cells) {
+        const auto blocked = decodeCell(cell);
+        if (!blocked.has_value() || !pointWithinCellBounds(blocked->x(), blocked->y(), width, height)) {
+            continue;
+        }
+        const double min_x = FieldMarginCm + (blocked->x() * CellSizeCm);
+        const double max_x = min_x + CellSizeCm;
+        const double min_y = FieldMarginCm + ((height - blocked->y() - 1) * CellSizeCm);
+        const double max_y = min_y + CellSizeCm;
+        for (const PointCm &corner : QVector<PointCm>{{min_x, min_y}, {min_x, max_y}, {max_x, min_y}, {max_x, max_y}}) {
+            const double corner_heading_deg = headingDegrees(terminal_center, corner);
+            appendCandidateAngle(&angles, corner_heading_deg - 1e-5, landing_profile);
+            appendCandidateAngle(&angles, corner_heading_deg + 1e-5, landing_profile);
+        }
+    }
+
+    std::optional<LandingApproach> best_approach;
+    const double anchor_delta_x = landing_profile.takeoff_anchor_cm.x_cm - terminal_center.x_cm;
+    const double anchor_delta_y = landing_profile.takeoff_anchor_cm.y_cm - terminal_center.y_cm;
+    const double anchor_distance_squared = (anchor_delta_x * anchor_delta_x) + (anchor_delta_y * anchor_delta_y);
+    const double radius_squared = landing_profile.touchdown_radius_cm * landing_profile.touchdown_radius_cm;
+
+    for (const double angle_deg : angles) {
+        const double angle_rad = qDegreesToRadians(angle_deg);
+        const double direction_x = std::cos(angle_rad);
+        const double direction_y = std::sin(angle_rad);
+        const double projection = (anchor_delta_x * direction_x) + (anchor_delta_y * direction_y);
+        const double discriminant = (projection * projection) - anchor_distance_squared + radius_squared;
+        if (discriminant < -GeometryEpsilon) {
+            continue;
+        }
+        const double root = std::sqrt(std::max(0.0, discriminant));
+        const double permitted_minimum = std::max(minimum_run_cm, projection - root);
+        const double permitted_maximum = std::min(maximum_run_cm, projection + root);
+        if (permitted_minimum > permitted_maximum + GeometryEpsilon) {
+            continue;
+        }
+
+        const PointCm touchdown_point{
+            terminal_center.x_cm + (permitted_minimum * direction_x),
+            terminal_center.y_cm + (permitted_minimum * direction_y),
+        };
+        if (!descentCorridorIsClear(width, height, terminal_center, touchdown_point, no_fly_cells)) {
+            continue;
+        }
+
+        const LandingApproach approach{
+            touchdown_point,
+            permitted_minimum,
+            std::hypot(permitted_minimum, landing_profile.cruise_height_cm),
+        };
+        if (!best_approach.has_value()
+            || approach.descent_distance_cm < best_approach->descent_distance_cm - GeometryEpsilon
+            || (std::abs(approach.descent_distance_cm - best_approach->descent_distance_cm) <= GeometryEpsilon
+                && std::tie(approach.touchdown_point_cm.x_cm, approach.touchdown_point_cm.y_cm)
+                    < std::tie(best_approach->touchdown_point_cm.x_cm, best_approach->touchdown_point_cm.y_cm))) {
+            best_approach = approach;
+        }
+    }
+
+    return best_approach;
 }
 
 QSet<QString> terminalCellsForLanding(int width, int height, const QSet<QString> &no_fly_cells, const LandingProfile &landing_profile) {
-    const auto bounds = computeDescentRunBoundsCm(landing_profile.cruise_height_cm, landing_profile.descent_angle_deg);
     QSet<QString> candidates;
     for (int y_index = 0; y_index < height; ++y_index) {
         for (int x_index = 0; x_index < width; ++x_index) {
@@ -87,16 +285,9 @@ QSet<QString> terminalCellsForLanding(int width, int height, const QSet<QString>
             if (no_fly_cells.contains(cell_code)) {
                 continue;
             }
-            const PointCm center = cellCenterCm(x_index, y_index, height);
-            const double distance_cm = euclideanDistanceCm(center, landing_profile.takeoff_anchor_cm);
-            if (distance_cm < bounds.first || distance_cm > bounds.second) {
-                continue;
+            if (landingApproachForTerminal(width, height, cell_code, no_fly_cells, landing_profile).has_value()) {
+                candidates.insert(cell_code);
             }
-            const double approach_heading_deg = headingDegrees(center, landing_profile.takeoff_anchor_cm);
-            if (normalizeHeadingDifferenceDeg(approach_heading_deg - landing_profile.preferred_heading_deg) > landing_profile.heading_tolerance_deg) {
-                continue;
-            }
-            candidates.insert(cell_code);
         }
     }
     return candidates;

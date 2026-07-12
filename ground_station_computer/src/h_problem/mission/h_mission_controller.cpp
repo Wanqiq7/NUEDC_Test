@@ -1,9 +1,9 @@
 #include "h_problem/mission/h_mission_controller.h"
 
+#include "competition_core/mission/task_plan_store.h"
 #include "competition_core/protocol/envelope_codec.h"
 #include "framework/config/repository_paths.h"
 #include "h_problem/mission/h_protocol_adapter.h"
-#include "h_problem/storage/h_mission_plan_store.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -85,28 +85,34 @@ void HMissionController::setCommandClient(const ZmqCommandClient &client) {
     command_service_ = MissionCommandService(client);
 }
 
+void HMissionController::setCommandTransport(const CommandTransport *transport) {
+    command_service_.setCommandTransport(transport);
+}
+
 void HMissionController::loadInitialPreview() {
     sink_->setSummaryTotals(detection_totals_);
 
-    const auto result = mission_plan_bridge_.generatePlan(case_file_path_, {});
+    const auto result = route_planner_.generatePlan(case_file_path_, {});
     if (!result.ok) {
-        qWarning() << "Failed to load initial mission preview:" << result.error_message;
-        notifyStatusText(QString("状态: 默认航线加载失败 | %1").arg(result.error_message));
+        qWarning() << "Failed to load initial mission preview:" << result.failure_reason;
+        notifyStatusText(QString("状态: 默认航线加载失败 | %1").arg(result.failure_reason));
         return;
     }
 
-    applyMissionPlanResult(result, false);
+    applyTaskPlan(result.plan, false);
     notifyStatusText("状态: 默认航线已加载，可设置禁飞区");
 }
 
 void HMissionController::handleTaskPlan(const competition::TaskPlan &plan) {
-    const TaskPlanMessage message = competition::taskPlanToMessage(plan);
     HGridConfigData config;
     QString error_message;
-    if (!HProtocolAdapter::decodeGridConfig(message, &config, &error_message)) {
+    if (!HProtocolAdapter::decodeTaskPlan(plan, &config, &error_message)) {
         notifyStatusText(QString("错误: %1").arg(error_message));
         return;
     }
+
+    const CommandSendResult disarm_result = disarmVisionTargetingForLifecycle();
+    sync_state_.clearAck();
 
     applyGridConfig(
         config.case_id,
@@ -117,7 +123,15 @@ void HMissionController::handleTaskPlan(const competition::TaskPlan &plan) {
         config.landing_enabled,
         config.descent_angle_deg,
         config.takeoff_anchor_x_cm,
-        config.takeoff_anchor_y_cm);
+        config.takeoff_anchor_y_cm,
+        config.touchdown_x_cm,
+        config.touchdown_y_cm,
+        config.estimated_mission_time_s,
+        config.planning_optimality,
+        config.planning_warnings);
+    if (!disarm_result.ok) {
+        notifyStatusText(QString("警告: 路线已替换，但视觉解除失败 | %1").arg(disarm_result.message));
+    }
 }
 
 void HMissionController::handleTaskEvent(const competition::TaskEvent &event, qint64 timestamp_ms) {
@@ -188,7 +202,12 @@ void HMissionController::applyGridConfig(
     bool landing_enabled,
     double descent_angle_deg,
     double takeoff_anchor_x_cm,
-    double takeoff_anchor_y_cm) {
+    double takeoff_anchor_y_cm,
+    double touchdown_x_cm,
+    double touchdown_y_cm,
+    double estimated_mission_time_s,
+    const QString &planning_optimality,
+    const QStringList &planning_warnings) {
     current_case_id_ = case_id;
     current_start_cell_ = start_cell;
     current_terminal_cell_ = terminal_cell;
@@ -196,6 +215,11 @@ void HMissionController::applyGridConfig(
     current_descent_angle_deg_ = descent_angle_deg;
     current_takeoff_anchor_x_cm_ = takeoff_anchor_x_cm;
     current_takeoff_anchor_y_cm_ = takeoff_anchor_y_cm;
+    current_touchdown_x_cm_ = touchdown_x_cm;
+    current_touchdown_y_cm_ = touchdown_y_cm;
+    current_estimated_mission_time_s_ = estimated_mission_time_s;
+    current_planning_optimality_ = planning_optimality;
+    current_planning_warnings_ = planning_warnings;
     case_file_path_ = resolveCaseFilePath(case_id);
     committed_no_fly_cells_ = no_fly_cells;
     candidate_no_fly_cells_.clear();
@@ -204,8 +228,8 @@ void HMissionController::applyGridConfig(
         route,
         start_cell,
         terminal_cell,
-        takeoff_anchor_x_cm,
-        takeoff_anchor_y_cm,
+        touchdown_x_cm != 0.0 ? touchdown_x_cm : takeoff_anchor_x_cm,
+        touchdown_y_cm != 0.0 ? touchdown_y_cm : takeoff_anchor_y_cm,
         landing_enabled);
     planning_state_.handleGenerationSucceeded();
     sync_state_.setSyncedToAirborne(true);
@@ -273,8 +297,13 @@ void HMissionController::applyTargetUpdate(
 
 void HMissionController::applySummary(const QMap<QString, int> &totals, int visited_cells) {
     sync_state_.setRunning(false);
+    const CommandSendResult disarm_result = disarmVisionTargetingForLifecycle();
     emitRuntimeChanged();
-    notifyStatusText(QString("状态: 巡查完成 | 已访问方格: %1").arg(visited_cells));
+    QString status = QString("状态: 巡查完成 | 已访问方格: %1").arg(visited_cells);
+    if (!disarm_result.ok) {
+        status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
+    }
+    notifyStatusText(status);
     detection_totals_ = totals;
     sink_->setSummaryTotals(detection_totals_);
 }
@@ -291,7 +320,7 @@ void HMissionController::handlePlanningButtonClicked() {
     }
 
     if (planning_state_.state() == PlanningUiState::ReadyToGenerate) {
-        generateMissionPlanFromCandidateSelection();
+        generateTaskPlanFromCandidateSelection();
     }
 }
 
@@ -303,8 +332,10 @@ void HMissionController::markControlCommandStarted() {
 
 void HMissionController::markControlCommandStopped() {
     sync_state_.markControlStopped();
-    refreshMissionContextLabels();
-    emitRuntimeChanged();
+    const CommandSendResult disarm_result = disarmVisionTargetingForLifecycle();
+    if (!disarm_result.ok) {
+        notifyStatusText(QString("警告: 停止任务已确认，但视觉解除失败 | %1").arg(disarm_result.message));
+    }
 }
 
 void HMissionController::markAirborneSyncState(bool online, bool synced) {
@@ -352,7 +383,7 @@ void HMissionController::enterNoFlySelectionMode() {
     notifyStatusText("状态: 请选择 3 个横向或纵向连续的禁飞格");
 }
 
-void HMissionController::generateMissionPlanFromCandidateSelection() {
+void HMissionController::generateTaskPlanFromCandidateSelection() {
     if (current_start_cell_.isEmpty()) {
         notifyStatusText("错误: 当前起飞格未知，无法生成航线");
         return;
@@ -369,35 +400,47 @@ void HMissionController::generateMissionPlanFromCandidateSelection() {
         return;
     }
 
-    const auto result = mission_plan_bridge_.generatePlan(case_file_path_, candidate_no_fly_cells_);
+    const auto result = route_planner_.generatePlan(case_file_path_, candidate_no_fly_cells_);
     if (!result.ok) {
-        notifyStatusText(QString("错误: %1").arg(result.error_message));
+        notifyStatusText(QString("错误: %1").arg(result.failure_reason));
         return;
     }
 
-    applyMissionPlanResult(result, true);
+    applyTaskPlan(result.plan, true);
 }
 
-void HMissionController::applyMissionPlanResult(const MissionPlanResult &result, bool sync_to_airborne) {
-    case_file_path_ = resolveCaseFilePath(result.plan.case_id);
-    current_case_id_ = result.plan.case_id;
-    current_start_cell_ = result.plan.start_cell;
-    current_terminal_cell_ = result.plan.terminal_cell;
-    committed_no_fly_cells_ = result.plan.no_fly_cells;
+void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool sync_to_airborne) {
+    HGridConfigData config;
+    QString decode_error;
+    if (!HProtocolAdapter::decodeTaskPlan(plan, &config, &decode_error)) {
+        notifyStatusText(QString("错误: %1").arg(decode_error));
+        return;
+    }
+    const CommandSendResult disarm_result = disarmVisionTargetingForLifecycle();
+    case_file_path_ = resolveCaseFilePath(config.case_id);
+    current_case_id_ = config.case_id;
+    current_start_cell_ = config.start_cell;
+    current_terminal_cell_ = config.terminal_cell;
+    committed_no_fly_cells_ = config.no_fly_cells;
     sync_state_.clearAck();
-    current_landing_enabled_ = result.plan.landing_enabled;
-    current_descent_angle_deg_ = result.plan.descent_angle_deg.value_or(0.0);
-    current_takeoff_anchor_x_cm_ = result.plan.takeoff_anchor_x_cm.value_or(0.0);
-    current_takeoff_anchor_y_cm_ = result.plan.takeoff_anchor_y_cm.value_or(0.0);
+    current_landing_enabled_ = config.landing_enabled;
+    current_descent_angle_deg_ = config.descent_angle_deg;
+    current_takeoff_anchor_x_cm_ = config.takeoff_anchor_x_cm;
+    current_takeoff_anchor_y_cm_ = config.takeoff_anchor_y_cm;
+    current_touchdown_x_cm_ = config.touchdown_x_cm;
+    current_touchdown_y_cm_ = config.touchdown_y_cm;
+    current_estimated_mission_time_s_ = config.estimated_mission_time_s;
+    current_planning_optimality_ = config.planning_optimality;
+    current_planning_warnings_ = config.planning_warnings;
 
     candidate_no_fly_cells_.clear();
     sink_->showRoute(
         committed_no_fly_cells_,
-        result.plan.route,
+        config.route,
         current_start_cell_,
         current_terminal_cell_,
-        current_takeoff_anchor_x_cm_,
-        current_takeoff_anchor_y_cm_,
+        current_touchdown_x_cm_ != 0.0 ? current_touchdown_x_cm_ : current_takeoff_anchor_x_cm_,
+        current_touchdown_y_cm_ != 0.0 ? current_touchdown_y_cm_ : current_takeoff_anchor_y_cm_,
         current_landing_enabled_);
 
     planning_state_.handleGenerationSucceeded();
@@ -405,20 +448,28 @@ void HMissionController::applyMissionPlanResult(const MissionPlanResult &result,
     refreshMissionContextLabels();
 
     QString persist_error;
-    if (!MissionPlanStore(mission_plan_output_path_).save(result.plan, &persist_error)) {
+    if (!competition::storeTaskPlan(plan, mission_plan_output_path_, &persist_error)) {
         qWarning() << "Failed to persist mission plan:" << persist_error;
-        notifyStatusText(QString("错误: 本地航线已更新，但同步模拟器任务计划失败 | %1").arg(persist_error));
+        QString status = QString("错误: 本地航线已更新，但同步模拟器任务计划失败 | %1").arg(persist_error);
+        if (!disarm_result.ok) {
+            status += QString(" | 视觉解除失败: %1").arg(disarm_result.message);
+        }
+        notifyStatusText(status);
         return;
     }
 
     if (!sync_to_airborne || !command_sync_enabled_) {
         sync_state_.reset();
         emitRuntimeChanged();
-        notifyStatusText("状态: 航线生成成功，可执行任务");
+        QString status = QStringLiteral("状态: 航线生成成功，可执行任务");
+        if (!disarm_result.ok) {
+            status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
+        }
+        notifyStatusText(status);
         return;
     }
 
-    const auto send_result = command_service_.sendMissionPlan(result.plan);
+    const auto send_result = command_service_.sendTaskPlan(plan);
     notifyCommandLinkState(send_result.ok);
     if (send_result.ok) {
         applyCommandAck(send_result);
@@ -427,14 +478,46 @@ void HMissionController::applyMissionPlanResult(const MissionPlanResult &result,
             sync_state_.setRunning(false);
             emitRuntimeChanged();
         }
-        notifyStatusText("状态: 任务已同步至机载端，可执行任务");
+        QString status = QStringLiteral("状态: 任务已同步至机载端，可执行任务");
+        if (!disarm_result.ok) {
+            status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
+        }
+        notifyStatusText(status);
         return;
     }
 
     sync_state_.reset();
     emitRuntimeChanged();
     qWarning() << "Failed to sync mission plan to airborne NUC:" << send_result.message;
-    notifyStatusText(QString("错误: 任务已本地生成，但机载端未确认 | %1").arg(send_result.message));
+    QString status = QString("错误: 任务已本地生成，但机载端未确认 | %1").arg(send_result.message);
+    if (!disarm_result.ok) {
+        status += QString(" | 视觉解除失败: %1").arg(disarm_result.message);
+    }
+    notifyStatusText(status);
+}
+
+CommandSendResult HMissionController::disarmVisionTargetingForLifecycle() {
+    if (sink_ != nullptr) {
+        sink_->setTargetStatus(QStringLiteral("目标: 等待跟踪"));
+    }
+    sync_state_.disarmVisionTargeting();
+
+    if (!command_sync_enabled_ || current_case_id_.isEmpty()) {
+        refreshMissionContextLabels();
+        emitRuntimeChanged();
+        return CommandSendResult{true, "vision targeting cleared locally"};
+    }
+
+    const CommandSendResult result = command_service_.disarmVisionTargeting(current_case_id_);
+    notifyCommandLinkState(result.ok);
+    if (result.ok) {
+        sync_state_.applyCommandAck(result);
+    } else {
+        qWarning() << "Failed to disarm vision targeting during mission lifecycle:" << result.message;
+    }
+    refreshMissionContextLabels();
+    emitRuntimeChanged();
+    return result;
 }
 
 void HMissionController::refreshMissionContextLabels() {
@@ -453,6 +536,15 @@ void HMissionController::refreshMissionContextLabels() {
         mission_text = QString("任务: 最短飞行时间 | 斜降落角: %1°").arg(current_descent_angle_deg_, 0, 'f', 1);
     } else {
         mission_text = "任务: 标准巡查";
+    }
+    if (current_estimated_mission_time_s_ > 0.0) {
+        mission_text += QString(" | 预计: %1s").arg(current_estimated_mission_time_s_, 0, 'f', 1);
+    }
+    if (!current_planning_optimality_.isEmpty()) {
+        mission_text += QString(" | 规划: %1").arg(current_planning_optimality_);
+    }
+    if (!current_planning_warnings_.isEmpty()) {
+        mission_text += QString(" | 警告: %1").arg(current_planning_warnings_.join("; "));
     }
 
     if (sync_state_.hasAck()) {

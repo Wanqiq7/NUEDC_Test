@@ -13,7 +13,7 @@ private slots:
     void disablesExecuteWhenAckSaysMissionNotLoaded();
     void formatsAckStateForStatusDisplay();
     void formatsVisionArmedStateForStatusDisplay();
-    void enablesVisionControlsOnlyForOnlineLoadedTask();
+    void enablesManualVisionArmOnlyForOnlineLoadedTask();
 };
 
 void MissionRuntimeStateTests::disablesBothControlsWhenCommandSyncDisabled() {
@@ -114,7 +114,7 @@ void MissionRuntimeStateTests::formatsVisionArmedStateForStatusDisplay() {
     QVERIFY(text.contains("视觉瞄准: 已武装"));
 }
 
-void MissionRuntimeStateTests::enablesVisionControlsOnlyForOnlineLoadedTask() {
+void MissionRuntimeStateTests::enablesManualVisionArmOnlyForOnlineLoadedTask() {
     const MissionRuntimeControls ready_controls = MissionRuntimeState::controlsFor(MissionRuntimeInputs{
         true,
         true,
@@ -126,7 +126,6 @@ void MissionRuntimeStateTests::enablesVisionControlsOnlyForOnlineLoadedTask() {
         42,
     });
     QVERIFY(ready_controls.can_arm_vision);
-    QVERIFY(ready_controls.can_reset_vision);
 
     const MissionRuntimeControls offline_controls = MissionRuntimeState::controlsFor(MissionRuntimeInputs{
         true,
@@ -139,7 +138,6 @@ void MissionRuntimeStateTests::enablesVisionControlsOnlyForOnlineLoadedTask() {
         42,
     });
     QVERIFY(!offline_controls.can_arm_vision);
-    QVERIFY(!offline_controls.can_reset_vision);
 
     const MissionRuntimeControls unloaded_controls = MissionRuntimeState::controlsFor(MissionRuntimeInputs{
         true,
@@ -152,7 +150,6 @@ void MissionRuntimeStateTests::enablesVisionControlsOnlyForOnlineLoadedTask() {
         42,
     });
     QVERIFY(!unloaded_controls.can_arm_vision);
-    QVERIFY(!unloaded_controls.can_reset_vision);
 }
 
 QTEST_MAIN(MissionRuntimeStateTests)

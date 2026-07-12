@@ -1,7 +1,7 @@
 #include "h_problem/mission/h_mission_command_service.h"
 
 #include "messages.pb.h"
-#include "h_problem/mission/h_mission_load_adapter.h"
+#include "competition_core/protocol/envelope_codec.h"
 
 #include <utility>
 
@@ -33,14 +33,25 @@ MissionCommandService &MissionCommandService::operator=(const MissionCommandServ
     return *this;
 }
 
-CommandSendResult MissionCommandService::sendMissionPlan(const MissionPlanData &plan) {
-    return reliable_client_.sendReliable(MissionLoadAdapter::buildMissionLoadEnvelope(ZmqCommandClient::nextCommandSequence(), plan));
+void MissionCommandService::setCommandTransport(const CommandTransport *transport) {
+    owned_transport_.reset();
+    active_transport_ = transport;
+    reliable_client_ = ReliableCommandClient(active_transport_);
+}
+
+CommandSendResult MissionCommandService::sendTaskPlan(const competition::TaskPlan &plan) {
+    return reliable_client_.sendReliable(competition::buildMissionLoadEnvelope(
+        ZmqCommandClient::nextCommandSequence(), plan));
 }
 
 CommandSendResult MissionCommandService::sendControlCommand(
     GroundControlCommandType command_type,
     const QString &task_id) {
     return reliable_client_.sendReliable(ZmqCommandClient::buildControlCommandEnvelope(command_type, task_id));
+}
+
+CommandSendResult MissionCommandService::disarmVisionTargeting(const QString &task_id) {
+    return sendControlCommand(GroundControlCommandType::DisarmTargeting, task_id);
 }
 
 CommandLinkStatus MissionCommandService::linkStatus() const {
