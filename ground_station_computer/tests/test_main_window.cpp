@@ -92,6 +92,17 @@ private:
     std::thread worker_;
     int reply_count_ = 1;
 };
+
+class FixedCommandTransport final : public CommandTransport {
+public:
+    explicit FixedCommandTransport(CommandSendResult result)
+        : result_(std::move(result)) {}
+
+    CommandSendResult sendEnvelope(const Envelope &) const override { return result_; }
+
+private:
+    CommandSendResult result_;
+};
 }
 
 class MainWindowTests : public QObject {
@@ -102,7 +113,8 @@ private slots:
     void configuredAdapterUsesEnvironmentVariableAndReportsUnknownIds();
     void shellUsesCompetitionTaskAdapterBoundary();
     void defaultAdapterConsumesCommandAckRuntimeState();
-    void defaultAdapterConsumesStateOnlyVisionAck();
+    void defaultAdapterIgnoresStateOnlyVisionAckWithoutIdentity();
+    void legacyStartAckWithoutIdentityDoesNotMarkMissionRunning();
     void exposesManualVisionArmWithoutStandaloneReset();
     void executionControlsExistAndAreDisabledInTestMode();
     void taskMapExpandsInsideLargeShellWindow();
@@ -167,7 +179,7 @@ void MainWindowTests::defaultAdapterConsumesCommandAckRuntimeState() {
     QVERIFY(inputs.vision_armed);
 }
 
-void MainWindowTests::defaultAdapterConsumesStateOnlyVisionAck() {
+void MainWindowTests::defaultAdapterIgnoresStateOnlyVisionAckWithoutIdentity() {
     HProblemTaskAdapter adapter;
     QWidget parent;
     std::unique_ptr<QWidget> task_view(adapter.createTaskView(&parent));
@@ -176,14 +188,38 @@ void MainWindowTests::defaultAdapterConsumesStateOnlyVisionAck() {
 
     adapter.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
 
-    QVERIFY(adapter.missionRuntimeInputs().vision_armed);
+    QVERIFY(!adapter.missionRuntimeInputs().vision_armed);
     bool vision_state_displayed = false;
     for (QLabel *label : task_view->findChildren<QLabel *>()) {
         if (label->text().startsWith("任务:") && label->text().contains("已武装")) {
             vision_state_displayed = true;
         }
     }
-    QVERIFY(vision_state_displayed);
+    QVERIFY(!vision_state_displayed);
+}
+
+void MainWindowTests::legacyStartAckWithoutIdentityDoesNotMarkMissionRunning() {
+    MainWindow window(nullptr, false);
+    window.task_adapter_->loadInitialPreview();
+    window.command_sync_enabled_ = true;
+    window.task_adapter_->setCommandSyncEnabled(true);
+    window.task_adapter_->applyCommandAck(CommandSendResult{
+        true,
+        "mission loaded",
+        window.task_adapter_->activeTaskId(),
+        true,
+        false,
+        87,
+        false,
+    });
+    window.recordCommandLinkResult(true);
+
+    FixedCommandTransport transport(CommandSendResult{true, "legacy start accepted"});
+    window.mission_command_service_ = std::make_unique<MissionCommandService>(&transport);
+
+    window.handleExecuteMissionClicked();
+
+    QVERIFY(!window.task_adapter_->missionRunning());
 }
 
 void MainWindowTests::exposesManualVisionArmWithoutStandaloneReset() {

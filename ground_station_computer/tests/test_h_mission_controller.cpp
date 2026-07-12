@@ -125,10 +125,13 @@ class RecordingCommandTransport final : public CommandTransport {
 public:
     CommandSendResult sendEnvelope(const Envelope &envelope) const override {
         sent_envelopes_.append(envelope);
+        const QString task_id = envelope.payload_case() == Envelope::kMissionLoad
+            ? QString::fromStdString(envelope.mission_load().task_id())
+            : QString::fromStdString(envelope.control_command().task_id());
         return CommandSendResult{
             true,
-            "vision reset",
-            QString::fromStdString(envelope.control_command().task_id()),
+            envelope.payload_case() == Envelope::kMissionLoad ? "task plan stored" : "vision reset",
+            task_id,
             true,
             false,
             envelope.sequence(),
@@ -148,6 +151,17 @@ public:
 
 private:
     mutable QVector<Envelope> sent_envelopes_;
+};
+
+class FixedCommandTransport final : public CommandTransport {
+public:
+    explicit FixedCommandTransport(CommandSendResult result)
+        : result_(std::move(result)) {}
+
+    CommandSendResult sendEnvelope(const Envelope &) const override { return result_; }
+
+private:
+    CommandSendResult result_;
 };
 
 competition::TaskPlan makeCanonicalTaskPlan() {
@@ -180,8 +194,11 @@ private slots:
     void ignoresEventsFromAnotherTask();
     void ignoresSummaryFromAnotherTask();
     void ignoresAckFromAnotherTask();
+    void ignoresStateAckWithoutTaskId();
     void detectionAppendsAndAccumulatesTotals();
     void summaryStopsRunningAndReplacesTotals();
+    void failureSummaryStopsMissionWithoutReportingCompletionOrReplacingTotals();
+    void anonymousMissionLoadAckDoesNotMarkMissionSynced();
     void missionCompletionDisarmsVisionAndClearsTarget();
     void missionStopDisarmsVisionAndClearsTarget();
     void taskPlanReplacementDisarmsVisionAndClearsTarget();
@@ -349,6 +366,26 @@ void HMissionControllerTests::ignoresAckFromAnotherTask() {
     QCOMPARE(runtime_after.last_accepted_sequence, runtime_before.last_accepted_sequence);
 }
 
+void HMissionControllerTests::ignoresStateAckWithoutTaskId() {
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {});
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+    const MissionRuntimeInputs runtime_before = controller.missionRuntimeInputs();
+
+    controller.applyCommandAck(
+        CommandSendResult{true, "anonymous start", {}, true, true, 92, false});
+
+    const MissionRuntimeInputs runtime_after = controller.missionRuntimeInputs();
+    QVERIFY(!controller.missionRunning());
+    QCOMPARE(runtime_after.acknowledged_task_id, runtime_before.acknowledged_task_id);
+    QCOMPARE(runtime_after.acknowledged_mission_loaded, runtime_before.acknowledged_mission_loaded);
+    QCOMPARE(runtime_after.last_accepted_sequence, runtime_before.last_accepted_sequence);
+}
+
 void HMissionControllerTests::detectionAppendsAndAccumulatesTotals() {
     RecordingSink sink;
     HMissionController controller(
@@ -390,6 +427,58 @@ void HMissionControllerTests::summaryStopsRunningAndReplacesTotals() {
     QCOMPARE(sink.last_totals.value("deer"), 4);
 }
 
+void HMissionControllerTests::failureSummaryStopsMissionWithoutReportingCompletionOrReplacingTotals() {
+    RecordingSink sink;
+    QString last_status;
+    HMissionController controller(
+        &sink,
+        [&](const QString &text) { last_status = text; },
+        [&](const QString &) {},
+        [&]() {});
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+    controller.applyCommandAck(CommandSendResult{
+        true, "start accepted", controller.activeTaskId(), true, true, 42, true});
+    controller.handleTaskEvent(
+        makeDetectionEvent(controller.activeTaskId(), "A2B2", "tiger", 2), 1000);
+    const QMap<QString, int> totals_before = controller.detectionTotals();
+
+    competition::TaskSummary summary = makeSummary(
+        controller.activeTaskId(), {{"tiger", 99}}, 12);
+    summary.success = false;
+    summary.payload_json = R"({"totals":{"tiger":99},"error":"autopilot lost position lock"})";
+    controller.handleTaskSummary(summary);
+
+    QVERIFY(!controller.missionRunning());
+    QVERIFY(!controller.missionRuntimeInputs().vision_armed);
+    QCOMPARE(controller.detectionTotals(), totals_before);
+    QVERIFY(last_status.contains("巡查失败"));
+    QVERIFY(last_status.contains("autopilot lost position lock"));
+    QVERIFY(!last_status.contains("巡查完成"));
+}
+
+void HMissionControllerTests::anonymousMissionLoadAckDoesNotMarkMissionSynced() {
+    RecordingSink sink;
+    QString last_status;
+    HMissionController controller(
+        &sink,
+        [&](const QString &text) { last_status = text; },
+        [&](const QString &) {},
+        [&]() {});
+    FixedCommandTransport transport(CommandSendResult{true, "stored"});
+    controller.setCommandTransport(&transport);
+    controller.setCommandSyncEnabled(true);
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+
+    controller.handlePlanningButtonClicked();
+    controller.handleGridSceneCellClicked("A1B2");
+    controller.handleGridSceneCellClicked("A2B2");
+    controller.handleGridSceneCellClicked("A3B2");
+    controller.handlePlanningButtonClicked();
+
+    QVERIFY(!controller.missionRuntimeInputs().mission_synced_to_airborne);
+    QVERIFY(last_status.contains("未确认"));
+}
+
 void HMissionControllerTests::missionCompletionDisarmsVisionAndClearsTarget() {
     RecordingSink sink;
     HMissionController controller(
@@ -401,7 +490,8 @@ void HMissionControllerTests::missionCompletionDisarmsVisionAndClearsTarget() {
 
     RecordingCommandTransport transport;
     controller.setCommandTransport(&transport);
-    controller.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
+    controller.applyCommandAck(CommandSendResult{
+        true, "vision armed", controller.activeTaskId(), true, false, 1, true});
     controller.handleTaskEvent(makeTargetUpdateEvent(controller.activeTaskId()), 1000);
     QVERIFY(controller.missionRuntimeInputs().vision_armed);
     QVERIFY(sink.target_status.contains("tracked-animal"));
@@ -424,7 +514,8 @@ void HMissionControllerTests::missionStopDisarmsVisionAndClearsTarget() {
 
     RecordingCommandTransport transport;
     controller.setCommandTransport(&transport);
-    controller.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
+    controller.applyCommandAck(CommandSendResult{
+        true, "vision armed", controller.activeTaskId(), true, false, 1, true});
     controller.handleTaskEvent(makeTargetUpdateEvent(controller.activeTaskId()), 1000);
 
     controller.markControlCommandStopped();
@@ -445,7 +536,8 @@ void HMissionControllerTests::taskPlanReplacementDisarmsVisionAndClearsTarget() 
 
     RecordingCommandTransport transport;
     controller.setCommandTransport(&transport);
-    controller.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
+    controller.applyCommandAck(CommandSendResult{
+        true, "vision armed", controller.activeTaskId(), true, false, 1, true});
     controller.handleTaskEvent(makeTargetUpdateEvent(controller.activeTaskId()), 1000);
 
     controller.handleTaskPlan(makeCanonicalTaskPlan());
@@ -466,7 +558,8 @@ void HMissionControllerTests::regeneratedTaskPlanDisarmsVisionAndClearsTarget() 
 
     RecordingCommandTransport transport;
     controller.setCommandTransport(&transport);
-    controller.applyCommandAck(CommandSendResult{true, "vision armed", {}, false, false, 0, true});
+    controller.applyCommandAck(CommandSendResult{
+        true, "vision armed", controller.activeTaskId(), true, false, 1, true});
     controller.handleTaskEvent(makeTargetUpdateEvent(controller.activeTaskId()), 1000);
 
     controller.handlePlanningButtonClicked();

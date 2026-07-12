@@ -233,9 +233,6 @@ void MainWindow::handleExecuteMissionClicked() {
     }
 
     task_adapter_->applyCommandAck(result);
-    if (result.task_id.isEmpty() && result.last_accepted_sequence == 0) {
-        task_adapter_->markControlCommandStarted();
-    }
     refreshAirborneStatusLabel();
     refreshExecutionControls();
     status_label_->setText(ReliableCommandClient::operatorStatusText("开始执行命令", result));
@@ -259,7 +256,6 @@ void MainWindow::handleStopMissionClicked() {
 
     status_label_->setText(ReliableCommandClient::operatorStatusText("停止执行命令", result));
     task_adapter_->applyCommandAck(result);
-    task_adapter_->markControlCommandStopped();
     refreshAirborneStatusLabel();
     refreshExecutionControls();
 }

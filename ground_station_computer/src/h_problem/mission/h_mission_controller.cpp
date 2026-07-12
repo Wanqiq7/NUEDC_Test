@@ -9,6 +9,8 @@
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 HMissionController::HMissionController(
     HMissionViewSink *sink,
@@ -195,6 +197,26 @@ void HMissionController::handleTaskSummary(const competition::TaskSummary &summa
         return;
     }
 
+    if (!summary.success) {
+        QString failure_reason = QStringLiteral("机载执行器报告任务失败");
+        const QJsonDocument payload = QJsonDocument::fromJson(summary.payload_json.toUtf8());
+        if (payload.isObject()) {
+            const QString reported_error = payload.object().value("error").toString().trimmed();
+            if (!reported_error.isEmpty()) {
+                failure_reason = reported_error;
+            }
+        }
+        sync_state_.setRunning(false);
+        const CommandSendResult disarm_result = disarmVisionTargetingForLifecycle();
+        emitRuntimeChanged();
+        QString status = QString("错误: 巡查失败 | %1").arg(failure_reason);
+        if (!disarm_result.ok) {
+            status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
+        }
+        notifyStatusText(status);
+        return;
+    }
+
     const TaskSummaryMessage message = competition::taskSummaryToMessage(summary);
     HSummaryData data;
     QString error_message;
@@ -355,6 +377,11 @@ void HMissionController::markAirborneSyncState(bool online, bool synced) {
 }
 
 void HMissionController::applyCommandAck(const CommandSendResult &result) {
+    if (result.task_id.isEmpty()) {
+        qDebug() << "Ignoring command ACK without task identity";
+        return;
+    }
+
     if (!result.task_id.isEmpty() && !isCurrentTaskMessage(result.task_id)) {
         qDebug() << "Ignoring command ACK for another task" << result.task_id
                  << "current task" << current_case_id_;
@@ -491,13 +518,10 @@ void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool s
 
     const auto send_result = command_service_.sendTaskPlan(plan);
     notifyCommandLinkState(send_result.ok);
-    if (send_result.ok) {
+    if (send_result.ok
+        && send_result.task_id == plan.task_id
+        && send_result.mission_loaded) {
         applyCommandAck(send_result);
-        if (send_result.task_id.isEmpty() && send_result.last_accepted_sequence == 0) {
-            sync_state_.setSyncedToAirborne(true);
-            sync_state_.setRunning(false);
-            emitRuntimeChanged();
-        }
         QString status = QStringLiteral("状态: 任务已同步至机载端，可执行任务");
         if (!disarm_result.ok) {
             status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
@@ -508,8 +532,11 @@ void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool s
 
     sync_state_.reset();
     emitRuntimeChanged();
-    qWarning() << "Failed to sync mission plan to airborne NUC:" << send_result.message;
-    QString status = QString("错误: 任务已本地生成，但机载端未确认 | %1").arg(send_result.message);
+    const QString failure_message = send_result.ok
+        ? QStringLiteral("机载 ACK 缺少匹配的任务身份或加载状态")
+        : send_result.message;
+    qWarning() << "Failed to sync mission plan to airborne NUC:" << failure_message;
+    QString status = QString("错误: 任务已本地生成，但机载端未确认 | %1").arg(failure_message);
     if (!disarm_result.ok) {
         status += QString(" | 视觉解除失败: %1").arg(disarm_result.message);
     }
