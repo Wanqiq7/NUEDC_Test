@@ -20,6 +20,9 @@
 #include <QDateTime>
 
 #include <memory>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 #include "competition_core/protocol/envelope_codec.h"
 #include "framework/communication/command_link_health.h"
@@ -62,6 +65,43 @@ public:
 private:
     CommandSendResult result_;
 };
+
+struct BlockingHeartbeatTransportState {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool send_started = false;
+    bool release_send = false;
+};
+
+class BlockingHeartbeatTransport final : public CommandTransport {
+public:
+    explicit BlockingHeartbeatTransport(std::shared_ptr<BlockingHeartbeatTransportState> state)
+        : state_(std::move(state)) {}
+
+    CommandSendResult sendEnvelope(const Envelope &) const override {
+        std::unique_lock<std::mutex> lock(state_->mutex);
+        state_->send_started = true;
+        state_->condition.notify_all();
+        state_->condition.wait(lock, [this] { return state_->release_send; });
+        return CommandSendResult{false, "heartbeat timed out"};
+    }
+
+private:
+    std::shared_ptr<BlockingHeartbeatTransportState> state_;
+};
+
+void waitForHeartbeatSend(const std::shared_ptr<BlockingHeartbeatTransportState> &state) {
+    std::unique_lock<std::mutex> lock(state->mutex);
+    QVERIFY(state->condition.wait_for(lock, std::chrono::seconds(1), [state] {
+        return state->send_started;
+    }));
+}
+
+void releaseHeartbeatSend(const std::shared_ptr<BlockingHeartbeatTransportState> &state) {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    state->release_send = true;
+    state->condition.notify_all();
+}
 }
 
 class MainWindowTests : public QObject {
@@ -88,6 +128,8 @@ private slots:
     void thirdCommandHealthFailureShowsOffline();
     void healthyHeartbeatRemainsOnlinePastLegacyFiveSecondTtl();
     void probeButtonRequestsImmediateHeartbeat();
+    void ignoresOlderNonzeroHealthGeneration();
+    void queuedHeartbeatCannotOverwriteNewerExternalSuccess();
 };
 
 void MainWindowTests::adapterFactoryListsDefaultProblemAdapter() {
@@ -175,7 +217,7 @@ void MainWindowTests::legacyStartAckWithoutIdentityDoesNotMarkMissionRunning() {
         false,
     });
     window.handleCommandLinkHealthChanged(
-        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "command acknowledged"});
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "command acknowledged", 0});
 
     FixedCommandTransport transport(CommandSendResult{true, "legacy start accepted"});
     window.mission_command_service_ = std::make_unique<MissionCommandService>(&transport);
@@ -446,7 +488,7 @@ void MainWindowTests::checkingCommandHealthDisablesControlsWithoutShowingOffline
     QVERIFY(execute_button != nullptr);
 
     window.handleCommandLinkHealthChanged(
-        CommandLinkSnapshot{CommandLinkHealth::Checking, 1, "command ack timed out"});
+        CommandLinkSnapshot{CommandLinkHealth::Checking, 1, "command ack timed out", 0});
 
     QVERIFY(!execute_button->isEnabled());
     QVERIFY(window.airborne_status_label_->text().contains("链路确认中（1/3）"));
@@ -488,7 +530,7 @@ void MainWindowTests::thirdCommandHealthFailureShowsOffline() {
     window.task_adapter_->setCommandSyncEnabled(true);
 
     window.handleCommandLinkHealthChanged(
-        CommandLinkSnapshot{CommandLinkHealth::Offline, 3, "command ack timed out"});
+        CommandLinkSnapshot{CommandLinkHealth::Offline, 3, "command ack timed out", 0});
 
     QVERIFY(window.airborne_status_label_->text().startsWith("机载状态: 离线"));
 }
@@ -507,14 +549,68 @@ void MainWindowTests::healthyHeartbeatRemainsOnlinePastLegacyFiveSecondTtl() {
         false,
     });
     window.handleCommandLinkHealthChanged(
-        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "pong"});
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "pong", 0});
 
     QTest::qWait(5500);
     window.handleCommandLinkHealthChanged(
-        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "later pong"});
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "later pong", 0});
 
     QVERIFY(window.commandLinkHealthy());
     QVERIFY(window.airborne_status_label_->text().startsWith("机载状态: 在线"));
+}
+
+void MainWindowTests::ignoresOlderNonzeroHealthGeneration() {
+    MainWindow window(nullptr, false);
+
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "mission started", 8});
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Checking, 1, "timeout", 7});
+
+    QCOMPARE(window.command_link_snapshot_.health, CommandLinkHealth::Online);
+    QCOMPARE(window.command_link_snapshot_.detail, QString("mission started"));
+}
+
+void MainWindowTests::queuedHeartbeatCannotOverwriteNewerExternalSuccess() {
+    MainWindow window(nullptr, false);
+    const auto state = std::make_shared<BlockingHeartbeatTransportState>();
+    const auto transport = std::make_shared<BlockingHeartbeatTransport>(state);
+    window.command_link_monitor_ = std::make_unique<CommandLinkMonitor>(transport, 60000);
+    connect(window.command_link_monitor_.get(), &CommandLinkMonitor::healthChanged,
+        &window, &MainWindow::handleCommandLinkHealthChanged);
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Checking, 0, "awaiting heartbeat", 0});
+
+    std::mutex emission_mutex;
+    std::condition_variable emission_condition;
+    bool heartbeat_emitted = false;
+    connect(window.command_link_monitor_.get(), &CommandLinkMonitor::healthChanged,
+        &window, [&emission_mutex, &emission_condition, &heartbeat_emitted](const CommandLinkSnapshot &) {
+            std::lock_guard<std::mutex> lock(emission_mutex);
+            heartbeat_emitted = true;
+            emission_condition.notify_all();
+        }, Qt::DirectConnection);
+
+    window.command_link_monitor_->startMonitoring();
+    window.command_link_monitor_->requestImmediateProbe();
+    waitForHeartbeatSend(state);
+    releaseHeartbeatSend(state);
+
+    {
+        std::unique_lock<std::mutex> lock(emission_mutex);
+        QVERIFY(emission_condition.wait_for(lock, std::chrono::seconds(1), [&heartbeat_emitted] {
+            return heartbeat_emitted;
+        }));
+    }
+    QCOMPARE(window.command_link_snapshot_.detail, QString("awaiting heartbeat"));
+
+    window.command_link_monitor_->recordExternalCommandResult(CommandSendResult{true, "mission started"});
+    QCOMPARE(window.command_link_snapshot_.health, CommandLinkHealth::Online);
+    QCOMPARE(window.command_link_snapshot_.detail, QString("mission started"));
+
+    QCoreApplication::processEvents();
+    QCOMPARE(window.command_link_snapshot_.health, CommandLinkHealth::Online);
+    QCOMPARE(window.command_link_snapshot_.detail, QString("mission started"));
 }
 
 void MainWindowTests::probeButtonRequestsImmediateHeartbeat() {
@@ -527,7 +623,7 @@ void MainWindowTests::probeButtonRequestsImmediateHeartbeat() {
     QVERIFY(probe_button->isEnabled());
     QVERIFY(window.command_link_monitor_ != nullptr);
     window.handleCommandLinkHealthChanged(
-        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "previous heartbeat"});
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "previous heartbeat", 0});
 
     QElapsedTimer elapsed;
     elapsed.start();

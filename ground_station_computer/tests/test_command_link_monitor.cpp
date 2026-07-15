@@ -132,6 +132,7 @@ private slots:
     void successfulHeartbeatRecoversFromOffline();
     void externalSuccessfulCommandResetsFailureCount();
     void staleHeartbeatFailureCannotOverwriteNewerExternalSuccess();
+    void acceptedSnapshotsReceiveStrictlyIncreasingGenerations();
     void neverOverlapsHeartbeatAndExternalTransportSend();
     void stopMonitoringJoinsAfterBlockedTransportSend();
 };
@@ -243,6 +244,26 @@ void CommandLinkMonitorTests::staleHeartbeatFailureCannotOverwriteNewerExternalS
 
     QCOMPARE(spy.size(), 1);
     QCOMPARE(spy.at(0).at(0).value<CommandLinkSnapshot>().health, CommandLinkHealth::Online);
+    monitor.stopMonitoring();
+}
+
+void CommandLinkMonitorTests::acceptedSnapshotsReceiveStrictlyIncreasingGenerations() {
+    const auto state = std::make_shared<QueueTransportState>();
+    enqueueResult(state, CommandSendResult{true, "heartbeat pong"});
+    const auto transport = makeTransport(state);
+    CommandLinkMonitor monitor(transport, 60000);
+    QSignalSpy spy(&monitor, &CommandLinkMonitor::healthChanged);
+
+    monitor.startMonitoring();
+    monitor.requestImmediateProbe();
+    QTRY_COMPARE(spy.size(), 1);
+    monitor.recordExternalCommandResult(CommandSendResult{true, "mission started"});
+    QTRY_COMPARE(spy.size(), 2);
+
+    const auto heartbeat = spy.at(0).at(0).value<CommandLinkSnapshot>();
+    const auto external = spy.at(1).at(0).value<CommandLinkSnapshot>();
+    QVERIFY(heartbeat.generation != 0);
+    QVERIFY(external.generation > heartbeat.generation);
     monitor.stopMonitoring();
 }
 

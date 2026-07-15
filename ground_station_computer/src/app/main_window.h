@@ -63,6 +63,7 @@ private:
     QLabel *airborne_status_label_ = nullptr;
     bool command_sync_enabled_ = true;
     CommandLinkSnapshot command_link_snapshot_;
+    quint64 last_applied_health_generation_ = 0;
     qint64 last_successful_telemetry_ms_ = 0;
     ZmqCommandClient command_client_;
     std::shared_ptr<SerializedCommandTransport> command_transport_;

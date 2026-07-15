@@ -363,6 +363,12 @@ bool MainWindow::commandLinkHealthy() const {
 }
 
 void MainWindow::handleCommandLinkHealthChanged(CommandLinkSnapshot snapshot) {
+    if (snapshot.generation != 0 && snapshot.generation <= last_applied_health_generation_) {
+        return;
+    }
+    if (snapshot.generation != 0) {
+        last_applied_health_generation_ = snapshot.generation;
+    }
     command_link_snapshot_ = std::move(snapshot);
     refreshAirborneStatusLabel();
     refreshExecutionControls();

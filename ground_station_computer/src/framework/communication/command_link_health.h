@@ -13,6 +13,7 @@ struct CommandLinkSnapshot {
     CommandLinkHealth health = CommandLinkHealth::Checking;
     int consecutive_failures = 0;
     QString detail;
+    quint64 generation = 0;
 };
 
 Q_DECLARE_METATYPE(CommandLinkSnapshot)

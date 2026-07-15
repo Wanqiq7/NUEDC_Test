@@ -33,8 +33,8 @@ void CommandLinkMonitor::recordExternalCommandResult(const CommandSendResult &re
     CommandLinkSnapshot snapshot;
     {
         QMutexLocker lock(&mutex_);
-        ++health_generation_;
         snapshot = result.ok ? tracker_.recordSuccess(result.message) : tracker_.recordFailure(result.message);
+        snapshot.generation = ++health_generation_;
     }
     emit healthChanged(snapshot);
 }
@@ -85,6 +85,7 @@ void CommandLinkMonitor::run() {
                 continue;
             }
             snapshot = result.ok ? tracker_.recordSuccess(result.message) : tracker_.recordFailure(result.message);
+            snapshot.generation = ++health_generation_;
         }
         emit healthChanged(snapshot);
     }
