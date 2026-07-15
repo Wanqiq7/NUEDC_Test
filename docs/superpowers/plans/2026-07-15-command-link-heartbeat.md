@@ -433,13 +433,95 @@ git add docs/dual_nuc_setup_guide.md README.md
 git commit -m "docs: describe command link heartbeats"
 ```
 
-## Plan Self-Review
+## Original Plan Self-Review
 
 - Coverage: Task 1 provides the three-state threshold semantics; Task 2 provides background and serialized sends; Task 3 changes UI and control safety; Task 4 covers documentation, build, tests, and live two-machine acceptance.
 - Consistency: every task uses 2000 ms, three failures, 1500 ms single ZMQ timeout, and existing three retries; none treats telemetry as command health.
 - Scope: no task modifies airborne packages, networking, Protobuf, or flight-control behavior.
 - Placeholder scan: no unresolved implementation marker or undefined interface remains.
 
-## Execution Handoff
+## Original Execution Handoff
 
 Use `subagent-driven-development` in this session to execute Tasks 1-4 in order. After every task, produce a diff package and dispatch a new reviewer for spec compliance and code quality before moving to the next task.
+
+### Task 5: Prevent stale heartbeat results from overwriting newer command ACKs
+
+**Files:**
+- Modify: `ground_station_computer/src/framework/communication/command_link_monitor.h`
+- Modify: `ground_station_computer/src/framework/communication/command_link_monitor.cpp`
+- Modify: `ground_station_computer/tests/test_command_link_monitor.cpp`
+
+**Interfaces:**
+- Consumes the Task 2 monitor/tracker APIs and preserves all existing heartbeat interval, retry, serialization, and shutdown behavior.
+- Adds an internal monotonic health-result generation guarded by the existing monitor mutex; it is not exposed to UI or protocol code.
+
+- [ ] **Step 1: Write a deterministic failing stale-result regression.**
+
+Add `staleHeartbeatFailureCannotOverwriteNewerExternalSuccess()` using a blocking transport. Start an immediate heartbeat and wait until its first physical send is blocked. Call:
+
+```cpp
+monitor.recordExternalCommandResult(CommandSendResult{true, "mission started"});
+```
+
+Assert the emitted snapshot is `Online`. Release the blocked heartbeat so its reliable operation returns failures. Under the old implementation, the later heartbeat failure emits `Checking`; the desired assertion is that no later stale snapshot replaces `Online`.
+
+- [ ] **Step 2: Verify RED.**
+
+```bash
+cmake --build build --target test_command_link_monitor
+QT_QPA_PLATFORM=offscreen ./build/ground_station_computer/test_command_link_monitor -v1
+```
+
+Expected: the new regression fails because a heartbeat begun before the external success emits a later `Checking` snapshot.
+
+- [ ] **Step 3: Implement generation-based stale-result suppression.**
+
+```cpp
+// Under the existing mutex.
+quint64 health_generation_ = 0;
+
+// recordExternalCommandResult:
+++health_generation_;
+const CommandLinkSnapshot snapshot = result.ok
+    ? tracker_.recordSuccess(result.message)
+    : tracker_.recordFailure(result.message);
+
+// run(), before ping:
+const quint64 probe_generation = health_generation_;
+
+// run(), after ping, under the mutex:
+if (probe_generation != health_generation_) {
+    continue;  // A newer external command result is authoritative.
+}
+const CommandLinkSnapshot snapshot = result.ok
+    ? tracker_.recordSuccess(result.message)
+    : tracker_.recordFailure(result.message);
+```
+
+Do not increment the generation for heartbeat results. Do not emit a signal for a discarded stale heartbeat. Keep `SerializedCommandTransport` and `ReliableCommandClient` unchanged.
+
+- [ ] **Step 4: Verify GREEN.**
+
+```bash
+cmake --build build --target test_command_link_monitor test_main_window
+QT_QPA_PLATFORM=offscreen ctest --test-dir build -R '^(test_command_link_monitor|test_main_window)$' --output-on-failure
+```
+
+Expected: both tests pass; the stale heartbeat test observes no degradation after the newer external success.
+
+- [ ] **Step 5: Commit Task 5.**
+
+```bash
+git add ground_station_computer/src/framework/communication/command_link_monitor.h ground_station_computer/src/framework/communication/command_link_monitor.cpp ground_station_computer/tests/test_command_link_monitor.cpp
+git commit -m "fix: ignore stale heartbeat results"
+```
+
+## Amendment Self-Review
+
+- Coverage: Task 5 closes the only remaining command-health ordering race by proving and suppressing an old heartbeat result that returns after a newer external ACK.
+- Consistency: the amendment preserves the 2000 ms cadence, three-failure threshold, existing reliable retry policy, serialization, and no-telemetry health rule.
+- Scope: it changes only monitor-internal state ordering and its focused test; no UI, Adapter, protocol, airborne, or network behavior is broadened.
+
+## Amendment Execution Handoff
+
+Execute Task 5 using the same subagent-driven implementation and independent review gates as Tasks 1-4. Run live dual-machine acceptance only after Task 5 is reviewed clean.
