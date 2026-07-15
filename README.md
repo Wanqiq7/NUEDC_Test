@@ -76,8 +76,8 @@ export NUEDC_COMMAND_PORT=5558
 处理命令后返回当前完整状态：`success`、`message`、`task_id`、`mission_loaded`、
 `mission_running`、`last_accepted_sequence` 和 `vision_armed`。`last_accepted_sequence` 必须是
 已经接受的命令序列号；地面站用它和 `vision_armed` 判断超时重试是否已被机载端接收。命令链路
-在线状态只由 PING 或命令 Ack 更新，收到遥测不代表 REQ/REP 命令端口可用。
-命令链路状态过期后，可使用地面站的 `刷新机载链路` 操作发送 PING；成功 Ack 会恢复可用的执行和视觉控制。
+健康状态只由命令 Ack 和后台 PING 建立或更新，遥测永远不能建立命令链路健康状态，也不代表 REQ/REP
+命令端口可用。后台 PING 每两秒自动运行；`刷新机载链路` 仅请求一次立即探测，保持在线不需要点击该按钮。
 
 新增题目不需要复制主流程。先扩展 `shared/proto/messages.proto` 中已有通用字段能表达的元数据，
 再新增地面站 `CompetitionTaskAdapter` 实现；禁止把题目专有 UI 或解析逻辑直接写回 Shell。详细步骤见 `docs/adding_task_adapter.md`。
