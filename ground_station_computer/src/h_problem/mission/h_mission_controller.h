@@ -27,7 +27,7 @@ class HMissionController {
 public:
     using TextCallback = std::function<void(const QString &)>;
     using RuntimeCallback = std::function<void()>;
-    using CommandLinkStateCallback = std::function<void(bool)>;
+    using CommandLinkStateCallback = std::function<void(const CommandSendResult &)>;
 
     HMissionController(
         HMissionViewSink *sink,
@@ -106,7 +106,7 @@ private:
     void notifyStatusText(const QString &text) const;
     void notifyPlanningButtonText(const QString &text) const;
     void notifyRuntimeChanged() const;
-    void notifyCommandLinkState(bool online) const;
+    void notifyCommandLinkResult(const CommandSendResult &result) const;
     bool isCurrentTaskMessage(const QString &task_id) const;
 
     HMissionViewSink *sink_ = nullptr;

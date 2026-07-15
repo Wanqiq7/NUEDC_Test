@@ -13,6 +13,7 @@
 class GridScene;
 class QObject;
 class ZmqCommandClient;
+class CommandTransport;
 
 class HProblemPage {
 public:
@@ -35,6 +36,7 @@ public:
 
     void setCommandSyncEnabled(bool enabled) override;
     void setCommandClient(const ZmqCommandClient &client) override;
+    void setCommandTransport(const CommandTransport *transport) override;
     void loadInitialPreview() override;
     void handleTaskPlan(const competition::TaskPlan &plan) override;
     void handleTaskEvent(const competition::TaskEvent &event, qint64 timestamp_ms) override;

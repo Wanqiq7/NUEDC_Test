@@ -106,6 +106,13 @@ export NUEDC_COMMAND_PORT=5558
 在界面中使用“刷新机载链路”发送 PING。只有收到有效 Ack 后，才应开始执行、视觉
 ARM 或 RESET 操作。命令超时后可以重试，但不要用收到的遥测替代命令通道健康状态。
 
+所有命令回复均使用 `Envelope.ack`。对于 `ARM_TARGETING` 与 `RESET_TARGETING`，机载端必须在
+处理命令后返回当前完整状态：`success`、`message`、`task_id`、`mission_loaded`、
+`mission_running`、`last_accepted_sequence` 和 `vision_armed`。`last_accepted_sequence` 必须是
+已经接受的命令序列号；地面站用它和 `vision_armed` 判断超时重试是否已被机载端接收。命令链路
+健康状态只由命令 Ack 和后台 PING 建立或更新，遥测永远不能建立命令链路健康状态，也不代表 REQ/REP
+命令端口可用。后台 PING 每两秒自动运行；`刷新机载链路` 仅请求一次立即探测，保持在线不需要点击该按钮。
+
 ## 操作流程
 
 1. 启动地面站并确认机载链路为可用状态。

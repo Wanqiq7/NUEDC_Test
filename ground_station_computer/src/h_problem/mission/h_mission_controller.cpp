@@ -48,9 +48,9 @@ void HMissionController::notifyRuntimeChanged() const {
     }
 }
 
-void HMissionController::notifyCommandLinkState(bool online) const {
+void HMissionController::notifyCommandLinkResult(const CommandSendResult &result) const {
     if (command_link_state_callback_) {
-        command_link_state_callback_(online);
+        command_link_state_callback_(result);
     }
 }
 
@@ -134,6 +134,7 @@ void HMissionController::handleTaskPlan(const competition::TaskPlan &plan) {
     if (!disarm_result.ok) {
         notifyStatusText(QString("警告: 路线已替换，但视觉解除失败 | %1").arg(disarm_result.message));
     }
+    notifyCommandLinkResult(disarm_result);
 }
 
 void HMissionController::handleTaskEvent(const competition::TaskEvent &event, qint64 timestamp_ms) {
@@ -214,6 +215,7 @@ void HMissionController::handleTaskSummary(const competition::TaskSummary &summa
             status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
         }
         notifyStatusText(status);
+        notifyCommandLinkResult(disarm_result);
         return;
     }
 
@@ -335,9 +337,10 @@ void HMissionController::applySummary(const QMap<QString, int> &totals, int visi
     if (!disarm_result.ok) {
         status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
     }
-    notifyStatusText(status);
     detection_totals_ = totals;
     sink_->setSummaryTotals(detection_totals_);
+    notifyStatusText(status);
+    notifyCommandLinkResult(disarm_result);
 }
 
 void HMissionController::handlePlanningButtonClicked() {
@@ -368,6 +371,7 @@ void HMissionController::markControlCommandStopped() {
     if (!disarm_result.ok) {
         notifyStatusText(QString("警告: 停止任务已确认，但视觉解除失败 | %1").arg(disarm_result.message));
     }
+    notifyCommandLinkResult(disarm_result);
 }
 
 void HMissionController::markAirborneSyncState(bool online, bool synced) {
@@ -502,6 +506,7 @@ void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool s
             status += QString(" | 视觉解除失败: %1").arg(disarm_result.message);
         }
         notifyStatusText(status);
+        notifyCommandLinkResult(disarm_result);
         return;
     }
 
@@ -513,11 +518,11 @@ void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool s
             status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
         }
         notifyStatusText(status);
+        notifyCommandLinkResult(disarm_result);
         return;
     }
 
     const auto send_result = command_service_.sendTaskPlan(plan);
-    notifyCommandLinkState(send_result.ok);
     if (send_result.ok
         && send_result.task_id == plan.task_id
         && send_result.mission_loaded) {
@@ -527,6 +532,8 @@ void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool s
             status += QString(" | 警告: 视觉解除失败: %1").arg(disarm_result.message);
         }
         notifyStatusText(status);
+        notifyCommandLinkResult(disarm_result);
+        notifyCommandLinkResult(send_result);
         return;
     }
 
@@ -541,6 +548,8 @@ void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool s
         status += QString(" | 视觉解除失败: %1").arg(disarm_result.message);
     }
     notifyStatusText(status);
+    notifyCommandLinkResult(disarm_result);
+    notifyCommandLinkResult(send_result);
 }
 
 CommandSendResult HMissionController::disarmVisionTargetingForLifecycle() {
@@ -556,7 +565,6 @@ CommandSendResult HMissionController::disarmVisionTargetingForLifecycle() {
     }
 
     const CommandSendResult result = command_service_.disarmVisionTargeting(current_case_id_);
-    notifyCommandLinkState(result.ok);
     if (result.ok) {
         sync_state_.applyCommandAck(result);
     } else {

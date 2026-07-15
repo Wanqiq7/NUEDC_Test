@@ -5,6 +5,9 @@
 #include <QPushButton>
 
 #include "framework/communication/reliable_command_client.h"
+#include "framework/communication/command_link_health.h"
+#include "framework/communication/command_link_monitor.h"
+#include "framework/communication/serialized_command_transport.h"
 #include "framework/communication/zmq_command_client.h"
 #include "framework/task/competition_task_adapter.h"
 #include "h_problem/mission/h_mission_command_service.h"
@@ -12,7 +15,6 @@
 #include <memory>
 
 class QLabel;
-class QTimer;
 class ZmqSubscriberWorker;
 class MainWindowTests;
 
@@ -41,8 +43,7 @@ private:
     void handleProbeAirborneLinkClicked();
     void sendManualVisionArmCommand();
 
-    void probeAirborneAvailability(bool update_status_message = false);
-    void recordCommandLinkResult(bool online);
+    void handleCommandLinkHealthChanged(CommandLinkSnapshot snapshot);
     bool commandLinkHealthy() const;
     void recordTelemetryReceived();
     bool telemetryLinkHealthy(qint64 now_ms = QDateTime::currentMSecsSinceEpoch()) const;
@@ -61,14 +62,13 @@ private:
     QPushButton *probe_airborne_link_button_ = nullptr;
     QLabel *airborne_status_label_ = nullptr;
     bool command_sync_enabled_ = true;
-    bool command_link_online_ = false;
-    qint64 last_successful_command_reply_ms_ = 0;
-    QTimer *command_health_expiry_timer_ = nullptr;
+    CommandLinkSnapshot command_link_snapshot_;
+    quint64 last_applied_health_generation_ = 0;
     qint64 last_successful_telemetry_ms_ = 0;
     ZmqCommandClient command_client_;
-    std::unique_ptr<ZmqCommandTransport> command_transport_;
-    std::unique_ptr<ReliableCommandClient> reliable_command_client_;
+    std::shared_ptr<SerializedCommandTransport> command_transport_;
     std::unique_ptr<MissionCommandService> mission_command_service_;
+    std::unique_ptr<CommandLinkMonitor> command_link_monitor_;
 
     ZmqSubscriberWorker *worker_ = nullptr;
 };

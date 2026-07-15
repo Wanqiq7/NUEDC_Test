@@ -65,12 +65,14 @@ void ArchitectureBoundaryTests::mainWindowUsesConfiguredTaskAdapterFactory() {
 }
 void ArchitectureBoundaryTests::mainWindowUsesMissionCommandServiceForControlCommands() {
     const QString header_source = readSourceOrFail("ground_station_computer/src/app/main_window.h");
-    QVERIFY(header_source.contains("ReliableCommandClient"));
     QVERIFY(header_source.contains("MissionCommandService"));
+    QVERIFY(header_source.contains("SerializedCommandTransport"));
+    QVERIFY(header_source.contains("CommandLinkMonitor"));
 
     const QString source_text = readSourceOrFail("ground_station_computer/src/app/main_window.cpp");
     QVERIFY(source_text.contains("mission_command_service_->sendControlCommand"));
-    QVERIFY(source_text.contains("reliable_command_client_->ping"));
+    QVERIFY(source_text.contains("command_link_monitor_->requestImmediateProbe"));
+    QVERIFY(source_text.contains("command_link_monitor_->recordExternalCommandResult"));
 }
 
 void ArchitectureBoundaryTests::adapterRegistryLivesInFrameworkNotProblemModule() {

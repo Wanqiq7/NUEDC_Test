@@ -13,13 +13,14 @@
 #include <utility>
 
 class ZmqCommandClient;
+class CommandTransport;
 class QWidget;
 
 class CompetitionTaskAdapter {
 public:
     using TextCallback = std::function<void(const QString &)>;
     using RuntimeCallback = std::function<void()>;
-    using CommandLinkStateCallback = std::function<void(bool)>;
+    using CommandLinkStateCallback = std::function<void(const CommandSendResult &)>;
 
     virtual ~CompetitionTaskAdapter() = default;
 
@@ -39,6 +40,7 @@ public:
 
     virtual void setCommandSyncEnabled(bool enabled) = 0;
     virtual void setCommandClient(const ZmqCommandClient &client) = 0;
+    virtual void setCommandTransport(const CommandTransport *transport) = 0;
     virtual void loadInitialPreview() = 0;
     virtual void handleTaskPlan(const competition::TaskPlan &plan) = 0;
     virtual void handleTaskEvent(const competition::TaskEvent &event, qint64 timestamp_ms) = 0;
@@ -68,9 +70,9 @@ protected:
         }
     }
 
-    void notifyCommandLinkStateChanged(bool online) const {
+    void notifyCommandLinkStateChanged(const CommandSendResult &result) const {
         if (command_link_state_callback_) {
-            command_link_state_callback_(online);
+            command_link_state_callback_(result);
         }
     }
 

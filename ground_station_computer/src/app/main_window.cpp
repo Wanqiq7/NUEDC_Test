@@ -8,14 +8,9 @@
 #include <QDebug>
 #include <QDateTime>
 #include <QLabel>
-#include <QTimer>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QWidget>
-
-namespace {
-constexpr qint64 kCommandLinkTtlMs = 5000;
-}
 
 MainWindow::MainWindow(QWidget *parent, bool start_worker)
     : QMainWindow(parent) {
@@ -31,11 +26,12 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
     const NetworkConfig network_config = NetworkConfig::fromEnvironment();
     command_sync_enabled_ = start_worker;
     command_client_ = ZmqCommandClient(network_config.commandEndpoint());
-    command_transport_ = std::make_unique<ZmqCommandTransport>(command_client_);
-    reliable_command_client_ = std::make_unique<ReliableCommandClient>(command_transport_.get());
+    auto raw_transport = std::make_unique<ZmqCommandTransport>(command_client_);
+    command_transport_ = std::make_shared<SerializedCommandTransport>(std::move(raw_transport));
     mission_command_service_ = std::make_unique<MissionCommandService>(command_transport_.get());
     task_adapter_->setCommandSyncEnabled(command_sync_enabled_);
     task_adapter_->setCommandClient(command_client_);
+    task_adapter_->setCommandTransport(command_transport_.get());
 
     auto *central = new QWidget(this);
     auto *root_layout = new QVBoxLayout(central);
@@ -125,31 +121,26 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
         planning_button_->setText(text);
     });
     task_adapter_->setRuntimeCallback([this]() {
+        if (command_link_monitor_ != nullptr) {
+            command_link_monitor_->setActiveTaskId(task_adapter_->activeTaskId());
+        }
         refreshAirborneStatusLabel();
         refreshExecutionControls();
     });
-    task_adapter_->setCommandLinkStateCallback([this](bool online) {
-        recordCommandLinkResult(online);
-        refreshAirborneStatusLabel();
-        refreshExecutionControls();
+    task_adapter_->setCommandLinkStateCallback([this](const CommandSendResult &result) {
+        if (command_link_monitor_ != nullptr
+            && (!result.ok || !result.task_id.isEmpty() || result.mission_loaded
+                || result.mission_running || result.last_accepted_sequence != 0 || result.vision_armed)) {
+            command_link_monitor_->recordExternalCommandResult(result);
+        }
     });
 
     if (command_sync_enabled_) {
-        auto *command_health_timer = new QTimer(this);
-        command_health_timer->setInterval(1000);
-        connect(command_health_timer, &QTimer::timeout, this, [this] {
-            refreshAirborneStatusLabel();
-            refreshExecutionControls();
-        });
-        command_health_timer->start();
-
-        command_health_expiry_timer_ = new QTimer(this);
-        command_health_expiry_timer_->setSingleShot(true);
-        command_health_expiry_timer_->setTimerType(Qt::PreciseTimer);
-        connect(command_health_expiry_timer_, &QTimer::timeout, this, [this] {
-            refreshAirborneStatusLabel();
-            refreshExecutionControls();
-        });
+        command_link_monitor_ = std::make_unique<CommandLinkMonitor>(command_transport_);
+        connect(command_link_monitor_.get(), &CommandLinkMonitor::healthChanged,
+            this, &MainWindow::handleCommandLinkHealthChanged);
+        command_link_monitor_->setActiveTaskId(task_adapter_->activeTaskId());
+        command_link_monitor_->startMonitoring();
     }
 
     connect(planning_button_, &QPushButton::clicked, this, &MainWindow::handlePlanningButtonClicked);
@@ -160,7 +151,6 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
     task_adapter_->loadInitialPreview();
     refreshExecutionControls();
     refreshAirborneStatusLabel();
-    probeAirborneAvailability(false);
 
     worker_ = new ZmqSubscriberWorker(network_config.telemetryEndpoint(), this);
     if (start_worker) {
@@ -173,6 +163,10 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
 }
 
 MainWindow::~MainWindow() {
+    if (command_link_monitor_ != nullptr) {
+        command_link_monitor_->stopMonitoring();
+        command_link_monitor_.reset();
+    }
     if (worker_ != nullptr) {
         worker_->requestInterruption();
         worker_->wait(1500);
@@ -223,9 +217,10 @@ void MainWindow::handleExecuteMissionClicked() {
 
     const auto result = mission_command_service_->sendControlCommand(
         GroundControlCommandType::StartMission, task_adapter_->activeTaskId());
-    recordCommandLinkResult(result.ok);
     if (!result.ok) {
-        task_adapter_->markAirborneSyncState(false, task_adapter_->missionSyncedToAirborne());
+        if (command_link_monitor_ != nullptr) {
+            command_link_monitor_->recordExternalCommandResult(result);
+        }
         refreshAirborneStatusLabel();
         refreshExecutionControls();
         status_label_->setText(ReliableCommandClient::operatorStatusText("开始执行命令", result));
@@ -233,6 +228,10 @@ void MainWindow::handleExecuteMissionClicked() {
     }
 
     task_adapter_->applyCommandAck(result);
+    if (command_link_monitor_ != nullptr) {
+        command_link_monitor_->setActiveTaskId(task_adapter_->activeTaskId());
+        command_link_monitor_->recordExternalCommandResult(result);
+    }
     refreshAirborneStatusLabel();
     refreshExecutionControls();
     status_label_->setText(ReliableCommandClient::operatorStatusText("开始执行命令", result));
@@ -246,8 +245,10 @@ void MainWindow::handleStopMissionClicked() {
 
     const auto result = mission_command_service_->sendControlCommand(
         GroundControlCommandType::StopMission, task_adapter_->activeTaskId());
-    recordCommandLinkResult(result.ok);
     if (!result.ok) {
+        if (command_link_monitor_ != nullptr) {
+            command_link_monitor_->recordExternalCommandResult(result);
+        }
         refreshAirborneStatusLabel();
         refreshExecutionControls();
         status_label_->setText(ReliableCommandClient::operatorStatusText("停止执行命令", result));
@@ -256,6 +257,10 @@ void MainWindow::handleStopMissionClicked() {
 
     status_label_->setText(ReliableCommandClient::operatorStatusText("停止执行命令", result));
     task_adapter_->applyCommandAck(result);
+    if (command_link_monitor_ != nullptr) {
+        command_link_monitor_->setActiveTaskId(task_adapter_->activeTaskId());
+        command_link_monitor_->recordExternalCommandResult(result);
+    }
     refreshAirborneStatusLabel();
     refreshExecutionControls();
 }
@@ -265,7 +270,9 @@ void MainWindow::handleArmVisionClicked() {
 }
 
 void MainWindow::handleProbeAirborneLinkClicked() {
-    probeAirborneAvailability(true);
+    if (command_link_monitor_ != nullptr) {
+        command_link_monitor_->requestImmediateProbe();
+    }
 }
 
 void MainWindow::sendManualVisionArmCommand() {
@@ -279,8 +286,10 @@ void MainWindow::sendManualVisionArmCommand() {
 
     const auto result = mission_command_service_->sendControlCommand(
         GroundControlCommandType::ArmTargeting, task_adapter_->activeTaskId());
-    recordCommandLinkResult(result.ok);
     if (!result.ok) {
+        if (command_link_monitor_ != nullptr) {
+            command_link_monitor_->recordExternalCommandResult(result);
+        }
         refreshAirborneStatusLabel();
         refreshExecutionControls();
         status_label_->setText(ReliableCommandClient::operatorStatusText("视觉武装命令", result));
@@ -288,30 +297,13 @@ void MainWindow::sendManualVisionArmCommand() {
     }
 
     task_adapter_->applyCommandAck(result);
+    if (command_link_monitor_ != nullptr) {
+        command_link_monitor_->setActiveTaskId(task_adapter_->activeTaskId());
+        command_link_monitor_->recordExternalCommandResult(result);
+    }
     refreshAirborneStatusLabel();
     refreshExecutionControls();
     status_label_->setText(ReliableCommandClient::operatorStatusText("视觉武装命令", result));
-}
-
-void MainWindow::probeAirborneAvailability(bool update_status_message) {
-    if (!command_sync_enabled_) {
-        recordCommandLinkResult(false);
-        refreshAirborneStatusLabel();
-        refreshExecutionControls();
-        return;
-    }
-
-    const auto result = reliable_command_client_->ping(task_adapter_->activeTaskId());
-    recordCommandLinkResult(result.ok);
-    task_adapter_->applyCommandAck(result);
-    refreshAirborneStatusLabel();
-    refreshExecutionControls();
-    if (update_status_message) {
-        status_label_->setText(
-            result.ok
-                ? QString("状态: 机载端在线 | %1").arg(result.message)
-                : QString("状态: 机载端离线 | %1").arg(result.message));
-    }
 }
 
 void MainWindow::refreshExecutionControls() {
@@ -338,37 +330,48 @@ void MainWindow::refreshAirborneStatusLabel() {
         return;
     }
 
-    MissionRuntimeInputs inputs = task_adapter_->missionRuntimeInputs();
-    inputs.command_sync_enabled = command_sync_enabled_;
-    inputs.airborne_online = commandLinkHealthy();
-    QString status = MissionRuntimeState::airborneStatusText(inputs);
+    QString status;
+    switch (command_link_snapshot_.health) {
+    case CommandLinkHealth::Checking:
+        status = QStringLiteral("机载状态: 链路确认中（%1/3）")
+                     .arg(command_link_snapshot_.consecutive_failures);
+        break;
+    case CommandLinkHealth::Offline:
+        status = QStringLiteral("机载状态: 离线");
+        break;
+    case CommandLinkHealth::Online: {
+        MissionRuntimeInputs inputs = task_adapter_->missionRuntimeInputs();
+        inputs.command_sync_enabled = command_sync_enabled_;
+        inputs.airborne_online = true;
+        status = MissionRuntimeState::airborneStatusText(inputs);
+        break;
+    }
+    }
+    if (!command_sync_enabled_) {
+        MissionRuntimeInputs inputs = task_adapter_->missionRuntimeInputs();
+        inputs.command_sync_enabled = false;
+        status = MissionRuntimeState::airborneStatusText(inputs);
+    }
     if (command_sync_enabled_) {
         status += QStringLiteral(" | ") + telemetryStatusTextAt(QDateTime::currentMSecsSinceEpoch());
     }
     airborne_status_label_->setText(status);
 }
 
-void MainWindow::recordCommandLinkResult(bool online) {
-    command_link_online_ = online;
-    if (!online) {
-        last_successful_command_reply_ms_ = 0;
-        if (command_health_expiry_timer_ != nullptr) {
-            command_health_expiry_timer_->stop();
-        }
-        return;
-    }
-
-    last_successful_command_reply_ms_ = QDateTime::currentMSecsSinceEpoch();
-    if (command_health_expiry_timer_ != nullptr) {
-        command_health_expiry_timer_->start(static_cast<int>(kCommandLinkTtlMs + 1));
-    }
+bool MainWindow::commandLinkHealthy() const {
+    return command_link_snapshot_.health == CommandLinkHealth::Online;
 }
 
-bool MainWindow::commandLinkHealthy() const {
-    if (!command_link_online_ || last_successful_command_reply_ms_ <= 0) {
-        return false;
+void MainWindow::handleCommandLinkHealthChanged(CommandLinkSnapshot snapshot) {
+    if (snapshot.generation != 0 && snapshot.generation <= last_applied_health_generation_) {
+        return;
     }
-    return QDateTime::currentMSecsSinceEpoch() - last_successful_command_reply_ms_ <= kCommandLinkTtlMs;
+    if (snapshot.generation != 0) {
+        last_applied_health_generation_ = snapshot.generation;
+    }
+    command_link_snapshot_ = std::move(snapshot);
+    refreshAirborneStatusLabel();
+    refreshExecutionControls();
 }
 
 void MainWindow::recordTelemetryReceived() {
