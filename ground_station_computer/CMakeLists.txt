@@ -1,7 +1,9 @@
 set(GROUND_STATION_CORE_SOURCES
     src/framework/communication/command_link_health.cpp
+    src/framework/communication/command_link_monitor.cpp
     src/framework/communication/envelope_codec.cpp
     src/framework/communication/reliable_command_client.cpp
+    src/framework/communication/serialized_command_transport.cpp
     src/framework/communication/zmq_command_client.cpp
     src/framework/config/network_config.cpp
     src/framework/config/repository_paths.cpp
@@ -78,6 +80,7 @@ target_sources(test_zmq_subscriber_worker PRIVATE
 )
 add_ground_station_test(test_reliable_command_client tests/test_reliable_command_client.cpp)
 add_ground_station_test(test_command_link_health tests/test_command_link_health.cpp)
+add_ground_station_test(test_command_link_monitor tests/test_command_link_monitor.cpp)
 add_ground_station_test(test_architecture_boundaries tests/test_architecture_boundaries.cpp)
 # 注入源码根目录（= 顶层 project() 的 Ground/），使边界测试不依赖运行时工作目录，
 # 直接运行测试可执行文件也能正确定位待扫描的源文件。
