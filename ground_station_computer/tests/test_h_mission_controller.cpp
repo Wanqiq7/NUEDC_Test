@@ -202,6 +202,7 @@ private slots:
     void missionCompletionDisarmsVisionAndClearsTarget();
     void missionStopDisarmsVisionAndClearsTarget();
     void taskPlanReplacementDisarmsVisionAndClearsTarget();
+    void taskPlanReplacementNotifiesLifecycleResultAfterClearingPreviousAck();
     void regeneratedTaskPlanDisarmsVisionAndClearsTarget();
     void planningButtonEntersNoFlyEditMode();
     void cellSelectionAccumulatesCandidatesAndValidates();
@@ -545,6 +546,42 @@ void HMissionControllerTests::taskPlanReplacementDisarmsVisionAndClearsTarget() 
     QCOMPARE(transport.sentControlTypes(), QVector<CommandType>{COMMAND_TYPE_RESET_TARGETING});
     QVERIFY(!controller.missionRuntimeInputs().vision_armed);
     QCOMPARE(sink.target_status, QStringLiteral("目标: 等待跟踪"));
+}
+
+void HMissionControllerTests::taskPlanReplacementNotifiesLifecycleResultAfterClearingPreviousAck() {
+    RecordingSink sink;
+    int lifecycle_result_count = 0;
+    MissionRuntimeInputs runtime_at_lifecycle_result;
+    HMissionController *controller_ptr = nullptr;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {},
+        [&](const CommandSendResult &) {
+            ++lifecycle_result_count;
+            runtime_at_lifecycle_result = controller_ptr->missionRuntimeInputs();
+        });
+    controller_ptr = &controller;
+
+    const competition::TaskPlan original_plan = makeCanonicalTaskPlan();
+    controller.handleTaskPlan(original_plan);
+    controller.applyCommandAck(CommandSendResult{
+        true, "mission loaded", original_plan.task_id, true, false, 73, true});
+    QVERIFY(controller.missionRuntimeInputs().acknowledged_mission_loaded);
+
+    RecordingCommandTransport transport;
+    controller.setCommandTransport(&transport);
+    controller.setCommandSyncEnabled(true);
+    lifecycle_result_count = 0;
+
+    const competition::TaskPlan replacement_plan = makeCanonicalTaskPlan();
+    controller.handleTaskPlan(replacement_plan);
+
+    QCOMPARE(transport.sentControlTypes(), QVector<CommandType>{COMMAND_TYPE_RESET_TARGETING});
+    QCOMPARE(lifecycle_result_count, 1);
+    QVERIFY(!runtime_at_lifecycle_result.acknowledged_mission_loaded);
+    QVERIFY(runtime_at_lifecycle_result.acknowledged_task_id.isEmpty());
 }
 
 void HMissionControllerTests::regeneratedTaskPlanDisarmsVisionAndClearsTarget() {

@@ -128,7 +128,9 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
         refreshExecutionControls();
     });
     task_adapter_->setCommandLinkStateCallback([this](const CommandSendResult &result) {
-        if (command_link_monitor_ != nullptr) {
+        if (command_link_monitor_ != nullptr
+            && (!result.ok || !result.task_id.isEmpty() || result.mission_loaded
+                || result.mission_running || result.last_accepted_sequence != 0 || result.vision_armed)) {
             command_link_monitor_->recordExternalCommandResult(result);
         }
     });
