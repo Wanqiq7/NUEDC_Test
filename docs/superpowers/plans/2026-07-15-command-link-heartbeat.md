@@ -276,6 +276,7 @@ git commit -m "feat: monitor command link heartbeats"
 - Consumes `CommandLinkMonitor`, `CommandLinkSnapshot`, `CommandLinkHealth`, and `SerializedCommandTransport`.
 - Adds `virtual void setCommandTransport(const CommandTransport *transport) = 0;` to `CompetitionTaskAdapter`, forwarding through `HProblemTaskAdapter` to `HMissionController::setCommandTransport`.
 - Replaces `MainWindow::recordCommandLinkResult(bool)` and command-TTL state with `handleCommandLinkHealthChanged(CommandLinkSnapshot)` plus one current snapshot.
+- Changes the Adapter command-link callback from a boolean to `const CommandSendResult &`, preserving the result detail for monitor failure accounting.
 
 - [ ] **Step 1: Write failing window behavior tests.**
 
@@ -330,6 +331,8 @@ command_link_monitor_->startMonitoring();
 ```
 
 Start monitoring only when `command_sync_enabled_` is true. Update the monitor task ID from the adapter runtime callback and after task ACK processing. Every existing command result calls `command_link_monitor_->recordExternalCommandResult(result)` after normal ACK handling. Do not call `markAirborneSyncState(false, ...)` merely because one command fails.
+For adapter-originated mission-load and lifecycle visual-reset results, change the callback plumbing to carry the full `CommandSendResult`; invoke it only after existing `applyCommandAck`, reset, or local failure-state handling has completed.
+`disarmVisionTargetingForLifecycle()` must return its result without notifying the command-link callback. Each caller must notify exactly once after its complete task replacement, ACK clear, running-state, or summary transition is complete; add a task-replacement regression proving the callback cannot observe the old task's ACK state.
 
 - [ ] **Step 4: Remove TTL logic and implement the three UI states.**
 
@@ -357,6 +360,7 @@ QT_QPA_PLATFORM=offscreen ctest --test-dir build -R '^(test_main_window|test_mis
 ```
 
 Expected: `4/4` tests pass and none expects command health to expire merely because five seconds elapsed.
+The focused window tests must also execute one failed user command through `FixedCommandTransport` and assert that the emitted monitor snapshot is `Checking` with the command error detail while the Adapter's existing task-sync state is not rewritten to offline.
 
 - [ ] **Step 6: Commit Task 3.**
 
