@@ -16,7 +16,7 @@ HProblemTaskAdapter::HProblemTaskAdapter()
           [this](const QString &text) { notifyStatusTextChanged(text); },
           [this](const QString &text) { notifyPlanningButtonTextChanged(text); },
           [this]() { notifyRuntimeChanged(); },
-          [this](bool online) { notifyCommandLinkStateChanged(online); })) {}
+          [this](const CommandSendResult &result) { notifyCommandLinkStateChanged(result); })) {}
 
 QWidget *HProblemTaskAdapter::createTaskView(QWidget *parent) {
     view_.setCellClickedHandler([this](const QString &cell_code) {

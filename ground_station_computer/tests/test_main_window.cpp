@@ -84,6 +84,7 @@ private slots:
     void telemetryHealthExpiresAfterTtl();
     void telemetryCannotEnableCommandControlsWhenCommandLinkIsOffline();
     void checkingCommandHealthDisablesControlsWithoutShowingOffline();
+    void failedAdapterLifecycleCommandPreservesFailureDetailAndSyncState();
     void thirdCommandHealthFailureShowsOffline();
     void healthyHeartbeatRemainsOnlinePastLegacyFiveSecondTtl();
     void probeButtonRequestsImmediateHeartbeat();
@@ -450,6 +451,35 @@ void MainWindowTests::checkingCommandHealthDisablesControlsWithoutShowingOffline
     QVERIFY(!execute_button->isEnabled());
     QVERIFY(window.airborne_status_label_->text().contains("链路确认中（1/3）"));
     QVERIFY(!window.airborne_status_label_->text().contains("机载状态: 离线"));
+}
+
+void MainWindowTests::failedAdapterLifecycleCommandPreservesFailureDetailAndSyncState() {
+    MainWindow window(nullptr, false);
+    window.command_sync_enabled_ = true;
+    window.task_adapter_->setCommandSyncEnabled(true);
+    window.task_adapter_->applyCommandAck(CommandSendResult{
+        true,
+        "mission loaded",
+        window.task_adapter_->activeTaskId(),
+        true,
+        false,
+        104,
+        false,
+    });
+    QVERIFY(window.task_adapter_->missionSyncedToAirborne());
+
+    auto transport = std::make_shared<FixedCommandTransport>(
+        CommandSendResult{false, "visual reset rejected"});
+    window.task_adapter_->setCommandTransport(transport.get());
+    window.command_link_monitor_ = std::make_unique<CommandLinkMonitor>(transport);
+    connect(window.command_link_monitor_.get(), &CommandLinkMonitor::healthChanged,
+        &window, &MainWindow::handleCommandLinkHealthChanged);
+
+    window.task_adapter_->markControlCommandStopped();
+
+    QCOMPARE(window.command_link_snapshot_.health, CommandLinkHealth::Checking);
+    QCOMPARE(window.command_link_snapshot_.detail, QString("visual reset rejected"));
+    QVERIFY(window.task_adapter_->missionSyncedToAirborne());
 }
 
 void MainWindowTests::thirdCommandHealthFailureShowsOffline() {

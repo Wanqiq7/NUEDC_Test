@@ -20,7 +20,7 @@ class CompetitionTaskAdapter {
 public:
     using TextCallback = std::function<void(const QString &)>;
     using RuntimeCallback = std::function<void()>;
-    using CommandLinkStateCallback = std::function<void(bool)>;
+    using CommandLinkStateCallback = std::function<void(const CommandSendResult &)>;
 
     virtual ~CompetitionTaskAdapter() = default;
 
@@ -70,9 +70,9 @@ protected:
         }
     }
 
-    void notifyCommandLinkStateChanged(bool online) const {
+    void notifyCommandLinkStateChanged(const CommandSendResult &result) const {
         if (command_link_state_callback_) {
-            command_link_state_callback_(online);
+            command_link_state_callback_(result);
         }
     }
 

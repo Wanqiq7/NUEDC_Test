@@ -127,10 +127,9 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
         refreshAirborneStatusLabel();
         refreshExecutionControls();
     });
-    task_adapter_->setCommandLinkStateCallback([this](bool online) {
+    task_adapter_->setCommandLinkStateCallback([this](const CommandSendResult &result) {
         if (command_link_monitor_ != nullptr) {
-            command_link_monitor_->recordExternalCommandResult(
-                CommandSendResult{online, online ? "command acknowledged" : "command failed"});
+            command_link_monitor_->recordExternalCommandResult(result);
         }
     });
 
