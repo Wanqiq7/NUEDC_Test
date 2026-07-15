@@ -53,6 +53,10 @@ void HProblemTaskAdapter::setCommandClient(const ZmqCommandClient &client) {
     controller_->setCommandClient(client);
 }
 
+void HProblemTaskAdapter::setCommandTransport(const CommandTransport *transport) {
+    controller_->setCommandTransport(transport);
+}
+
 void HProblemTaskAdapter::loadInitialPreview() {
     controller_->loadInitialPreview();
 }

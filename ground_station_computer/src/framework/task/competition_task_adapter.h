@@ -13,6 +13,7 @@
 #include <utility>
 
 class ZmqCommandClient;
+class CommandTransport;
 class QWidget;
 
 class CompetitionTaskAdapter {
@@ -39,6 +40,7 @@ public:
 
     virtual void setCommandSyncEnabled(bool enabled) = 0;
     virtual void setCommandClient(const ZmqCommandClient &client) = 0;
+    virtual void setCommandTransport(const CommandTransport *transport) = 0;
     virtual void loadInitialPreview() = 0;
     virtual void handleTaskPlan(const competition::TaskPlan &plan) = 0;
     virtual void handleTaskEvent(const competition::TaskEvent &event, qint64 timestamp_ms) = 0;

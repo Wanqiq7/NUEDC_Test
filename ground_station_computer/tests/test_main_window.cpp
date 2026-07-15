@@ -2,6 +2,7 @@
 #include <QByteArray>
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QGraphicsView>
@@ -21,13 +22,10 @@
 #include <memory>
 
 #include "competition_core/protocol/envelope_codec.h"
+#include "framework/communication/command_link_health.h"
 #include "h_problem/rules/h_grid_mapper.h"
 #include "h_problem/ui/h_problem_page.h"
 #include "app/main_window.h"
-
-#include <thread>
-
-#include <zmq.hpp>
 
 namespace {
 constexpr int kTestRows = 7;
@@ -53,45 +51,6 @@ QPointF testCellCenter(const QString &code) {
     return QPointF((point.x() * kTestCellSize) + (kTestCellSize / 2.0),
                    (scene_y_index * kTestCellSize) + (kTestCellSize / 2.0));
 }
-
-class PingServer {
-public:
-    explicit PingServer(int reply_count = 1)
-        : socket_(context_, zmq::socket_type::rep),
-          reply_count_(reply_count) {
-        socket_.set(zmq::sockopt::linger, 0);
-        socket_.set(zmq::sockopt::rcvtimeo, 10000);
-        socket_.bind("tcp://127.0.0.1:*");
-        endpoint_ = QString::fromStdString(socket_.get(zmq::sockopt::last_endpoint));
-        worker_ = std::thread([this] {
-            for (int reply_index = 0; reply_index < reply_count_; ++reply_index) {
-                zmq::message_t request;
-                if (!socket_.recv(request, zmq::recv_flags::none)) {
-                    return;
-                }
-                const QByteArray reply = competition::buildAckBytes(true, "pong");
-                if (!socket_.send(zmq::buffer(reply.constData(), reply.size()), zmq::send_flags::none)) {
-                    return;
-                }
-            }
-        });
-    }
-
-    ~PingServer() {
-        if (worker_.joinable()) {
-            worker_.join();
-        }
-    }
-
-    QString port() const { return endpoint_.section(':', -1); }
-
-private:
-    zmq::context_t context_{1};
-    zmq::socket_t socket_;
-    QString endpoint_;
-    std::thread worker_;
-    int reply_count_ = 1;
-};
 
 class FixedCommandTransport final : public CommandTransport {
 public:
@@ -124,8 +83,10 @@ private slots:
     void unknownEventDoesNotFallThroughToTelemetry();
     void telemetryHealthExpiresAfterTtl();
     void telemetryCannotEnableCommandControlsWhenCommandLinkIsOffline();
-    void staleCommandHealthDisablesVisionControlsDespiteTelemetry();
-    void probeActionRecoversExpiredCommandHealth();
+    void checkingCommandHealthDisablesControlsWithoutShowingOffline();
+    void thirdCommandHealthFailureShowsOffline();
+    void healthyHeartbeatRemainsOnlinePastLegacyFiveSecondTtl();
+    void probeButtonRequestsImmediateHeartbeat();
 };
 
 void MainWindowTests::adapterFactoryListsDefaultProblemAdapter() {
@@ -212,7 +173,8 @@ void MainWindowTests::legacyStartAckWithoutIdentityDoesNotMarkMissionRunning() {
         87,
         false,
     });
-    window.recordCommandLinkResult(true);
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "command acknowledged"});
 
     FixedCommandTransport transport(CommandSendResult{true, "legacy start accepted"});
     window.mission_command_service_ = std::make_unique<MissionCommandService>(&transport);
@@ -475,61 +437,36 @@ void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffli
     qunsetenv("NUEDC_COMMAND_PORT");
 }
 
-void MainWindowTests::staleCommandHealthDisablesVisionControlsDespiteTelemetry() {
-    PingServer server;
-    qputenv("NUEDC_AIRBORNE_HOST", "127.0.0.1");
-    qputenv("NUEDC_COMMAND_PORT", server.port().toUtf8());
+void MainWindowTests::checkingCommandHealthDisablesControlsWithoutShowingOffline() {
+    MainWindow window(nullptr, false);
+    window.command_sync_enabled_ = true;
+    window.task_adapter_->setCommandSyncEnabled(true);
+    auto *execute_button = window.findChild<QPushButton *>("ExecuteMissionButton");
+    QVERIFY(execute_button != nullptr);
 
-    MainWindow window(nullptr, true);
-    window.show();
-    QTest::qWait(50);
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Checking, 1, "command ack timed out"});
 
-    auto *arm_vision_button = window.findChild<QPushButton *>("ArmVisionButton");
-    QVERIFY(arm_vision_button != nullptr);
-
-    window.task_adapter_->applyCommandAck(CommandSendResult{
-        true,
-        "mission loaded",
-        window.task_adapter_->activeTaskId(),
-        true,
-        false,
-        102,
-        false,
-    });
-    QVERIFY(arm_vision_button->isEnabled());
-
-    window.last_successful_command_reply_ms_ = QDateTime::currentMSecsSinceEpoch() - 6000;
-    window.refreshExecutionControls();
-    window.handleTaskEvent(
-        competition::TaskEvent{
-            window.task_adapter_->activeTaskId(),
-            "telemetry",
-            2,
-            "A1B1",
-            R"({\"current_cell\":\"A1B1\",\"visited_cells\":2})"},
-        2000);
-
-    QVERIFY(!arm_vision_button->isEnabled());
-
-    qunsetenv("NUEDC_AIRBORNE_HOST");
-    qunsetenv("NUEDC_COMMAND_PORT");
+    QVERIFY(!execute_button->isEnabled());
+    QVERIFY(window.airborne_status_label_->text().contains("链路确认中（1/3）"));
+    QVERIFY(!window.airborne_status_label_->text().contains("机载状态: 离线"));
 }
 
-void MainWindowTests::probeActionRecoversExpiredCommandHealth() {
-    PingServer server(2);
-    qputenv("NUEDC_AIRBORNE_HOST", "127.0.0.1");
-    qputenv("NUEDC_COMMAND_PORT", server.port().toUtf8());
+void MainWindowTests::thirdCommandHealthFailureShowsOffline() {
+    MainWindow window(nullptr, false);
+    window.command_sync_enabled_ = true;
+    window.task_adapter_->setCommandSyncEnabled(true);
 
-    MainWindow window(nullptr, true);
-    window.show();
-    QTest::qWait(50);
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Offline, 3, "command ack timed out"});
 
-    auto *arm_vision_button = window.findChild<QPushButton *>("ArmVisionButton");
-    auto *probe_button = window.findChild<QPushButton *>("ProbeAirborneLinkButton");
-    QVERIFY(arm_vision_button != nullptr);
-    QVERIFY(probe_button != nullptr);
-    QVERIFY(probe_button->isEnabled());
+    QVERIFY(window.airborne_status_label_->text().startsWith("机载状态: 离线"));
+}
 
+void MainWindowTests::healthyHeartbeatRemainsOnlinePastLegacyFiveSecondTtl() {
+    MainWindow window(nullptr, false);
+    window.command_sync_enabled_ = true;
+    window.task_adapter_->setCommandSyncEnabled(true);
     window.task_adapter_->applyCommandAck(CommandSendResult{
         true,
         "mission loaded",
@@ -539,15 +476,34 @@ void MainWindowTests::probeActionRecoversExpiredCommandHealth() {
         103,
         false,
     });
-    QVERIFY(arm_vision_button->isEnabled());
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "pong"});
 
     QTest::qWait(5500);
-    QVERIFY(!arm_vision_button->isEnabled());
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "later pong"});
 
+    QVERIFY(window.commandLinkHealthy());
+    QVERIFY(window.airborne_status_label_->text().startsWith("机载状态: 在线"));
+}
+
+void MainWindowTests::probeButtonRequestsImmediateHeartbeat() {
+    qputenv("NUEDC_AIRBORNE_HOST", "127.0.0.1");
+    qputenv("NUEDC_COMMAND_PORT", "1");
+
+    MainWindow window(nullptr, true);
+    auto *probe_button = window.findChild<QPushButton *>("ProbeAirborneLinkButton");
+    QVERIFY(probe_button != nullptr);
+    QVERIFY(probe_button->isEnabled());
+    QVERIFY(window.command_link_monitor_ != nullptr);
+    window.handleCommandLinkHealthChanged(
+        CommandLinkSnapshot{CommandLinkHealth::Online, 0, "previous heartbeat"});
+
+    QElapsedTimer elapsed;
+    elapsed.start();
     probe_button->click();
-    QCoreApplication::processEvents();
-
-    QVERIFY(arm_vision_button->isEnabled());
+    QVERIFY(elapsed.elapsed() < 100);
+    QTRY_VERIFY(!window.commandLinkHealthy());
 
     qunsetenv("NUEDC_AIRBORNE_HOST");
     qunsetenv("NUEDC_COMMAND_PORT");
