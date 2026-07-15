@@ -525,3 +525,90 @@ git commit -m "fix: ignore stale heartbeat results"
 ## Amendment Execution Handoff
 
 Execute Task 5 using the same subagent-driven implementation and independent review gates as Tasks 1-4. Run live dual-machine acceptance only after Task 5 is reviewed clean.
+
+### Task 6: Reject stale queued heartbeat snapshots in the window
+
+**Files:**
+- Modify: `ground_station_computer/src/framework/communication/command_link_health.h`
+- Modify: `ground_station_computer/src/framework/communication/command_link_monitor.h`
+- Modify: `ground_station_computer/src/framework/communication/command_link_monitor.cpp`
+- Modify: `ground_station_computer/src/app/main_window.h`
+- Modify: `ground_station_computer/src/app/main_window.cpp`
+- Modify: `ground_station_computer/tests/test_command_link_monitor.cpp`
+- Modify: `ground_station_computer/tests/test_main_window.cpp`
+
+**Interfaces:**
+- Adds `quint64 generation = 0` to `CommandLinkSnapshot`.
+- Makes `CommandLinkMonitor` assign a strictly increasing nonzero generation to every accepted heartbeat or external command snapshot.
+- Makes `MainWindow` persist `last_applied_health_generation_` and ignore a nonzero snapshot whose generation is not greater than the stored value.
+
+- [ ] **Step 1: Write deterministic RED tests for queued delivery reordering.**
+
+Extend the monitor test with a helper that causes a heartbeat failure snapshot to be emitted from the worker thread but not yet handled by `MainWindow`. Before draining the UI event queue, deliver a newer external success snapshot. Then drain queued events and assert the final UI snapshot remains `Online` with the external command detail.
+
+The direct window assertion must cover:
+
+```cpp
+window.handleCommandLinkHealthChanged(
+    CommandLinkSnapshot{CommandLinkHealth::Online, 0, "mission started", 8});
+window.handleCommandLinkHealthChanged(
+    CommandLinkSnapshot{CommandLinkHealth::Checking, 1, "timeout", 7});
+QCOMPARE(window.command_link_snapshot_.health, CommandLinkHealth::Online);
+QCOMPARE(window.command_link_snapshot_.detail, QString("mission started"));
+```
+
+- [ ] **Step 2: Verify RED.**
+
+```bash
+cmake --build build --target test_command_link_monitor test_main_window
+QT_QPA_PLATFORM=offscreen ctest --test-dir build -R '^(test_command_link_monitor|test_main_window)$' --output-on-failure
+```
+
+Expected: the stale generation test fails because `MainWindow` currently accepts the later-delivered lower-generation snapshot.
+
+- [ ] **Step 3: Add monotonic snapshot generation and UI filtering.**
+
+```cpp
+struct CommandLinkSnapshot {
+    CommandLinkHealth health = CommandLinkHealth::Checking;
+    int consecutive_failures = 0;
+    QString detail;
+    quint64 generation = 0;
+};
+
+// CommandLinkMonitor, under its existing mutex after accepting an update.
+snapshot.generation = ++health_generation_;
+
+// MainWindow.
+if (snapshot.generation != 0 && snapshot.generation <= last_applied_health_generation_) {
+    return;
+}
+if (snapshot.generation != 0) {
+    last_applied_health_generation_ = snapshot.generation;
+}
+command_link_snapshot_ = std::move(snapshot);
+```
+
+Keep the Task 5 probe-start generation check. An accepted heartbeat increments the same monotonic generation only after confirming its probe-start generation is still current. Test-only snapshots may retain generation `0` so existing direct state tests remain explicit and deterministic.
+
+- [ ] **Step 4: Verify GREEN.**
+
+```bash
+cmake --build build --target test_command_link_health test_command_link_monitor test_main_window
+QT_QPA_PLATFORM=offscreen ctest --test-dir build -R '^(test_command_link_health|test_command_link_monitor|test_main_window)$' --output-on-failure
+```
+
+Expected: all three tests pass; queued or direct older nonzero snapshots cannot replace a newer applied ACK snapshot.
+
+- [ ] **Step 5: Commit Task 6.**
+
+```bash
+git add ground_station_computer/src/framework/communication/command_link_health.h ground_station_computer/src/framework/communication/command_link_monitor.h ground_station_computer/src/framework/communication/command_link_monitor.cpp ground_station_computer/src/app/main_window.h ground_station_computer/src/app/main_window.cpp ground_station_computer/tests/test_command_link_monitor.cpp ground_station_computer/tests/test_main_window.cpp
+git commit -m "fix: ignore stale queued link health"
+```
+
+## Final Amendment Review
+
+- Task 6 closes both stale-result paths: a heartbeat finishing after a newer command ACK and a heartbeat signal queued before that ACK but delivered afterward.
+- The generation is internal command-health metadata; it changes no protobuf payload, port, airborne node, or command sequence.
+- Live dual-machine acceptance resumes only after Task 6 has TDD evidence and an independent review.
