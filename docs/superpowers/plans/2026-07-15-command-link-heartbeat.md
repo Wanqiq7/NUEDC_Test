@@ -164,9 +164,11 @@ void CommandLinkMonitorTests::reportsOfflineAfterThirdHeartbeatFailure();
 void CommandLinkMonitorTests::successfulHeartbeatRecoversFromOffline();
 void CommandLinkMonitorTests::externalSuccessfulCommandResetsFailureCount();
 void CommandLinkMonitorTests::neverOverlapsHeartbeatAndExternalTransportSend();
+void CommandLinkMonitorTests::stopWaitsForInFlightProbeBeforeDestroyingThread();
 ```
 
 For three failed heartbeats, assert the first two emitted snapshots are `Checking` and the third is `Offline`. For recovery, enqueue `CommandSendResult{true, "pong"}` after the three failures and assert `Online` with zero failures. The overlap test must assert maximum physical sends equals `1`.
+The stop test uses a `BlockingTransport` that signals when `sendEnvelope` has begun and waits on a test-controlled release. Request monitor shutdown while it is blocked, release the transport, and assert `stopMonitoring()` returns only after `isRunning()` is false. It must exercise the grace-timeout fallback without destroying a running thread.
 
 - [ ] **Step 2: Add the test target and verify RED.**
 
@@ -227,7 +229,7 @@ protected:
 };
 ```
 
-Use `QMutex` plus `QWaitCondition` to guard task ID, immediate-probe flag, and tracker. Each loop runs one `reliable_client.ping(task_id)` after a two-second wait or immediate request; success records success, failure records failure, then emits the snapshot. Do not begin another heartbeat while one is running. `stopMonitoring()` must request interruption, wake the wait condition, and call bounded `wait()`.
+Use `QMutex` plus `QWaitCondition` to guard task ID, immediate-probe flag, and tracker. Each loop runs one `reliable_client.ping(task_id)` after a two-second wait or immediate request; success records success, failure records failure, then emits the snapshot. Do not begin another heartbeat while one is running. `stopMonitoring()` must request interruption and wake the wait condition. It may make one bounded grace `wait()` for diagnostics, but when that wait expires it must log the condition and then call unconditional `wait()` before any destructor can release the thread object; a live `QThread` must never be destroyed.
 Call `qRegisterMetaType<CommandLinkSnapshot>("CommandLinkSnapshot")` before the monitor starts so the signal is valid for queued delivery to `MainWindow`.
 
 - [ ] **Step 5: Add production sources and verify GREEN.**
