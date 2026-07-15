@@ -29,7 +29,8 @@ REQ/REP 心跳判定。地面站应在机载端稳定运行时持续显示在线
 ### 方案 B：专用后台心跳监视器（采用）
 
 新增 `CommandLinkMonitor`，由专用 `QThread` 在后台执行 PING。它每 2 秒开始一次检查，使用
-现有 `ReliableCommandClient` 的幂等重试策略，并通过 Qt signal 将结果回传 UI 线程。
+现有 `ReliableCommandClient` 的幂等重试策略，并通过 Qt signal 将结果回传 UI 线程。所有实际
+ZeroMQ 发送经由共享的串行传输层，因而后台 PING 不会与现有 UI 命令并发占用机载 REP。
 
 一次失败只表示本轮未确认，不立即判为离线；连续 3 次失败才进入离线。任一次有效 ACK 立即
 清零失败计数并恢复在线。这样既防止静置误报，又不把遥测 PUB 当作命令 REQ/REP 的健康证明。
@@ -64,22 +65,24 @@ REQ/REP 心跳判定。地面站应在机载端稳定运行时持续显示在线
 
 `CommandLinkMonitor` 负责且仅负责命令链路健康检查：
 
-- 在所属工作线程内持有 `ZmqCommandTransport` 和 `ReliableCommandClient`，避免跨线程使用同一
-  客户端实例。
+- 在所属工作线程内持有自己的 `ReliableCommandClient`；该客户端使用共享的
+  `SerializedCommandTransport`，避免跨线程使用同一 `ReliableCommandClient` 实例。
 - 接收 `start(task_id)`、`stop()` 和 `probeNow(task_id)` 请求。
-- 用 `QTimer` 以 2000 ms 触发 PING；如果已有请求在飞行中则跳过本轮，避免 REP 队列与 sequence
-  交错。
+- 用 `QWaitCondition` 在专用线程中以 2000 ms 等待后触发 PING；立即刷新请求唤醒该等待。每轮
+  PING 完成后才开始下一轮，避免 REP 队列与 sequence 交错。
 - 发布 `healthChanged(CommandLinkHealth health, int consecutive_failures, QString detail)` 信号。
 - 接收 UI 发出的 `recordCommandResult(bool success, QString detail)`，使用户命令成功可立即复位失败
   计数，失败只计为一个样本。
 
 `MainWindow` 仍是所有 UI、任务同步和控制可用性的唯一所有者。它不再拥有命令健康倒计时，也不在
-  UI 线程执行自动 PING。窗口析构时先停止监视器线程，再销毁命令传输对象，防止关闭时访问已释放
-  的 Qt 对象。
+UI 线程执行自动 PING。窗口析构时先停止监视器线程，再销毁命令传输对象，防止关闭时访问已释放
+的 Qt 对象。
 
-为避免后台心跳和用户命令同时占用机载 REP，`CommandLinkMonitor` 与用户命令使用同一个进程内
-串行命令调度入口。任务命令优先；心跳只在没有正在发送的用户命令时执行。该调度入口为单线程
-worker，UI 通过 queued signal 请求发送，worker 通过结果 signal 返回。
+为避免后台心跳和用户命令同时占用机载 REP，`SerializedCommandTransport` 以互斥锁包裹每次
+底层 `sendEnvelope`。`CommandLinkMonitor` 和既有 `MissionCommandService` 分别拥有自己的
+`ReliableCommandClient`，但共享该传输层；因此重试语义保持不变，物理 ZMQ 请求不会并发。
+心跳只在上一轮完成后开始；用户命令若等待中的心跳，最多等待当前一次既有 1.5 秒收发超时，不改变
+用户命令的 ACK、幂等或任务状态处理方式。
 
 ## UI 文案与恢复
 
