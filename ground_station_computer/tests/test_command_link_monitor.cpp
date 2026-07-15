@@ -60,6 +60,8 @@ struct BlockingTransportState {
     std::condition_variable condition;
     bool send_started = false;
     bool release_send = false;
+    int completed_sends = 0;
+    CommandSendResult result{true, "pong"};
 };
 
 class BlockingTransport final : public CommandTransport {
@@ -72,7 +74,9 @@ public:
         state_->send_started = true;
         state_->condition.notify_all();
         state_->condition.wait(lock, [this] { return state_->release_send; });
-        return CommandSendResult{true, "pong"};
+        ++state_->completed_sends;
+        state_->condition.notify_all();
+        return state_->result;
     }
 
 private:
@@ -109,6 +113,14 @@ void releaseBlockedSend(const std::shared_ptr<BlockingTransportState> &state) {
     state->condition.notify_all();
 }
 
+void waitForCompletedSends(const std::shared_ptr<BlockingTransportState> &state, int expected_sends) {
+    std::unique_lock<std::mutex> lock(state->mutex);
+    const bool completed = state->condition.wait_for(lock, std::chrono::seconds(1), [state, expected_sends] {
+        return state->completed_sends >= expected_sends;
+    });
+    QVERIFY(completed);
+}
+
 } // namespace
 
 class CommandLinkMonitorTests : public QObject {
@@ -119,6 +131,7 @@ private slots:
     void reportsOfflineAfterThirdHeartbeatFailure();
     void successfulHeartbeatRecoversFromOffline();
     void externalSuccessfulCommandResetsFailureCount();
+    void staleHeartbeatFailureCannotOverwriteNewerExternalSuccess();
     void neverOverlapsHeartbeatAndExternalTransportSend();
     void stopMonitoringJoinsAfterBlockedTransportSend();
 };
@@ -206,6 +219,30 @@ void CommandLinkMonitorTests::externalSuccessfulCommandResetsFailureCount() {
     QCOMPARE(snapshot.health, CommandLinkHealth::Online);
     QCOMPARE(snapshot.consecutive_failures, 0);
     QCOMPARE(snapshot.detail, QString("mission started"));
+    monitor.stopMonitoring();
+}
+
+void CommandLinkMonitorTests::staleHeartbeatFailureCannotOverwriteNewerExternalSuccess() {
+    const auto state = std::make_shared<BlockingTransportState>();
+    state->result = CommandSendResult{false, "heartbeat timed out"};
+    const auto transport = std::make_shared<SerializedCommandTransport>(std::make_unique<BlockingTransport>(state));
+    CommandLinkMonitor monitor(transport, 60000);
+    QSignalSpy spy(&monitor, &CommandLinkMonitor::healthChanged);
+
+    monitor.startMonitoring();
+    monitor.requestImmediateProbe();
+    waitForBlockedSend(state);
+
+    monitor.recordExternalCommandResult(CommandSendResult{true, "mission started"});
+    QTRY_COMPARE(spy.size(), 1);
+    QCOMPARE(spy.at(0).at(0).value<CommandLinkSnapshot>().health, CommandLinkHealth::Online);
+
+    releaseBlockedSend(state);
+    waitForCompletedSends(state, 3);
+    QTest::qWait(50);
+
+    QCOMPARE(spy.size(), 1);
+    QCOMPARE(spy.at(0).at(0).value<CommandLinkSnapshot>().health, CommandLinkHealth::Online);
     monitor.stopMonitoring();
 }
 

@@ -33,6 +33,7 @@ void CommandLinkMonitor::recordExternalCommandResult(const CommandSendResult &re
     CommandLinkSnapshot snapshot;
     {
         QMutexLocker lock(&mutex_);
+        ++health_generation_;
         snapshot = result.ok ? tracker_.recordSuccess(result.message) : tracker_.recordFailure(result.message);
     }
     emit healthChanged(snapshot);
@@ -62,6 +63,7 @@ void CommandLinkMonitor::run() {
 
     while (!isInterruptionRequested()) {
         QString task_id;
+        quint64 probe_generation = 0;
         {
             QMutexLocker lock(&mutex_);
             if (!immediate_probe_requested_ && !isInterruptionRequested()) {
@@ -72,12 +74,16 @@ void CommandLinkMonitor::run() {
             }
             immediate_probe_requested_ = false;
             task_id = active_task_id_;
+            probe_generation = health_generation_;
         }
 
         const CommandSendResult result = reliable_client.ping(task_id);
         CommandLinkSnapshot snapshot;
         {
             QMutexLocker lock(&mutex_);
+            if (probe_generation != health_generation_) {
+                continue;
+            }
             snapshot = result.ok ? tracker_.recordSuccess(result.message) : tracker_.recordFailure(result.message);
         }
         emit healthChanged(snapshot);

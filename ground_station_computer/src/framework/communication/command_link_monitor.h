@@ -38,5 +38,6 @@ private:
     QWaitCondition wake_condition_;
     QString active_task_id_;
     bool immediate_probe_requested_ = false;
+    quint64 health_generation_ = 0;
     CommandLinkHealthTracker tracker_;
 };
