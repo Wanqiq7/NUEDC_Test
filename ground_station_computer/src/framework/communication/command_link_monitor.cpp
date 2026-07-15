@@ -1,5 +1,6 @@
 #include "framework/communication/command_link_monitor.h"
 
+#include <QDebug>
 #include <QMetaType>
 #include <QMutexLocker>
 
@@ -50,8 +51,9 @@ void CommandLinkMonitor::stopMonitoring() {
         QMutexLocker lock(&mutex_);
         wake_condition_.wakeAll();
     }
-    if (isRunning() && QThread::currentThread() != this) {
-        wait(3000);
+    if (QThread::currentThread() != this && !wait(3000)) {
+        qWarning() << "CommandLinkMonitor shutdown grace period expired; waiting for monitor thread";
+        wait();
     }
 }
 

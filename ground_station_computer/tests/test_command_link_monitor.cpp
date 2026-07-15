@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -53,6 +55,30 @@ private:
     std::shared_ptr<QueueTransportState> state_;
 };
 
+struct BlockingTransportState {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool send_started = false;
+    bool release_send = false;
+};
+
+class BlockingTransport final : public CommandTransport {
+public:
+    explicit BlockingTransport(std::shared_ptr<BlockingTransportState> state)
+        : state_(std::move(state)) {}
+
+    CommandSendResult sendEnvelope(const Envelope &) const override {
+        std::unique_lock<std::mutex> lock(state_->mutex);
+        state_->send_started = true;
+        state_->condition.notify_all();
+        state_->condition.wait(lock, [this] { return state_->release_send; });
+        return CommandSendResult{true, "pong"};
+    }
+
+private:
+    std::shared_ptr<BlockingTransportState> state_;
+};
+
 std::shared_ptr<CommandTransport> makeTransport(const std::shared_ptr<QueueTransportState> &state) {
     return std::make_shared<SerializedCommandTransport>(std::make_unique<QueueTransport>(state));
 }
@@ -69,6 +95,20 @@ void enqueueResult(const std::shared_ptr<QueueTransportState> &state, CommandSen
     state->results.push_back(std::move(result));
 }
 
+void waitForBlockedSend(const std::shared_ptr<BlockingTransportState> &state) {
+    std::unique_lock<std::mutex> lock(state->mutex);
+    const bool send_started = state->condition.wait_for(lock, std::chrono::seconds(1), [state] {
+        return state->send_started;
+    });
+    QVERIFY(send_started);
+}
+
+void releaseBlockedSend(const std::shared_ptr<BlockingTransportState> &state) {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    state->release_send = true;
+    state->condition.notify_all();
+}
+
 } // namespace
 
 class CommandLinkMonitorTests : public QObject {
@@ -80,6 +120,7 @@ private slots:
     void successfulHeartbeatRecoversFromOffline();
     void externalSuccessfulCommandResetsFailureCount();
     void neverOverlapsHeartbeatAndExternalTransportSend();
+    void stopMonitoringJoinsAfterBlockedTransportSend();
 };
 
 void CommandLinkMonitorTests::doesNotReportOfflineForFirstTwoHeartbeatFailures() {
@@ -189,6 +230,31 @@ void CommandLinkMonitorTests::neverOverlapsHeartbeatAndExternalTransportSend() {
 
     QCOMPARE(state->maximum_sends.load(), 1);
     monitor.stopMonitoring();
+}
+
+void CommandLinkMonitorTests::stopMonitoringJoinsAfterBlockedTransportSend() {
+    const auto state = std::make_shared<BlockingTransportState>();
+    const auto transport = std::make_shared<SerializedCommandTransport>(std::make_unique<BlockingTransport>(state));
+    CommandLinkMonitor monitor(transport, 60000);
+
+    monitor.startMonitoring();
+    monitor.requestImmediateProbe();
+    waitForBlockedSend(state);
+
+    std::atomic<bool> stop_returned{false};
+    std::thread stopper([&monitor, &stop_returned] {
+        monitor.stopMonitoring();
+        stop_returned.store(true);
+    });
+
+    QTest::qWait(3200);
+    const bool returned_before_release = stop_returned.load();
+    releaseBlockedSend(state);
+    stopper.join();
+
+    QVERIFY(!returned_before_release);
+    QVERIFY(stop_returned.load());
+    QVERIFY(!monitor.isRunning());
 }
 
 QTEST_MAIN(CommandLinkMonitorTests)
