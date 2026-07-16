@@ -3,10 +3,11 @@ set -euo pipefail
 
 # 该脚本用于在地面站 NUC 上快速检查热点连接、目标主机连通性和端口开放情况。
 
-AIRBORNE_HOST="${NUEDC_AIRBORNE_HOST:-10.42.0.1}"
+AIRBORNE_HOST="${NUEDC_AIRBORNE_HOST:-10.42.0.2}"
 TELEMETRY_PORT="${NUEDC_TELEMETRY_PORT:-5557}"
 COMMAND_PORT="${NUEDC_COMMAND_PORT:-5558}"
 PING_COUNT=2
+FAILED_CHECKS=0
 
 usage() {
   cat <<'EOF'
@@ -60,16 +61,25 @@ if ping -c "${PING_COUNT}" -W 1 "${AIRBORNE_HOST}" >/dev/null 2>&1; then
   echo "[OK] ping ${AIRBORNE_HOST}"
 else
   echo "[FAIL] ping ${AIRBORNE_HOST}"
+  FAILED_CHECKS=$((FAILED_CHECKS + 1))
 fi
 
 if check_tcp_port "${AIRBORNE_HOST}" "${TELEMETRY_PORT}"; then
   echo "[OK] telemetry port ${TELEMETRY_PORT}"
 else
   echo "[FAIL] telemetry port ${TELEMETRY_PORT}"
+  FAILED_CHECKS=$((FAILED_CHECKS + 1))
 fi
 
 if check_tcp_port "${AIRBORNE_HOST}" "${COMMAND_PORT}"; then
   echo "[OK] command port ${COMMAND_PORT}"
 else
   echo "[FAIL] command port ${COMMAND_PORT}"
+  FAILED_CHECKS=$((FAILED_CHECKS + 1))
+fi
+
+if [[ ${FAILED_CHECKS} -ne 0 ]]; then
+  echo
+  echo "网络检查失败: ${FAILED_CHECKS} 项" >&2
+  exit 1
 fi

@@ -55,6 +55,13 @@ std::optional<PointCm> cellCodeCenterCm(const QString &cell_code, int height, QS
     return cellCenterCm(decoded->x(), decoded->y(), height);
 }
 
+MissionPointM fieldPointToMissionMeters(const PointCm &point_cm) {
+    return {
+        (350.0 - point_cm.y_cm) / 100.0,
+        (450.0 - point_cm.x_cm) / 100.0,
+    };
+}
+
 double euclideanDistanceCm(const PointCm &from_point, const PointCm &to_point) {
     return std::hypot(to_point.x_cm - from_point.x_cm, to_point.y_cm - from_point.y_cm);
 }

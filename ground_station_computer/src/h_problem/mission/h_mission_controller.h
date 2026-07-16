@@ -34,7 +34,8 @@ public:
         TextCallback status_text_callback,
         TextCallback planning_button_text_callback,
         RuntimeCallback runtime_callback,
-        CommandLinkStateCallback command_link_state_callback = {});
+        CommandLinkStateCallback command_link_state_callback = {},
+        QString detection_database_path = {});
 
     // 查询。
     QString initialPlanningButtonText() const;

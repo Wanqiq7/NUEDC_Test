@@ -1,5 +1,8 @@
 #include <QtTest/QtTest>
 
+#include <QJsonDocument>
+#include <QJsonObject>
+
 #include "h_problem_core/runtime/simulator.h"
 
 namespace {
@@ -7,7 +10,7 @@ namespace {
 hcore::CaseConfig makeCase() {
     hcore::CaseConfig config;
     config.case_id = "plan-test";
-    config.start_cell = "A1B1";
+    config.start_cell = "A9B1";
     config.tick_interval_ms = 10;
     hcore::LandingProfile landing;
     landing.takeoff_anchor_cm = {450.0, 350.0};
@@ -15,9 +18,33 @@ hcore::CaseConfig makeCase() {
     landing.descent_angle_deg = 45.0;
     landing.touchdown_radius_cm = 18.0;
     config.landing = landing;
-    config.animals.append({"A2B1", "elephant", 1});
-    config.animals.append({"A3B1", "monkey", 2});
+    config.animals.append({"A8B1", "elephant", 1});
+    config.animals.append({"A7B1", "monkey", 2});
     return config;
+}
+
+QJsonObject telemetryPayload(const competition::TaskEvent &event) {
+    return QJsonDocument::fromJson(event.payload_json.toUtf8()).object();
+}
+
+QVector<competition::TaskEvent> telemetryEvents(const QVector<competition::TaskEvent> &events) {
+    QVector<competition::TaskEvent> result;
+    for (const competition::TaskEvent &event : events) {
+        if (event.event_type == "telemetry") {
+            result.append(event);
+        }
+    }
+    return result;
+}
+
+QStringList detectionCells(const QVector<competition::TaskEvent> &events) {
+    QStringList result;
+    for (const competition::TaskEvent &event : events) {
+        if (event.event_type == "detection") {
+            result.append(event.waypoint_id);
+        }
+    }
+    return result;
 }
 
 }
@@ -58,23 +85,31 @@ void HSimulatorTests::prefersProvidedTaskPlan() {
     competition::TaskPlan plan;
     plan.task_id = "plan-test";
     plan.task_type = "h_problem";
-    plan.start_waypoint_id = "A1B1";
-    plan.terminal_waypoint_id = "A3B1";
-    plan.waypoints = {{"A1B1", 0}, {"A2B1", 1}, {"A3B1", 2}};
+    plan.start_waypoint_id = "A9B1";
+    plan.terminal_waypoint_id = "touchdown";
+    plan.waypoints = {
+        {"A9B1", 0, 0.0, 0.0, 1.2, "takeoff", R"({"cell":"A9B1"})"},
+        {"A8B1", 1, 0.0, 0.5, 1.2, "navigate", R"({"cell":"A8B1"})"},
+        {"A9B1", 2, 0.0, 0.0, 1.2, "navigate", R"({"cell":"A9B1"})"},
+        {"touchdown", 3, 0.2, 0.2, 0.0, "land", R"({"touchdown":true})"},
+    };
+
+    hcore::CaseConfig config = makeCase();
+    config.animals.append({"touchdown", "invalid-terminal-animal", 1});
 
     QString error;
-    const auto stream = hcore::simulateTaskStream(makeCase(), plan, &error);
+    const auto stream = hcore::simulateTaskStream(config, plan, &error);
     QVERIFY2(stream.has_value(), qPrintable(error));
     QCOMPARE(stream->plan.task_id, QString("plan-test"));
     QCOMPARE(stream->plan.waypoints.size(), plan.waypoints.size());
 
-    QStringList telemetry_cells;
-    for (const competition::TaskEvent &event : stream->events) {
-        if (event.event_type == "telemetry") {
-            telemetry_cells.append(event.waypoint_id);
-        }
-    }
-    QCOMPARE(telemetry_cells, QStringList({"A1B1", "A2B1", "A3B1"}));
+    const QVector<competition::TaskEvent> telemetry_events = telemetryEvents(stream->events);
+    QCOMPARE(telemetry_events.size(), 4);
+    QCOMPARE(stream->summary.visited_waypoints, 4U);
+    QCOMPARE(telemetry_events.last().waypoint_id, QString("touchdown"));
+    QCOMPARE(telemetryPayload(telemetry_events.last()).value("current_cell").toString(),
+             QString("A9B1"));
+    QVERIFY(detectionCells(stream->events).contains("touchdown") == false);
 }
 
 QTEST_MAIN(HSimulatorTests)

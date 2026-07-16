@@ -47,6 +47,7 @@ private slots:
     void competitionTaskAdapterExposesGenericProtocolHandlers();
     void mainWindowDoesNotOwnProblemSpecificBusinessPanels();
     void documentsCanonicalTaskPlanStorage();
+    void documentsHVelocityExecutionContract();
 };
 
 void ArchitectureBoundaryTests::mainWindowDoesNotIncludeProblemSpecificHeaders() {
@@ -181,6 +182,33 @@ void ArchitectureBoundaryTests::mainWindowDoesNotOwnProblemSpecificBusinessPanel
 void ArchitectureBoundaryTests::documentsCanonicalTaskPlanStorage() {
     const QString contents = readSourceOrFail("docs/framework_architecture.md");
     QVERIFY(contents.contains("运行时任务计划持久化统一使用 `competition::TaskPlan`"));
+}
+
+void ArchitectureBoundaryTests::documentsHVelocityExecutionContract() {
+    const QStringList required_contract_terms{
+        "h_field_m_v1",
+        "A9B1",
+        "+X: B1 -> B7",
+        "+Y: A9 -> A1",
+        "takeoff -> navigate -> land",
+        "terminal_waypoint_id=touchdown",
+        "metadata_json.terminal_cell",
+    };
+    for (const QString &relative_path : {
+             QStringLiteral("README.md"),
+             QStringLiteral("shared/cpp/README.md"),
+             QStringLiteral("docs/dual_nuc_setup_guide.md"),
+             QStringLiteral("docs/ground_station_architecture_spec.md")}) {
+        const QString contents = readSourceOrFail(relative_path);
+        for (const QString &term : required_contract_terms) {
+            QVERIFY2(
+                contents.contains(term),
+                qPrintable(QString("%1 missing %2").arg(relative_path, term)));
+        }
+        QVERIFY2(
+            !contents.contains("START 仅在飞控 Action 接受后成功"),
+            qPrintable(relative_path));
+    }
 }
 
 QTEST_MAIN(ArchitectureBoundaryTests)

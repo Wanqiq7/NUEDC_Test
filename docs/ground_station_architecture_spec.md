@@ -130,6 +130,15 @@ flowchart LR
 
 ## 4. 接口与状态契约 (Interfaces & State Contracts)
 
+H 题执行契约为 h_field_m_v1。TaskWaypoint 使用米，A9B1 格心为原点，
++X: B1 -> B7，+Y: A9 -> A1。执行序列为 takeoff -> navigate -> land；
+terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
+表示最后巡查格。START 由机载 mission_coordinator 直接接受并运行速度闭环，
+不再调用 /nuedc/execute_mission Action。
+
+该契约必须原子部署：机载端最终系统测试通过前，不得单独部署这版地面站契约；
+地面站与机载端的 LOAD 契约门禁和速度控制器必须在同一部署窗口上线。
+
 ### 4.1 `CompetitionTaskAdapter`（纯虚，题目必须实现）
 ```cpp
 // 回调注入（基类提供）
@@ -173,13 +182,18 @@ std::unique_ptr<CompetitionTaskAdapter> createConfiguredCompetitionTaskAdapter(Q
 std::unique_ptr<CompetitionTaskAdapter> createDefaultCompetitionTaskAdapter();
 ```
 
-### 4.3 `HMissionViewSink`（控制器→视图窄接口，8 个语义方法）
+### 4.3 `HMissionViewSink`（控制器→视图窄接口，9 个语义方法）
 ```cpp
-setCaseLabel(QString) / setMissionLabel(QString)
-showRoute(no_fly, route, start, terminal, anchor_x_cm, anchor_y_cm, landing_enabled)
+setCaseLabel(QString) / setMissionLabel(QString) / setTargetStatus(QString)
+showRoute(no_fly, route, start, descent_start_cell,
+          touchdown_x_cm, touchdown_y_cm, landing_enabled)
 enterNoFlyEditMode() / setCandidateCells(QStringList) / setCurrentCell(QString)
 appendDetection(QString) / setSummaryTotals(QMap<QString,int>)
 ```
+
+`descent_start_cell` 是最后巡查格，也是下降起点；`touchdown_x_cm/touchdown_y_cm`
+是独立的真实降落终点。视图分别绘制“下降起点”和“降落终点”及二者之间的下降连线，
+不得用坐标是否为零推断降落终点是否存在。
 
 ### 4.4 命令/状态值类型
 ```cpp

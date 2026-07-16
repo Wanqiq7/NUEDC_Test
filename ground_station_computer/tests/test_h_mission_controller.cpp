@@ -7,13 +7,21 @@
 
 #include "competition_core/task/models.h"
 #include "competition_core/mission/task_plan_store.h"
+#include "h_problem_core/mission/mission_planning.h"
+#include "h_problem_core/planning/mission_geometry.h"
 #include "framework/config/repository_paths.h"
 #include "framework/communication/reliable_command_client.h"
 #include "messages.pb.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTemporaryDir>
+#include <QtMath>
 #include <QUuid>
+
+#include <cmath>
+
+#include "h_problem/storage/h_detection_repository.h"
 
 namespace {
 
@@ -27,17 +35,17 @@ public:
         const QStringList &no_fly_cells,
         const QStringList &route,
         const QString &start_cell,
-        const QString &terminal_cell,
-        double takeoff_anchor_x_cm,
-        double takeoff_anchor_y_cm,
+        const QString &descent_start_cell,
+        double touchdown_x_cm,
+        double touchdown_y_cm,
         bool landing_enabled) override {
         ++show_route_calls;
         last_no_fly = no_fly_cells;
         last_route = route;
         last_start = start_cell;
-        last_terminal = terminal_cell;
-        last_anchor_x = takeoff_anchor_x_cm;
-        last_anchor_y = takeoff_anchor_y_cm;
+        last_terminal = descent_start_cell;
+        last_touchdown_x = touchdown_x_cm;
+        last_touchdown_y = touchdown_y_cm;
         last_landing = landing_enabled;
     }
     void enterNoFlyEditMode() override { ++enter_edit_calls; }
@@ -55,8 +63,8 @@ public:
     QStringList last_route;
     QString last_start;
     QString last_terminal;
-    double last_anchor_x = 0.0;
-    double last_anchor_y = 0.0;
+    double last_touchdown_x = 0.0;
+    double last_touchdown_y = 0.0;
     bool last_landing = false;
     QStringList last_candidates;
     QString last_current_cell;
@@ -171,6 +179,34 @@ competition::TaskPlan makeCanonicalTaskPlan() {
     return result.plan;
 }
 
+competition::TaskPlan withTouchdown(
+    competition::TaskPlan plan, double touchdown_x_cm, double touchdown_y_cm) {
+    QJsonObject metadata = QJsonDocument::fromJson(plan.metadata_json.toUtf8()).object();
+    const auto terminal_center = hcore::cellCodeCenterCm(
+        metadata.value("terminal_cell").toString(), hcore::MapHeight);
+    Q_ASSERT(terminal_center.has_value());
+
+    const hcore::PointCm touchdown{touchdown_x_cm, touchdown_y_cm};
+    const double descent_run_cm = hcore::euclideanDistanceCm(terminal_center.value(), touchdown);
+    const double cruise_height_cm = descent_run_cm * std::tan(qDegreesToRadians(50.0));
+    metadata["touchdown_x_cm"] = touchdown_x_cm;
+    metadata["touchdown_y_cm"] = touchdown_y_cm;
+    metadata["descent_run_cm"] = descent_run_cm;
+    metadata["descent_heading_deg"] = hcore::headingDegrees(terminal_center.value(), touchdown);
+    metadata["cruise_height_cm"] = cruise_height_cm;
+    plan.metadata_json = QString::fromUtf8(QJsonDocument(metadata).toJson(QJsonDocument::Compact));
+
+    for (competition::TaskWaypoint &waypoint : plan.waypoints) {
+        if (waypoint.action != "land") {
+            waypoint.z = cruise_height_cm / 100.0;
+        }
+    }
+    const hcore::MissionPointM touchdown_m = hcore::fieldPointToMissionMeters(touchdown);
+    plan.waypoints.last().x = touchdown_m.x_m;
+    plan.waypoints.last().y = touchdown_m.y_m;
+    return plan;
+}
+
 QJsonObject metadataObject(const competition::TaskPlan &plan) {
     const QJsonDocument document = QJsonDocument::fromJson(plan.metadata_json.toUtf8());
     Q_ASSERT(document.isObject());
@@ -187,8 +223,11 @@ class HMissionControllerTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void initialPreviewDoesNotShowPersistedDetectionTotals();
     void loadInitialPreviewShowsRouteAndStatus();
     void loadInitialPreviewShowsPlanningOptimalityToOperator();
+    void passesExecutableRouteAndTouchdownCoordinates_data();
+    void passesExecutableRouteAndTouchdownCoordinates();
     void telemetryDoesNotStartMission();
     void telemetryAfterStopDoesNotRestartMission();
     void ignoresEventsFromAnotherTask();
@@ -210,6 +249,34 @@ private slots:
     void rejectsMalformedTaskPlanWithoutChangingDisplayedRoute();
     void rejectsMalformedTaskPlanStructure();
 };
+
+void HMissionControllerTests::initialPreviewDoesNotShowPersistedDetectionTotals() {
+    QTemporaryDir temporary_directory;
+    QVERIFY(temporary_directory.isValid());
+    const QString database_path = temporary_directory.filePath("detections.sqlite");
+    {
+        DetectionRepository repository(database_path);
+        QVERIFY(repository.open());
+        QCOMPARE(
+            repository.storeDetection("previous-task", "ui-dedup-track", "A2B1", "ui-dedup-falcon", 3, 1000),
+            DetectionRepository::StoreResult::Stored);
+    }
+
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {},
+        {},
+        database_path);
+
+    QVERIFY(controller.detectionTotals().isEmpty());
+    controller.loadInitialPreview();
+
+    QVERIFY(controller.detectionTotals().isEmpty());
+    QVERIFY(sink.last_totals.isEmpty());
+}
 
 void HMissionControllerTests::loadInitialPreviewShowsRouteAndStatus() {
     RecordingSink sink;
@@ -248,8 +315,41 @@ void HMissionControllerTests::loadInitialPreviewShowsPlanningOptimalityToOperato
 
     QVERIFY(sink.mission_label.contains("预计:"));
     QVERIFY(sink.mission_label.contains("规划:"));
-    QVERIFY(sink.last_anchor_x != 0.0);
-    QVERIFY(sink.last_anchor_y != 0.0);
+    QVERIFY(sink.last_touchdown_x != 0.0);
+    QVERIFY(sink.last_touchdown_y != 0.0);
+}
+
+void HMissionControllerTests::passesExecutableRouteAndTouchdownCoordinates_data() {
+    QTest::addColumn<double>("touchdown_x_cm");
+    QTest::addColumn<double>("touchdown_y_cm");
+
+    QTest::newRow("zero-x") << 0.0 << 200.0;
+    QTest::newRow("zero-y") << 400.0 << 0.0;
+}
+
+void HMissionControllerTests::passesExecutableRouteAndTouchdownCoordinates() {
+    QFETCH(double, touchdown_x_cm);
+    QFETCH(double, touchdown_y_cm);
+
+    competition::TaskPlan plan = withTouchdown(
+        makeCanonicalTaskPlan(), touchdown_x_cm, touchdown_y_cm);
+    HGridConfigData config;
+    QString error;
+    QVERIFY2(HProtocolAdapter::decodeTaskPlan(plan, &config, &error), qPrintable(error));
+
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {});
+    controller.handleTaskPlan(plan);
+
+    QVERIFY(!sink.last_route.contains(QStringLiteral("touchdown")));
+    QCOMPARE(sink.last_terminal, sink.last_route.last());
+    QCOMPARE(sink.last_terminal, config.terminal_cell);
+    QCOMPARE(sink.last_touchdown_x, touchdown_x_cm);
+    QCOMPARE(sink.last_touchdown_y, touchdown_y_cm);
 }
 
 void HMissionControllerTests::telemetryDoesNotStartMission() {

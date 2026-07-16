@@ -34,14 +34,14 @@ public:
     void setMissionLabel(const QString &text) override;
     void setTargetStatus(const QString &text) override;
 
-    // 展示已规划航线（禁飞格 / 航线 / 起点 / 终点降落走廊），并关闭禁飞编辑。
+    // 展示已规划航线（禁飞格 / 航线 / 起点 / 下降起点 / 触地点），并关闭禁飞编辑。
     void showRoute(
         const QStringList &no_fly_cells,
         const QStringList &route,
         const QString &start_cell,
-        const QString &terminal_cell,
-        double takeoff_anchor_x_cm,
-        double takeoff_anchor_y_cm,
+        const QString &descent_start_cell,
+        double touchdown_x_cm,
+        double touchdown_y_cm,
         bool landing_enabled) override;
 
     // 进入禁飞格编辑模式：清候选、清禁飞、开启编辑。

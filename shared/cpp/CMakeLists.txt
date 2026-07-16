@@ -41,6 +41,13 @@ target_link_libraries(h_problem_core PUBLIC
     proto_messages
 )
 
+add_executable(generate_h_runtime_fixture tools/generate_h_runtime_fixture.cpp)
+target_link_libraries(generate_h_runtime_fixture PRIVATE
+    Qt6::Core
+    h_problem_core
+    competition_core
+)
+
 function(add_competition_core_test target_name test_source)
 add_executable(${target_name}
     ${test_source}
@@ -78,6 +85,7 @@ add_competition_core_test(test_task_ports tests/test_task_ports.cpp)
 add_competition_core_test(test_json_codec tests/test_json_codec.cpp)
 
 add_h_problem_core_test(test_h_case_loader tests/test_h_case_loader.cpp)
+add_h_problem_core_test(test_h_mission_geometry tests/test_h_mission_geometry.cpp)
 add_h_problem_core_test(test_h_route_planner tests/test_h_route_planner.cpp)
 add_h_problem_core_test(test_h_planning_result tests/test_h_planning_result.cpp)
 add_h_problem_core_test(test_h_simulator tests/test_h_simulator.cpp)

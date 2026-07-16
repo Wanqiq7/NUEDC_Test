@@ -9,7 +9,6 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QSet>
-#include <QtMath>
 
 #include <cmath>
 #include <optional>
@@ -132,6 +131,7 @@ bool validateLandingMetadata(
     double touchdown_y_cm,
     double descent_run_cm,
     double descent_heading_deg,
+    double cruise_height_cm,
     double estimated_mission_time_s,
     QString *error_message) {
     if (descent_angle_deg <= 0.0
@@ -166,9 +166,9 @@ bool validateLandingMetadata(
 
     hcore::LandingProfile landing;
     landing.takeoff_anchor_cm = takeoff_anchor;
-    landing.cruise_height_cm = descent_run_cm * std::tan(qDegreesToRadians(descent_angle_deg));
+    landing.cruise_height_cm = cruise_height_cm;
     landing.descent_angle_deg = descent_angle_deg;
-    landing.descent_angle_tolerance_deg = 0.0;
+    landing.descent_angle_tolerance_deg = 5.0;
     landing.touchdown_radius_cm = hcore::euclideanDistanceCm(takeoff_anchor, touchdown);
     landing.preferred_heading_deg = descent_heading_deg;
     landing.heading_tolerance_deg = 0.0;
@@ -206,6 +206,10 @@ bool HProtocolAdapter::validateTaskPlan(const competition::TaskPlan &plan, QStri
         || !requiredString(metadata.value(), "terminal_cell", &terminal_cell, error_message)) {
         return false;
     }
+    const QJsonValue execution_contract = metadata->value("execution_contract");
+    if (!execution_contract.isString()) {
+        return reject(error_message, "H 题任务计划 execution_contract 必须为字符串");
+    }
     if (!metadata->value("landing_enabled").isBool() || !metadata->value("landing_enabled").toBool()) {
         return reject(error_message, "H 题任务计划 landing_enabled 必须为 true");
     }
@@ -229,6 +233,7 @@ bool HProtocolAdapter::validateTaskPlan(const competition::TaskPlan &plan, QStri
     double touchdown_y_cm = 0.0;
     double descent_run_cm = 0.0;
     double descent_heading_deg = 0.0;
+    double cruise_height_cm = 0.0;
     double estimated_mission_time_s = 0.0;
     if (!requiredFiniteNumber(metadata.value(), "descent_angle_deg", &descent_angle_deg, error_message)
         || !requiredFiniteNumber(metadata.value(), "takeoff_anchor_x_cm", &takeoff_anchor_x_cm, error_message)
@@ -237,8 +242,12 @@ bool HProtocolAdapter::validateTaskPlan(const competition::TaskPlan &plan, QStri
         || !requiredFiniteNumber(metadata.value(), "touchdown_y_cm", &touchdown_y_cm, error_message)
         || !requiredFiniteNumber(metadata.value(), "descent_run_cm", &descent_run_cm, error_message)
         || !requiredFiniteNumber(metadata.value(), "descent_heading_deg", &descent_heading_deg, error_message)
+        || !requiredFiniteNumber(metadata.value(), "cruise_height_cm", &cruise_height_cm, error_message)
         || !requiredFiniteNumber(metadata.value(), "estimated_mission_time_s", &estimated_mission_time_s, error_message)) {
         return false;
+    }
+    if (cruise_height_cm <= 0.0) {
+        return reject(error_message, "H 题任务计划 cruise_height_cm 必须为正数");
     }
 
     const QJsonValue optimality = metadata->value("planning_optimality");
@@ -259,9 +268,6 @@ bool HProtocolAdapter::validateTaskPlan(const competition::TaskPlan &plan, QStri
     if (case_id != plan.task_id) {
         return reject(error_message, "task_id 与 metadata case_id 不一致");
     }
-    if (start_cell != plan.start_waypoint_id || terminal_cell != plan.terminal_waypoint_id) {
-        return reject(error_message, "任务计划端点与 metadata 不一致");
-    }
     if (!isGridCell(start_cell) || !isGridCell(terminal_cell)) {
         return reject(error_message, "H 题起飞格或终点格不在固定网格内");
     }
@@ -271,31 +277,85 @@ bool HProtocolAdapter::validateTaskPlan(const competition::TaskPlan &plan, QStri
 
     QStringList route;
     route.reserve(plan.waypoints.size());
+    const competition::TaskWaypoint *land = nullptr;
     for (int index = 0; index < plan.waypoints.size(); ++index) {
         const competition::TaskWaypoint &waypoint = plan.waypoints.at(index);
-        if (waypoint.sequence_index != static_cast<quint32>(index)) {
-            return reject(error_message, "H 题航点序号必须连续");
+        if (waypoint.sequence_index != static_cast<quint32>(index)
+            || !std::isfinite(waypoint.x)
+            || !std::isfinite(waypoint.y)
+            || !std::isfinite(waypoint.z)) {
+            return reject(error_message, "H 题航点序号和坐标必须有效");
         }
-        if (!isGridCell(waypoint.id)) {
-            return reject(error_message, "H 题航线包含网格外的方格");
+        if (waypoint.action == "takeoff" || waypoint.action == "navigate") {
+            if (!isGridCell(waypoint.id)) {
+                return reject(error_message, "H 题巡查航点必须是合法网格");
+            }
+            route.append(waypoint.id);
+        } else if (waypoint.action == "land") {
+            if (land != nullptr) {
+                return reject(error_message, "H 题只能包含一个 land 航点");
+            }
+            land = &waypoint;
+        } else {
+            return reject(error_message, "H 题航点 action 非法");
+        }
+    }
+
+    if (execution_contract.toString() != hcore::HExecutionContract
+        || route.isEmpty()
+        || plan.waypoints.first().action != "takeoff"
+        || land == nullptr
+        || land != &plan.waypoints.last()
+        || land->id != hcore::HTouchdownWaypointId
+        || plan.terminal_waypoint_id != hcore::HTouchdownWaypointId) {
+        return reject(error_message, "H 题执行契约不匹配");
+    }
+    for (int index = 1; index < route.size(); ++index) {
+        if (plan.waypoints.at(index).action != "navigate") {
+            return reject(error_message, "H 题只能在首个航点执行 takeoff");
+        }
+    }
+    if (route.first() != "A9B1"
+        || plan.start_waypoint_id != route.first()
+        || start_cell != route.first()
+        || terminal_cell != route.last()) {
+        return reject(error_message, "H 题任务计划端点与执行契约不一致");
+    }
+
+    const double cruise_height_m = cruise_height_cm / 100.0;
+    for (int index = 0; index < route.size(); ++index) {
+        const competition::TaskWaypoint &waypoint = plan.waypoints.at(index);
+        const auto center_cm = hcore::cellCodeCenterCm(waypoint.id, hcore::MapHeight);
+        if (!center_cm.has_value()) {
+            return reject(error_message, "H 题巡查航点必须是合法网格");
+        }
+        const hcore::MissionPointM center_m = hcore::fieldPointToMissionMeters(center_cm.value());
+        if (!nearlyEqual(waypoint.x, center_m.x_m)
+            || !nearlyEqual(waypoint.y, center_m.y_m)
+            || !nearlyEqual(waypoint.z, cruise_height_m)) {
+            return reject(error_message, "H 题巡查航点坐标与网格或巡航高度不一致");
         }
         if (no_fly_cells.contains(waypoint.id)) {
             return reject(error_message, "H 题航线穿过禁飞区");
         }
-        if (!route.isEmpty()) {
-            const QPoint previous = hcore::decodeCell(route.last()).value();
+        if (index > 0) {
+            const QPoint previous = hcore::decodeCell(route.at(index - 1)).value();
             const QPoint current = hcore::decodeCell(waypoint.id).value();
             if (std::abs(current.x() - previous.x()) + std::abs(current.y() - previous.y()) != 1) {
                 return reject(error_message, "H 题航线必须按正交相邻方格移动");
             }
         }
-        route.append(waypoint.id);
-    }
-    if (route.first() != start_cell || route.last() != terminal_cell) {
-        return reject(error_message, "H 题航线必须从起飞格开始并在终点格结束");
     }
     if (!routeCoversEveryLegalCell(route, no_fly_cells)) {
         return reject(error_message, "H 题航线未覆盖全部合法方格");
+    }
+
+    const hcore::MissionPointM touchdown_m =
+        hcore::fieldPointToMissionMeters({touchdown_x_cm, touchdown_y_cm});
+    if (!nearlyEqual(land->x, touchdown_m.x_m)
+        || !nearlyEqual(land->y, touchdown_m.y_m)
+        || !nearlyEqual(land->z, 0.0)) {
+        return reject(error_message, "H 题 land 航点与降落 metadata 不一致");
     }
     if (!validateLandingMetadata(
             start_cell,
@@ -308,6 +368,7 @@ bool HProtocolAdapter::validateTaskPlan(const competition::TaskPlan &plan, QStri
             touchdown_y_cm,
             descent_run_cm,
             descent_heading_deg,
+            cruise_height_cm,
             estimated_mission_time_s,
             error_message)) {
         return false;
@@ -349,7 +410,9 @@ bool HProtocolAdapter::decodeTaskPlan(
     }
     data->route.clear();
     for (const competition::TaskWaypoint &waypoint : plan.waypoints) {
-        data->route.append(waypoint.id);
+        if (waypoint.action == "takeoff" || waypoint.action == "navigate") {
+            data->route.append(waypoint.id);
+        }
     }
     data->terminal_cell = metadata->value("terminal_cell").toString();
     data->landing_enabled = metadata->value("landing_enabled").toBool();
