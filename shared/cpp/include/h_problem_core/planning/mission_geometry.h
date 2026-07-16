@@ -7,10 +7,16 @@ namespace hcore {
 constexpr double FieldMarginCm = 25.0;
 constexpr double CellSizeCm = 50.0;
 
+struct MissionPointM {
+    double x_m = 0.0;
+    double y_m = 0.0;
+};
+
 QString encodeCell(int x_index, int y_index);
 std::optional<QPoint> decodeCell(const QString &cell_code, QString *error_message = nullptr);
 PointCm cellCenterCm(int x_index, int y_index, int height);
 std::optional<PointCm> cellCodeCenterCm(const QString &cell_code, int height, QString *error_message = nullptr);
+MissionPointM fieldPointToMissionMeters(const PointCm &point_cm);
 double euclideanDistanceCm(const PointCm &from_point, const PointCm &to_point);
 double headingDegrees(const PointCm &from_point, const PointCm &to_point);
 double computeDescentRunCm(double cruise_height_cm, double descent_angle_deg);
