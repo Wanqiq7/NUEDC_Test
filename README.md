@@ -125,13 +125,22 @@ ARM 或 RESET 操作。命令超时后可以重试，但不要用收到的遥测
 
 ## 通信合约
 
+H 题执行契约为 h_field_m_v1。TaskWaypoint 使用米，A9B1 格心为原点，
++X: B1 -> B7，+Y: A9 -> A1。执行序列为 takeoff -> navigate -> land；
+terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
+表示最后巡查格。START 由机载 mission_coordinator 直接接受并运行速度闭环，
+不再调用 /nuedc/execute_mission Action。
+
+该契约必须原子部署：机载端最终系统测试通过前，不得单独部署这版地面站契约；
+地面站与机载端的 LOAD 契约门禁和速度控制器必须在同一部署窗口上线。
+
 | 接口 | 方向 | 用途 |
 | --- | --- | --- |
 | `tcp://<airborne>:5557` | 机载 -> 地面站 | PUB：telemetry、observation、summary。 |
 | `tcp://<airborne>:5558` | 地面站 -> 机载 | REQ/REP：MISSION_LOAD、START、STOP、ARM、RESET、PING。 |
 | `mission_load` | 命令 | 下发通用 `TaskPlan`。 |
 | `COMMAND_TYPE_PING` | 命令 | 验证命令链路并获取当前上下文。 |
-| `COMMAND_TYPE_START_MISSION` | 命令 | 仅当机载飞控 Action 接受任务后成功。 |
+| `COMMAND_TYPE_START_MISSION` | 命令 | 由机载 `mission_coordinator` 直接接受并启动速度闭环。 |
 | `COMMAND_TYPE_STOP_MISSION` | 命令 | 请求取消当前任务；以机载 Ack 和终态为准。 |
 | `COMMAND_TYPE_ARM_TARGETING` / `RESET_TARGETING` | 命令 | 启用或复位视觉瞄准会话。 |
 

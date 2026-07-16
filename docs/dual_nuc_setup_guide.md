@@ -134,6 +134,15 @@ source runtime/ground_control_network.env
 
 ## 7. 任务下发流程
 
+H 题执行契约为 h_field_m_v1。TaskWaypoint 使用米，A9B1 格心为原点，
++X: B1 -> B7，+Y: A9 -> A1。执行序列为 takeoff -> navigate -> land；
+terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
+表示最后巡查格。START 由机载 mission_coordinator 直接接受并运行速度闭环，
+不再调用 /nuedc/execute_mission Action。
+
+该契约必须原子部署：机载端最终系统测试通过前，不得单独部署这版地面站契约；
+地面站与机载端的 LOAD 契约门禁和速度控制器必须在同一部署窗口上线。
+
 在地面站界面中：
 
 1. 点击 `设置禁飞区`。
