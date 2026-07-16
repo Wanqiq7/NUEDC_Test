@@ -146,13 +146,16 @@ python3 scripts/mock_airborne.py --self-test \
 
 ## 标准操作流程
 
-1. 启动机载端和地面站，使用“刷新机载链路”发送 PING。
-2. 加载 H 题案例或设置 3 个横向/纵向连续禁飞格。
-3. 生成航线，核对起飞点、巡查顺序、下降起点与降落终点。
-4. 下发 `mission_load`，等待 Ack 确认任务已加载。
-5. 发送 START；需要视觉识别时再发送 ARM，RESET 用于开启新的视觉 epoch。
-6. 观察当前位置、航点进度、检测记录与终态 Summary；必要时发送 STOP。
-7. 任务结束后核对本地检测数据库和 `runtime/active_mission_plan.json`。
+1. 首次部署时分别运行地面站 `start_ground_hotspot.sh` 和机载端
+   `connect_ground_hotspot.sh`；日常联调使用机载端 `start_airborne_integration.sh`
+   和地面站 `start_ground_integration.sh` 启动双端。
+2. 使用“刷新机载链路”发送 PING。
+3. 加载 H 题案例或设置 3 个横向/纵向连续禁飞格。
+4. 生成航线，核对起飞点、巡查顺序、下降起点与降落终点。
+5. 下发 `mission_load`，等待 Ack 确认任务已加载。
+6. 发送 START；需要视觉识别时再发送 ARM，RESET 用于开启新的视觉 epoch。
+7. 观察当前位置、航点进度、检测记录与终态 Summary；必要时发送 STOP。
+8. 任务结束后核对本地检测数据库和 `runtime/active_mission_plan.json`。
 
 遥测不代表命令通道可用。命令链路健康状态只由命令 Ack 与后台 PING 建立；后台
 PING 每两秒运行一次，“刷新机载链路”只触发一次立即探测。

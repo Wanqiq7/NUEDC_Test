@@ -82,7 +82,7 @@ ctest --test-dir build --output-on-failure
 再在机载 NUC 执行：
 
 ```bash
-cd /home/sb/Ground_station/point_lio_mid360_ros2
+cd /home/sb/Ground_station/Mid360_add_groundstation
 ./src/nuedc_airborne/airborne_bringup/scripts/connect_ground_hotspot.sh \
   --iface wlan0 --ssid NUEDC-Ground --password '12345678'
 ```
@@ -109,22 +109,39 @@ source runtime/ground_control_network.env
 ./scripts/check_ground_control_network.sh --host 192.168.10.20
 ```
 
-## 6. 启动地面站
+## 6. 日常联调启动
 
-手动启动：
+热点和客户端连接首次配置完成后，日常联调不需要重复修改 NetworkManager 配置。
+先在机载端设置硬件门禁所需环境变量，并通过联调入口启动 ROS 2 硬件栈：
+
+```bash
+cd /home/sb/Ground_station/Mid360_add_groundstation
+export NUEDC_STM32_GATE_FILE=/home/cat/evidence/stm32-gate.json
+export NUEDC_MODEL_PATH=/home/cat/Mid360_add_groundstation/packages/models/ani_rk3588_fp16.rknn
+./src/nuedc_airborne/airborne_bringup/scripts/start_airborne_integration.sh
+```
+
+该入口先确认地面站 `10.42.0.1` 可达，再调用受控的
+`start_airborne_hardware.sh`；模型和 STM32 证据门禁仍然生效。
+
+机载服务启动后，在地面站端执行：
+
+```bash
+cd /home/sb/Ground_station/NUEDC_Test
+./scripts/start_ground_integration.sh
+```
+
+该入口加载 `runtime/ground_control_network.env`，要求 Ping、遥测端口 `5557` 和
+命令端口 `5558` 全部通过后才启动地面站。任一检查失败时脚本返回非零且不启动 UI。
+
+仅调试 UI、不要求机载服务在线时，仍可手动执行：
 
 ```bash
 source runtime/ground_control_network.env
 ./build/ground_station_computer/ground_station_app
 ```
 
-配置地面热点后直接启动：
-
-```bash
-./scripts/start_ground_hotspot.sh --launch-app
-```
-
-启动后，地面站会尝试 PING 外部机载端，并显示 `机载状态: 在线` 或 `机载状态: 离线`。
+启动后，地面站会持续 PING 外部机载端，并显示 `机载状态: 在线` 或 `机载状态: 离线`。
 
 ### 命令链路保活与状态
 
