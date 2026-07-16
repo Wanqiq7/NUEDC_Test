@@ -18,9 +18,9 @@ public:
         const QStringList &no_fly_cells,
         const QStringList &route,
         const QString &start_cell,
-        const QString &terminal_cell,
-        double takeoff_anchor_x_cm,
-        double takeoff_anchor_y_cm,
+        const QString &descent_start_cell,
+        double touchdown_x_cm,
+        double touchdown_y_cm,
         bool landing_enabled) = 0;
     virtual void enterNoFlyEditMode() = 0;
     virtual void setCandidateCells(const QStringList &cells) = 0;

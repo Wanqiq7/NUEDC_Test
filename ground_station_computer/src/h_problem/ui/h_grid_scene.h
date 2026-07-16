@@ -20,7 +20,11 @@ public:
     void setRoute(const QStringList &route);
     void setStartCell(const QString &cell_code);
     void setCurrentCell(const QString &cell_code);
-    void setLandingTarget(const QString &terminal_cell, double takeoff_anchor_x_cm, double takeoff_anchor_y_cm, bool enabled);
+    void setLandingTarget(
+        const QString &descent_start_cell,
+        double touchdown_x_cm,
+        double touchdown_y_cm,
+        bool enabled);
     void setNoFlyEditEnabled(bool enabled);
     void setCandidateNoFlyCells(const QStringList &cells);
     void clearCandidateNoFlyCells();
@@ -46,8 +50,10 @@ private:
     QGraphicsEllipseItem *start_marker_ = nullptr;
     QGraphicsSimpleTextItem *start_label_ = nullptr;
     QGraphicsEllipseItem *current_marker_ = nullptr;
-    QGraphicsEllipseItem *terminal_marker_ = nullptr;
-    QGraphicsSimpleTextItem *terminal_label_ = nullptr;
+    QGraphicsEllipseItem *descent_start_marker_ = nullptr;
+    QGraphicsSimpleTextItem *descent_start_label_ = nullptr;
+    QGraphicsEllipseItem *touchdown_marker_ = nullptr;
+    QGraphicsSimpleTextItem *touchdown_label_ = nullptr;
     QGraphicsLineItem *landing_corridor_ = nullptr;
     QStringList no_fly_cells_;
     bool no_fly_edit_enabled_ = false;

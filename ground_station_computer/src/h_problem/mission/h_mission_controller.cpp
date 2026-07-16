@@ -268,8 +268,8 @@ void HMissionController::applyGridConfig(
         route,
         start_cell,
         terminal_cell,
-        touchdown_x_cm != 0.0 ? touchdown_x_cm : takeoff_anchor_x_cm,
-        touchdown_y_cm != 0.0 ? touchdown_y_cm : takeoff_anchor_y_cm,
+        touchdown_x_cm,
+        touchdown_y_cm,
         landing_enabled);
     planning_state_.handleGenerationSucceeded();
     sync_state_.setSyncedToAirborne(true);
@@ -496,8 +496,8 @@ void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool s
         config.route,
         current_start_cell_,
         current_terminal_cell_,
-        current_touchdown_x_cm_ != 0.0 ? current_touchdown_x_cm_ : current_takeoff_anchor_x_cm_,
-        current_touchdown_y_cm_ != 0.0 ? current_touchdown_y_cm_ : current_takeoff_anchor_y_cm_,
+        current_touchdown_x_cm_,
+        current_touchdown_y_cm_,
         current_landing_enabled_);
 
     planning_state_.handleGenerationSucceeded();

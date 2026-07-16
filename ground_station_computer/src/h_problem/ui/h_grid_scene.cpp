@@ -23,6 +23,7 @@ constexpr qreal kFieldMarginCm = 25.0;
 constexpr qreal kGridCellCm = 50.0;
 constexpr int kCurrentMarkerDataKey = 1001;
 constexpr const char *kCurrentMarkerDataValue = "current_marker";
+constexpr int kLandingRoleDataKey = 1002;
 
 QList<qreal> buildArrowOffsets(int repeat_count) {
     QList<qreal> offsets;
@@ -355,54 +356,89 @@ void GridScene::setCurrentCell(const QString &cell_code) {
 }
 
 void GridScene::setLandingTarget(
-    const QString &terminal_cell,
-    double takeoff_anchor_x_cm,
-    double takeoff_anchor_y_cm,
+    const QString &descent_start_cell,
+    double touchdown_x_cm,
+    double touchdown_y_cm,
     bool enabled) {
-    if (terminal_marker_ != nullptr) {
-        removeItem(terminal_marker_);
-        delete terminal_marker_;
-        terminal_marker_ = nullptr;
+    if (descent_start_marker_ != nullptr) {
+        removeItem(descent_start_marker_);
+        delete descent_start_marker_;
+        descent_start_marker_ = nullptr;
+    }
+    if (descent_start_label_ != nullptr) {
+        removeItem(descent_start_label_);
+        delete descent_start_label_;
+        descent_start_label_ = nullptr;
+    }
+    if (touchdown_marker_ != nullptr) {
+        removeItem(touchdown_marker_);
+        delete touchdown_marker_;
+        touchdown_marker_ = nullptr;
+    }
+    if (touchdown_label_ != nullptr) {
+        removeItem(touchdown_label_);
+        delete touchdown_label_;
+        touchdown_label_ = nullptr;
     }
     if (landing_corridor_ != nullptr) {
         removeItem(landing_corridor_);
         delete landing_corridor_;
         landing_corridor_ = nullptr;
     }
-    if (terminal_label_ != nullptr) {
-        removeItem(terminal_label_);
-        delete terminal_label_;
-        terminal_label_ = nullptr;
-    }
 
-    if (!enabled || terminal_cell.isEmpty()) {
+    if (!enabled || descent_start_cell.isEmpty()) {
         return;
     }
 
-    const QPointF terminal_center = cellCenter(terminal_cell);
-    terminal_marker_ = addEllipse(
-        terminal_center.x() - 10.0,
-        terminal_center.y() - 10.0,
+    const QPointF descent_start = cellCenter(descent_start_cell);
+    const QPointF touchdown = fieldPointToScene(touchdown_x_cm, touchdown_y_cm);
+
+    descent_start_marker_ = addEllipse(
+        -10.0,
+        -10.0,
         20.0,
         20.0,
         QPen(QColor(20, 140, 90), 2.0),
         Qt::NoBrush);
-    terminal_marker_->setZValue(4.5);
+    descent_start_marker_->setData(
+        kLandingRoleDataKey, QStringLiteral("descent_start_marker"));
+    descent_start_marker_->setPos(descent_start);
+    descent_start_marker_->setZValue(4.5);
+
+    touchdown_marker_ = addEllipse(
+        -7.0,
+        -7.0,
+        14.0,
+        14.0,
+        QPen(QColor(15, 90, 170), 2.0),
+        QBrush(QColor(255, 255, 255, 220)));
+    touchdown_marker_->setData(
+        kLandingRoleDataKey, QStringLiteral("touchdown_marker"));
+    touchdown_marker_->setPos(touchdown);
+    touchdown_marker_->setZValue(4.7);
 
     QPen corridor_pen(QColor(20, 140, 90));
     corridor_pen.setWidthF(2.0);
     corridor_pen.setStyle(Qt::DashLine);
-    landing_corridor_ = addLine(QLineF(terminal_center, fieldPointToScene(takeoff_anchor_x_cm, takeoff_anchor_y_cm)), corridor_pen);
+    landing_corridor_ = addLine(QLineF(descent_start, touchdown), corridor_pen);
+    landing_corridor_->setData(
+        kLandingRoleDataKey, QStringLiteral("landing_corridor"));
     landing_corridor_->setZValue(3.5);
 
-    terminal_label_ = addSimpleText("降落终点");
-    QFont label_font = terminal_label_->font();
+    descent_start_label_ = addSimpleText(QStringLiteral("下降起点"));
+    QFont label_font = descent_start_label_->font();
     label_font.setBold(true);
     label_font.setPointSizeF(8.5);
-    terminal_label_->setFont(label_font);
-    terminal_label_->setBrush(QColor(20, 140, 90));
-    terminal_label_->setPos(terminal_center.x() + 10.0, terminal_center.y() - 24.0);
-    terminal_label_->setZValue(4.6);
+    descent_start_label_->setFont(label_font);
+    descent_start_label_->setBrush(QColor(20, 140, 90));
+    descent_start_label_->setPos(descent_start.x() + 10.0, descent_start.y() - 24.0);
+    descent_start_label_->setZValue(4.6);
+
+    touchdown_label_ = addSimpleText(QStringLiteral("降落终点"));
+    touchdown_label_->setFont(label_font);
+    touchdown_label_->setBrush(QColor(15, 90, 170));
+    touchdown_label_->setPos(touchdown.x() + 8.0, touchdown.y() + 5.0);
+    touchdown_label_->setZValue(4.8);
 }
 
 QPointF GridScene::cellCenter(const QString &cell_code) const {

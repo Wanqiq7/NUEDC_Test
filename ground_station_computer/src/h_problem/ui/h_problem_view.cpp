@@ -173,9 +173,9 @@ void HProblemView::showRoute(
     const QStringList &no_fly_cells,
     const QStringList &route,
     const QString &start_cell,
-    const QString &terminal_cell,
-    double takeoff_anchor_x_cm,
-    double takeoff_anchor_y_cm,
+    const QString &descent_start_cell,
+    double touchdown_x_cm,
+    double touchdown_y_cm,
     bool landing_enabled) {
     if (grid_scene_ == nullptr) {
         return;
@@ -186,9 +186,9 @@ void HProblemView::showRoute(
     grid_scene_->setStartCell(start_cell);
     grid_scene_->setRoute(route);
     grid_scene_->setLandingTarget(
-        terminal_cell,
-        takeoff_anchor_x_cm,
-        takeoff_anchor_y_cm,
+        descent_start_cell,
+        touchdown_x_cm,
+        touchdown_y_cm,
         landing_enabled);
     grid_scene_->setCurrentCell(start_cell);
 }
