@@ -6,6 +6,7 @@
 #include <limits>
 #include <optional>
 
+#include "competition_core/mission/task_plan_store.h"
 #include "h_problem/mission/h_protocol_adapter.h"
 #include "h_problem_core/mission/case_loader.h"
 #include "h_problem_core/mission/mission_planning.h"
@@ -39,6 +40,28 @@ HGridConfigData sentinelData() {
     return data;
 }
 
+void compareTaskPlans(
+    const competition::TaskPlan &actual,
+    const competition::TaskPlan &expected) {
+    QCOMPARE(actual.task_id, expected.task_id);
+    QCOMPARE(actual.task_type, expected.task_type);
+    QCOMPARE(actual.metadata_json, expected.metadata_json);
+    QCOMPARE(actual.start_waypoint_id, expected.start_waypoint_id);
+    QCOMPARE(actual.terminal_waypoint_id, expected.terminal_waypoint_id);
+    QCOMPARE(actual.waypoints.size(), expected.waypoints.size());
+    for (int index = 0; index < expected.waypoints.size(); ++index) {
+        const competition::TaskWaypoint &actual_waypoint = actual.waypoints.at(index);
+        const competition::TaskWaypoint &expected_waypoint = expected.waypoints.at(index);
+        QCOMPARE(actual_waypoint.id, expected_waypoint.id);
+        QCOMPARE(actual_waypoint.sequence_index, expected_waypoint.sequence_index);
+        QCOMPARE(actual_waypoint.action, expected_waypoint.action);
+        QCOMPARE(actual_waypoint.x, expected_waypoint.x);
+        QCOMPARE(actual_waypoint.y, expected_waypoint.y);
+        QCOMPARE(actual_waypoint.z, expected_waypoint.z);
+        QCOMPARE(actual_waypoint.payload_json, expected_waypoint.payload_json);
+    }
+}
+
 } // namespace
 
 class HProtocolAdapterTests : public QObject {
@@ -46,6 +69,7 @@ class HProtocolAdapterTests : public QObject {
 
 private slots:
     void acceptsGeneratedExecutablePlan();
+    void checkedInRuntimeFixtureMatchesGeneratedPlan();
     void rejectsMissingWrongAndNonStringExecutionContract_data();
     void rejectsMissingWrongAndNonStringExecutionContract();
     void decodedRouteExcludesTouchdown();
@@ -68,6 +92,27 @@ void HProtocolAdapterTests::acceptsGeneratedExecutablePlan() {
     QVERIFY2(HProtocolAdapter::validateTaskPlan(plan, &error), qPrintable(error));
     HGridConfigData decoded;
     QVERIFY2(HProtocolAdapter::decodeTaskPlan(plan, &decoded, &error), qPrintable(error));
+}
+
+void HProtocolAdapterTests::checkedInRuntimeFixtureMatchesGeneratedPlan() {
+    QString error;
+    const auto fixture_plan = competition::loadTaskPlan(
+        "runtime/mock_airborne_active_mission_plan.json", &error);
+    QVERIFY2(fixture_plan.has_value(), qPrintable(error));
+
+    HGridConfigData decoded_fixture;
+    QVERIFY2(
+        HProtocolAdapter::decodeTaskPlan(fixture_plan.value(), &decoded_fixture, &error),
+        qPrintable(error));
+
+    const auto generated_plan = generatedPlan(&error);
+    QVERIFY2(generated_plan.has_value(), qPrintable(error));
+    HGridConfigData decoded_generated;
+    QVERIFY2(
+        HProtocolAdapter::decodeTaskPlan(generated_plan.value(), &decoded_generated, &error),
+        qPrintable(error));
+
+    compareTaskPlans(fixture_plan.value(), generated_plan.value());
 }
 
 void HProtocolAdapterTests::rejectsMissingWrongAndNonStringExecutionContract_data() {

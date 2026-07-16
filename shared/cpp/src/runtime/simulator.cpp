@@ -38,28 +38,33 @@ std::optional<SimulatedTaskStream> simulateTaskStream(
         animals_by_cell.insert(animal.cell, animal);
     }
 
-    QSet<QString> visited_cells;
+    QSet<quint32> visited_sequences;
+    QString last_grid_cell;
     QSet<QString> reported_detection_cells;
     QMap<QString, quint32> totals;
-    for (int index = 0; index < config_payload.waypoints.size(); ++index) {
-        const QString cell = config_payload.waypoints.at(index).id;
-        visited_cells.insert(cell);
+    for (const competition::TaskWaypoint &waypoint : config_payload.waypoints) {
+        visited_sequences.insert(waypoint.sequence_index);
+        const bool grid_action = waypoint.action == "takeoff" || waypoint.action == "navigate";
+        if (grid_action) {
+            last_grid_cell = waypoint.id;
+        }
 
         QJsonObject telemetry_payload;
-        telemetry_payload["current_cell"] = cell;
-        telemetry_payload["visited_cells"] = static_cast<int>(visited_cells.size());
+        telemetry_payload["current_cell"] = last_grid_cell;
+        telemetry_payload["visited_cells"] = static_cast<int>(visited_sequences.size());
         telemetry_payload["tick_interval_ms"] = case_config.tick_interval_ms;
         stream.events.append(competition::TaskEvent{
             stream.plan.task_id,
             "telemetry",
-            static_cast<quint32>(index),
-            cell,
+            waypoint.sequence_index,
+            waypoint.id,
             compactJson(telemetry_payload),
         });
 
-        if (animals_by_cell.contains(cell) && !reported_detection_cells.contains(cell)) {
-            reported_detection_cells.insert(cell);
-            const Animal animal = animals_by_cell.value(cell);
+        if (grid_action && animals_by_cell.contains(waypoint.id) &&
+            !reported_detection_cells.contains(waypoint.id)) {
+            reported_detection_cells.insert(waypoint.id);
+            const Animal animal = animals_by_cell.value(waypoint.id);
             totals[animal.name] = totals.value(animal.name) + animal.count;
 
             QJsonObject detection_payload;
@@ -69,7 +74,7 @@ std::optional<SimulatedTaskStream> simulateTaskStream(
             stream.events.append(competition::TaskEvent{
                 stream.plan.task_id,
                 "detection",
-                static_cast<quint32>(index),
+                waypoint.sequence_index,
                 animal.cell,
                 compactJson(detection_payload),
             });
@@ -86,7 +91,7 @@ std::optional<SimulatedTaskStream> simulateTaskStream(
         stream.plan.task_id,
         "h_problem",
         true,
-        static_cast<quint32>(visited_cells.size()),
+        static_cast<quint32>(visited_sequences.size()),
         compactJson(summary_payload),
     };
 

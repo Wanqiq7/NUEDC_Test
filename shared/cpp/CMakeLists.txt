@@ -41,6 +41,13 @@ target_link_libraries(h_problem_core PUBLIC
     proto_messages
 )
 
+add_executable(generate_h_runtime_fixture tools/generate_h_runtime_fixture.cpp)
+target_link_libraries(generate_h_runtime_fixture PRIVATE
+    Qt6::Core
+    h_problem_core
+    competition_core
+)
+
 function(add_competition_core_test target_name test_source)
 add_executable(${target_name}
     ${test_source}
