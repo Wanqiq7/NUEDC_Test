@@ -13,7 +13,10 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTemporaryDir>
 #include <QUuid>
+
+#include "h_problem/storage/h_detection_repository.h"
 
 namespace {
 
@@ -187,6 +190,7 @@ class HMissionControllerTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void initialPreviewDoesNotShowPersistedDetectionTotals();
     void loadInitialPreviewShowsRouteAndStatus();
     void loadInitialPreviewShowsPlanningOptimalityToOperator();
     void telemetryDoesNotStartMission();
@@ -210,6 +214,34 @@ private slots:
     void rejectsMalformedTaskPlanWithoutChangingDisplayedRoute();
     void rejectsMalformedTaskPlanStructure();
 };
+
+void HMissionControllerTests::initialPreviewDoesNotShowPersistedDetectionTotals() {
+    QTemporaryDir temporary_directory;
+    QVERIFY(temporary_directory.isValid());
+    const QString database_path = temporary_directory.filePath("detections.sqlite");
+    {
+        DetectionRepository repository(database_path);
+        QVERIFY(repository.open());
+        QCOMPARE(
+            repository.storeDetection("previous-task", "ui-dedup-track", "A2B1", "ui-dedup-falcon", 3, 1000),
+            DetectionRepository::StoreResult::Stored);
+    }
+
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &) {},
+        [&](const QString &) {},
+        [&]() {},
+        {},
+        database_path);
+
+    QVERIFY(controller.detectionTotals().isEmpty());
+    controller.loadInitialPreview();
+
+    QVERIFY(controller.detectionTotals().isEmpty());
+    QVERIFY(sink.last_totals.isEmpty());
+}
 
 void HMissionControllerTests::loadInitialPreviewShowsRouteAndStatus() {
     RecordingSink sink;

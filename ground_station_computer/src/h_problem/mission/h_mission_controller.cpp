@@ -17,17 +17,19 @@ HMissionController::HMissionController(
     TextCallback status_text_callback,
     TextCallback planning_button_text_callback,
     RuntimeCallback runtime_callback,
-    CommandLinkStateCallback command_link_state_callback)
+    CommandLinkStateCallback command_link_state_callback,
+    QString detection_database_path)
     : sink_(sink),
       status_text_callback_(std::move(status_text_callback)),
       planning_button_text_callback_(std::move(planning_button_text_callback)),
       runtime_callback_(std::move(runtime_callback)),
       command_link_state_callback_(std::move(command_link_state_callback)),
-      repository_(RepositoryPaths::resolve(QStringLiteral("runtime/ground_control_results.db"))) {
+      repository_(detection_database_path.isEmpty()
+                      ? RepositoryPaths::resolve(QStringLiteral("runtime/ground_control_results.db"))
+                      : std::move(detection_database_path)) {
     case_file_path_ = RepositoryPaths::resolve(case_file_path_);
     mission_plan_output_path_ = RepositoryPaths::resolve(mission_plan_output_path_);
     repository_.open();
-    detection_totals_ = repository_.summarizeByAnimal();
 }
 
 void HMissionController::notifyStatusText(const QString &text) const {
@@ -245,6 +247,8 @@ void HMissionController::applyGridConfig(
     const QString &planning_optimality,
     const QStringList &planning_warnings) {
     current_case_id_ = case_id;
+    detection_totals_.clear();
+    sink_->setSummaryTotals(detection_totals_);
     current_start_cell_ = start_cell;
     current_terminal_cell_ = terminal_cell;
     current_landing_enabled_ = landing_enabled;
@@ -470,6 +474,8 @@ void HMissionController::applyTaskPlan(const competition::TaskPlan &plan, bool s
     const CommandSendResult disarm_result = disarmVisionTargetingForLifecycle();
     case_file_path_ = resolveCaseFilePath(config.case_id);
     current_case_id_ = config.case_id;
+    detection_totals_.clear();
+    sink_->setSummaryTotals(detection_totals_);
     current_start_cell_ = config.start_cell;
     current_terminal_cell_ = config.terminal_cell;
     committed_no_fly_cells_ = config.no_fly_cells;
