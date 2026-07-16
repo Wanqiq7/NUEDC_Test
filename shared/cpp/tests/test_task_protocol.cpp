@@ -14,25 +14,65 @@
 
 namespace {
 
+void compareTaskPlans(
+    const competition::TaskPlan &actual,
+    const competition::TaskPlan &expected) {
+    QCOMPARE(actual.task_id, expected.task_id);
+    QCOMPARE(actual.task_type, expected.task_type);
+    QCOMPARE(actual.metadata_json, expected.metadata_json);
+    QCOMPARE(actual.start_waypoint_id, expected.start_waypoint_id);
+    QCOMPARE(actual.terminal_waypoint_id, expected.terminal_waypoint_id);
+    QCOMPARE(actual.waypoints.size(), expected.waypoints.size());
+    for (int index = 0; index < expected.waypoints.size(); ++index) {
+        const auto &expected_waypoint = expected.waypoints.at(index);
+        const auto &actual_waypoint = actual.waypoints.at(index);
+        QCOMPARE(actual_waypoint.id, expected_waypoint.id);
+        QCOMPARE(actual_waypoint.sequence_index, expected_waypoint.sequence_index);
+        QCOMPARE(actual_waypoint.action, expected_waypoint.action);
+        QCOMPARE(actual_waypoint.x, expected_waypoint.x);
+        QCOMPARE(actual_waypoint.y, expected_waypoint.y);
+        QCOMPARE(actual_waypoint.z, expected_waypoint.z);
+        QCOMPARE(actual_waypoint.payload_json, expected_waypoint.payload_json);
+    }
+}
+
 competition::TaskPlan makeTaskPlan() {
     competition::TaskPlan plan;
     plan.task_id = "task-demo";
     plan.task_type = "h_problem";
     plan.start_waypoint_id = "A9B1";
-    plan.terminal_waypoint_id = "A8B1";
-    plan.metadata_json = R"({"case_id":"demo","landing_enabled":true})";
+    plan.terminal_waypoint_id = "touchdown";
+    plan.metadata_json = R"({"case_id":"demo","execution_contract":"h_field_m_v1","landing_enabled":true})";
 
     competition::TaskWaypoint first;
     first.id = "A9B1";
     first.sequence_index = 0;
+    first.x = 0.0;
+    first.y = 0.0;
+    first.z = 1.2;
+    first.action = "takeoff";
     first.payload_json = R"({"cell":"A9B1"})";
     plan.waypoints.append(first);
 
     competition::TaskWaypoint second;
     second.id = "A8B1";
     second.sequence_index = 1;
+    second.x = 0.0;
+    second.y = 0.5;
+    second.z = 1.2;
+    second.action = "navigate";
     second.payload_json = R"({"cell":"A8B1"})";
     plan.waypoints.append(second);
+
+    competition::TaskWaypoint touchdown;
+    touchdown.id = "touchdown";
+    touchdown.sequence_index = 2;
+    touchdown.x = -0.75;
+    touchdown.y = -0.25;
+    touchdown.z = 0.0;
+    touchdown.action = "land";
+    touchdown.payload_json = R"({"touchdown":true})";
+    plan.waypoints.append(touchdown);
 
     return plan;
 }
@@ -69,21 +109,30 @@ private slots:
 };
 
 void TaskProtocolTests::buildsAndParsesTaskPlanEnvelope() {
-    const Envelope envelope = competition::buildTaskPlanEnvelope(42, makeTaskPlan());
+    const competition::TaskPlan original = makeTaskPlan();
+    const Envelope envelope = competition::buildTaskPlanEnvelope(42, original);
 
     QCOMPARE(envelope.sequence(), 42);
     QCOMPARE(envelope.payload_case(), Envelope::kTaskPlan);
     QCOMPARE(QString::fromStdString(envelope.task_plan().task_id()), QString("task-demo"));
-    QCOMPARE(envelope.task_plan().waypoints_size(), 2);
+    QCOMPARE(envelope.task_plan().waypoints_size(), 3);
     QCOMPARE(QString::fromStdString(envelope.task_plan().waypoints(1).id()), QString("A8B1"));
+    QCOMPARE(QString::fromStdString(envelope.task_plan().waypoints(2).id()), QString("touchdown"));
 
     QString error;
     const auto parsed = competition::taskPlanFromMessage(envelope.task_plan(), &error);
     QVERIFY2(parsed.has_value(), qPrintable(error));
-    QCOMPARE(parsed->task_id, QString("task-demo"));
-    QCOMPARE(parsed->task_type, QString("h_problem"));
-    QCOMPARE(parsed->waypoints.size(), 2);
-    QCOMPARE(parsed->waypoints.at(0).payload_json, QString(R"({"cell":"A9B1"})"));
+    QCOMPARE(parsed->metadata_json, original.metadata_json);
+    QCOMPARE(parsed->terminal_waypoint_id, QString("touchdown"));
+    compareTaskPlans(parsed.value(), original);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString output_path = QDir(dir.path()).filePath("task_plan.json");
+    QVERIFY2(competition::storeTaskPlan(original, output_path, &error), qPrintable(error));
+    const auto loaded = competition::loadTaskPlan(output_path, &error);
+    QVERIFY2(loaded.has_value(), qPrintable(error));
+    compareTaskPlans(loaded.value(), original);
 }
 
 void TaskProtocolTests::storesGenericMissionLoad() {
@@ -105,7 +154,7 @@ void TaskProtocolTests::storesGenericMissionLoad() {
     const auto loaded = competition::loadTaskPlan(output_path, &error);
     QVERIFY2(loaded.has_value(), qPrintable(error));
     QCOMPARE(loaded->task_id, QString("task-demo"));
-    QCOMPARE(loaded->waypoints.size(), 2);
+    QCOMPARE(loaded->waypoints.size(), 3);
 
     QFile file(output_path);
     QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));

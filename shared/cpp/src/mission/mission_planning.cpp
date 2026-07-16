@@ -52,6 +52,12 @@ std::optional<competition::TaskPlan> buildTaskPlan(
         }
         return std::nullopt;
     }
+    if (case_config.start_cell != "A9B1") {
+        if (error_message != nullptr) {
+            *error_message = "H mission start_cell must be A9B1";
+        }
+        return std::nullopt;
+    }
     RouteRequest request;
     request.width = MapWidth;
     request.height = MapHeight;
@@ -106,26 +112,48 @@ std::optional<competition::TaskPlan> buildTaskPlan(
     metadata["estimated_mission_time_s"] = route_result.estimated_mission_time_s;
     metadata["planning_optimality"] = planningOptimalityName(route_result.search_optimality);
     metadata["planning_warnings"] = stringListToJsonArray(route_result.warnings);
+    metadata["execution_contract"] = HExecutionContract;
+    metadata["cruise_height_cm"] = case_config.landing->cruise_height_cm;
+    const double cruise_height_m = case_config.landing->cruise_height_cm / 100.0;
 
     competition::TaskPlan plan;
     plan.task_id = case_config.case_id;
     plan.task_type = "h_problem";
     plan.start_waypoint_id = case_config.start_cell;
-    plan.terminal_waypoint_id = route_result.route.last();
     plan.metadata_json = compactJson(metadata);
     for (int index = 0; index < route_result.route.size(); ++index) {
-        competition::TaskWaypoint waypoint;
-        waypoint.id = route_result.route.at(index);
-        waypoint.sequence_index = static_cast<quint32>(index);
-        waypoint.action = "navigate";
-        const auto center = cellCodeCenterCm(waypoint.id, MapHeight);
-        if (center.has_value()) {
-            waypoint.x = center->x_cm;
-            waypoint.y = center->y_cm;
+        const QString cell = route_result.route.at(index);
+        const auto center_cm = cellCodeCenterCm(cell, MapHeight);
+        if (!center_cm.has_value()) {
+            if (error_message != nullptr) {
+                *error_message = QString("planner returned invalid route cell: %1").arg(cell);
+            }
+            return std::nullopt;
         }
-        waypoint.payload_json = compactJson(QJsonObject{{"cell", waypoint.id}});
+        const MissionPointM center_m = fieldPointToMissionMeters(center_cm.value());
+        competition::TaskWaypoint waypoint;
+        waypoint.id = cell;
+        waypoint.sequence_index = static_cast<quint32>(index);
+        waypoint.x = center_m.x_m;
+        waypoint.y = center_m.y_m;
+        waypoint.z = cruise_height_m;
+        waypoint.action = index == 0 ? "takeoff" : "navigate";
+        waypoint.payload_json = compactJson(QJsonObject{{"cell", cell}});
         plan.waypoints.append(waypoint);
     }
+
+    const MissionPointM touchdown_m =
+        fieldPointToMissionMeters(landing_approach->touchdown_point_cm);
+    plan.waypoints.append({
+        HTouchdownWaypointId,
+        static_cast<quint32>(plan.waypoints.size()),
+        touchdown_m.x_m,
+        touchdown_m.y_m,
+        0.0,
+        "land",
+        compactJson(QJsonObject{{"touchdown", true}}),
+    });
+    plan.terminal_waypoint_id = HTouchdownWaypointId;
 
     if (error_message != nullptr) {
         error_message->clear();

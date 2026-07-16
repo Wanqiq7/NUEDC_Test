@@ -6,6 +6,8 @@ namespace hcore {
 
 constexpr int MapWidth = 9;
 constexpr int MapHeight = 7;
+inline constexpr char HExecutionContract[] = "h_field_m_v1";
+inline constexpr char HTouchdownWaypointId[] = "touchdown";
 
 std::optional<competition::TaskPlan> buildTaskPlan(
     const CaseConfig &case_config,

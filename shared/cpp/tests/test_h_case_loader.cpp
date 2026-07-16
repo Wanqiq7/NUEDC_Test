@@ -14,6 +14,7 @@ private slots:
     void parsesSampleCase();
     void rejectsDeprecatedReturnToStartConfiguration();
     void buildTaskPlanRejectsMissingLandingProfile();
+    void buildTaskPlanRejectsNonCanonicalStart();
     void buildTaskPlanPropagatesMissionTiming();
     void buildTaskPlanProducesCanonicalPlanWithLandingMetadata();
 };
@@ -69,6 +70,19 @@ void HCaseLoaderTests::buildTaskPlanRejectsMissingLandingProfile() {
     QVERIFY(error.contains("landing"));
 }
 
+void HCaseLoaderTests::buildTaskPlanRejectsNonCanonicalStart() {
+    QString error;
+    const auto maybe_case = hcore::loadCase("shared/cases/sample_case.json", &error);
+    QVERIFY2(maybe_case.has_value(), qPrintable(error));
+
+    hcore::CaseConfig non_canonical_case = maybe_case.value();
+    non_canonical_case.start_cell = "A8B1";
+    const auto plan = hcore::buildTaskPlan(non_canonical_case, {}, &error);
+
+    QVERIFY(!plan.has_value());
+    QVERIFY(error.contains("A9B1"));
+}
+
 void HCaseLoaderTests::buildTaskPlanPropagatesMissionTiming() {
     QString error;
     const auto maybe_case = hcore::loadCase("shared/cases/sample_case.json", &error);
@@ -92,15 +106,29 @@ void HCaseLoaderTests::buildTaskPlanProducesCanonicalPlanWithLandingMetadata() {
     QVERIFY2(plan.has_value(), qPrintable(error));
     QCOMPARE(plan->task_id, maybe_case->case_id);
     QCOMPARE(plan->task_type, QString("h_problem"));
-    QCOMPARE(plan->start_waypoint_id, maybe_case->start_cell);
-    QVERIFY(!plan->waypoints.isEmpty());
-    QCOMPARE(plan->terminal_waypoint_id, plan->waypoints.last().id);
+    QCOMPARE(plan->start_waypoint_id, QString("A9B1"));
+    QCOMPARE(plan->terminal_waypoint_id, QString("touchdown"));
+    QVERIFY(plan->waypoints.size() >= 3);
+    QCOMPARE(plan->waypoints.first().id, QString("A9B1"));
+    QCOMPARE(plan->waypoints.first().action, QString("takeoff"));
+    QCOMPARE(plan->waypoints.first().x, 0.0);
+    QCOMPARE(plan->waypoints.first().y, 0.0);
+    QCOMPARE(plan->waypoints.first().z, 1.2);
+    QCOMPARE(plan->waypoints.last().id, QString("touchdown"));
+    QCOMPARE(plan->waypoints.last().action, QString("land"));
+    QCOMPARE(plan->waypoints.last().z, 0.0);
+
     const QJsonObject metadata = QJsonDocument::fromJson(plan->metadata_json.toUtf8()).object();
+    QCOMPARE(metadata.value("execution_contract").toString(), QString("h_field_m_v1"));
+    QCOMPARE(metadata.value("cruise_height_cm").toDouble(), 120.0);
+    QCOMPARE(metadata.value("terminal_cell").toString(),
+             plan->waypoints.at(plan->waypoints.size() - 2).id);
     const QStringList required_metadata{
         "case_id", "start_cell", "no_fly_cells", "terminal_cell", "landing_enabled",
         "descent_angle_deg", "takeoff_anchor_x_cm", "takeoff_anchor_y_cm",
         "touchdown_x_cm", "touchdown_y_cm", "descent_run_cm", "descent_heading_deg",
         "estimated_mission_time_s", "planning_optimality", "planning_warnings",
+        "execution_contract", "cruise_height_cm",
     };
     for (const QString &field : required_metadata) {
         QVERIFY2(metadata.contains(field), qPrintable(field));
