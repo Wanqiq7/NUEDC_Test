@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 std::optional<QPoint> GridMapper::tryToPoint(const QString &code) {
-    static const QRegularExpression pattern(QStringLiteral("^A([1-9])B([1-7])$"));
+    static const QRegularExpression pattern(QStringLiteral("\\AA([1-9])B([1-7])\\z"));
     const QRegularExpressionMatch match = pattern.match(code);
     if (!match.hasMatch()) {
         return std::nullopt;

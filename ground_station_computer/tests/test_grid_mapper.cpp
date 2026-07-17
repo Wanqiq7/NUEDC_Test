@@ -31,6 +31,7 @@ void GridMapperTests::rejectsNonGridWaypointIds_data() {
     QTest::newRow("row-out-of-range") << QStringLiteral("A10B1");
     QTest::newRow("column-out-of-range") << QStringLiteral("A1B8");
     QTest::newRow("trailing-data") << QStringLiteral("A1B1-extra");
+    QTest::newRow("final-newline") << QStringLiteral("A1B1\n");
 }
 
 void GridMapperTests::rejectsNonGridWaypointIds() {
