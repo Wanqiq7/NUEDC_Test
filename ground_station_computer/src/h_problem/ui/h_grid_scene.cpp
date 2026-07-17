@@ -19,8 +19,6 @@ namespace {
 constexpr int kColumns = 9;
 constexpr int kRows = 7;
 constexpr qreal kCellSize = 52.0;
-constexpr qreal kFieldMarginCm = 25.0;
-constexpr qreal kGridCellCm = 50.0;
 constexpr int kCurrentMarkerDataKey = 1001;
 constexpr const char *kCurrentMarkerDataValue = "current_marker";
 constexpr int kLandingRoleDataKey = 1002;
@@ -334,12 +332,22 @@ void GridScene::setStartCell(const QString &cell_code) {
 void GridScene::setCurrentCell(const QString &cell_code) {
     const auto point = GridMapper::tryToPoint(cell_code);
     if (!point.has_value()) {
-        if (current_marker_ != nullptr) {
+        if (cell_code == QLatin1String("touchdown")
+            && landing_target_position_.has_value()) {
+            setCurrentMarkerPosition(landing_target_position_.value());
+        } else if (current_marker_ != nullptr) {
             current_marker_->hide();
         }
         return;
     }
 
+    const qreal scene_y_index = (kRows - 1) - point->y();
+    setCurrentMarkerPosition(QPointF(
+        (point->x() * kCellSize) + (kCellSize / 2.0),
+        (scene_y_index * kCellSize) + (kCellSize / 2.0)));
+}
+
+void GridScene::setCurrentMarkerPosition(const QPointF &position) {
     if (current_marker_ == nullptr) {
         current_marker_ = addEllipse(
             -9.0,
@@ -352,14 +360,12 @@ void GridScene::setCurrentCell(const QString &cell_code) {
         current_marker_->setZValue(5.0);
     }
 
-    const qreal scene_y_index = (kRows - 1) - point->y();
-    current_marker_->setPos(
-        (point->x() * kCellSize) + (kCellSize / 2.0),
-        (scene_y_index * kCellSize) + (kCellSize / 2.0));
+    current_marker_->setPos(position);
     current_marker_->show();
 }
 
 void GridScene::setLandingTarget(
+    const QString &start_cell,
     const QString &descent_start_cell,
     double touchdown_x_cm,
     double touchdown_y_cm,
@@ -389,13 +395,19 @@ void GridScene::setLandingTarget(
         delete landing_corridor_;
         landing_corridor_ = nullptr;
     }
+    landing_target_position_.reset();
 
-    if (!enabled || descent_start_cell.isEmpty()) {
+    Q_UNUSED(touchdown_x_cm);
+    Q_UNUSED(touchdown_y_cm);
+    if (!enabled
+        || !GridMapper::tryToPoint(start_cell).has_value()
+        || !GridMapper::tryToPoint(descent_start_cell).has_value()) {
         return;
     }
 
     const QPointF descent_start = cellCenter(descent_start_cell);
-    const QPointF touchdown = fieldPointToScene(touchdown_x_cm, touchdown_y_cm);
+    const QPointF touchdown = cellCenter(start_cell);
+    landing_target_position_ = touchdown;
 
     descent_start_marker_ = addEllipse(
         -10.0,
@@ -450,12 +462,6 @@ QPointF GridScene::cellCenter(const QString &cell_code) const {
     const qreal scene_y_index = (kRows - 1) - point.y();
     return QPointF((point.x() * kCellSize) + (kCellSize / 2.0),
                    (scene_y_index * kCellSize) + (kCellSize / 2.0));
-}
-
-QPointF GridScene::fieldPointToScene(double x_cm, double y_cm) const {
-    return QPointF(
-        ((x_cm - kFieldMarginCm) / kGridCellCm) * kCellSize,
-        ((y_cm - kFieldMarginCm) / kGridCellCm) * kCellSize);
 }
 
 void GridScene::clearRouteItems() {

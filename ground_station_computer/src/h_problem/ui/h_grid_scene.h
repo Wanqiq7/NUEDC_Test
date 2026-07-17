@@ -3,7 +3,10 @@
 #include <QGraphicsEllipseItem>
 #include <QGraphicsScene>
 #include <QMap>
+#include <QPointF>
 #include <QStringList>
+
+#include <optional>
 
 class QGraphicsRectItem;
 class QGraphicsSimpleTextItem;
@@ -21,6 +24,7 @@ public:
     void setStartCell(const QString &cell_code);
     void setCurrentCell(const QString &cell_code);
     void setLandingTarget(
+        const QString &start_cell,
         const QString &descent_start_cell,
         double touchdown_x_cm,
         double touchdown_y_cm,
@@ -39,7 +43,7 @@ protected:
 
 private:
     QPointF cellCenter(const QString &cell_code) const;
-    QPointF fieldPointToScene(double x_cm, double y_cm) const;
+    void setCurrentMarkerPosition(const QPointF &position);
     void clearRouteItems();
     void initializeGrid();
     void resetCellBrushes();
@@ -55,6 +59,7 @@ private:
     QGraphicsEllipseItem *touchdown_marker_ = nullptr;
     QGraphicsSimpleTextItem *touchdown_label_ = nullptr;
     QGraphicsLineItem *landing_corridor_ = nullptr;
+    std::optional<QPointF> landing_target_position_;
     QStringList no_fly_cells_;
     bool no_fly_edit_enabled_ = false;
     QStringList candidate_no_fly_cells_;

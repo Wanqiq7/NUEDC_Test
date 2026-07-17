@@ -186,6 +186,7 @@ void HProblemView::showRoute(
     grid_scene_->setStartCell(start_cell);
     grid_scene_->setRoute(route);
     grid_scene_->setLandingTarget(
+        start_cell,
         descent_start_cell,
         touchdown_x_cm,
         touchdown_y_cm,
