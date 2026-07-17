@@ -94,15 +94,11 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
     stop_button_ = new QPushButton("停止任务", this);
     stop_button_->setObjectName("StopMissionButton");
     stop_button_->setCursor(Qt::PointingHandCursor);
-    arm_vision_button_ = new QPushButton("视觉武装", this);
-    arm_vision_button_->setObjectName("ArmVisionButton");
-    arm_vision_button_->setCursor(Qt::PointingHandCursor);
     probe_airborne_link_button_ = new QPushButton("刷新机载链路", this);
     probe_airborne_link_button_->setObjectName("ProbeAirborneLinkButton");
     probe_airborne_link_button_->setCursor(Qt::PointingHandCursor);
     action_layout->addWidget(execute_button_);
     action_layout->addWidget(stop_button_);
-    action_layout->addWidget(arm_vision_button_);
     action_layout->addWidget(probe_airborne_link_button_);
     root_layout->addLayout(action_layout);
 
@@ -146,7 +142,6 @@ MainWindow::MainWindow(QWidget *parent, bool start_worker)
     connect(planning_button_, &QPushButton::clicked, this, &MainWindow::handlePlanningButtonClicked);
     connect(execute_button_, &QPushButton::clicked, this, &MainWindow::handleExecuteMissionClicked);
     connect(stop_button_, &QPushButton::clicked, this, &MainWindow::handleStopMissionClicked);
-    connect(arm_vision_button_, &QPushButton::clicked, this, &MainWindow::handleArmVisionClicked);
     connect(probe_airborne_link_button_, &QPushButton::clicked, this, &MainWindow::handleProbeAirborneLinkClicked);
     task_adapter_->loadInitialPreview();
     refreshExecutionControls();
@@ -265,45 +260,10 @@ void MainWindow::handleStopMissionClicked() {
     refreshExecutionControls();
 }
 
-void MainWindow::handleArmVisionClicked() {
-    sendManualVisionArmCommand();
-}
-
 void MainWindow::handleProbeAirborneLinkClicked() {
     if (command_link_monitor_ != nullptr) {
         command_link_monitor_->requestImmediateProbe();
     }
-}
-
-void MainWindow::sendManualVisionArmCommand() {
-    MissionRuntimeInputs inputs = task_adapter_->missionRuntimeInputs();
-    inputs.command_sync_enabled = command_sync_enabled_;
-    inputs.airborne_online = commandLinkHealthy();
-    if (!MissionRuntimeState::controlsFor(inputs).can_arm_vision) {
-        status_label_->setText("状态: 请先同步已加载的任务到在线机载端");
-        return;
-    }
-
-    const auto result = mission_command_service_->sendControlCommand(
-        GroundControlCommandType::ArmTargeting, task_adapter_->activeTaskId());
-    if (!result.ok) {
-        if (command_link_monitor_ != nullptr) {
-            command_link_monitor_->recordExternalCommandResult(result);
-        }
-        refreshAirborneStatusLabel();
-        refreshExecutionControls();
-        status_label_->setText(ReliableCommandClient::operatorStatusText("视觉武装命令", result));
-        return;
-    }
-
-    task_adapter_->applyCommandAck(result);
-    if (command_link_monitor_ != nullptr) {
-        command_link_monitor_->setActiveTaskId(task_adapter_->activeTaskId());
-        command_link_monitor_->recordExternalCommandResult(result);
-    }
-    refreshAirborneStatusLabel();
-    refreshExecutionControls();
-    status_label_->setText(ReliableCommandClient::operatorStatusText("视觉武装命令", result));
 }
 
 void MainWindow::refreshExecutionControls() {
@@ -316,9 +276,6 @@ void MainWindow::refreshExecutionControls() {
     }
     if (stop_button_ != nullptr) {
         stop_button_->setEnabled(controls.can_stop);
-    }
-    if (arm_vision_button_ != nullptr) {
-        arm_vision_button_->setEnabled(controls.can_arm_vision);
     }
     if (probe_airborne_link_button_ != nullptr) {
         probe_airborne_link_button_->setEnabled(command_sync_enabled_);

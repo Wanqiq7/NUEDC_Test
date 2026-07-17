@@ -153,7 +153,7 @@ python3 scripts/mock_airborne.py --self-test \
 3. 加载 H 题案例或设置 3 个横向/纵向连续禁飞格。
 4. 生成航线，核对起飞点、巡查顺序、下降起点与降落终点。
 5. 下发 `mission_load`，等待 Ack 确认任务已加载。
-6. 发送 START；需要视觉识别时再发送 ARM，RESET 用于开启新的视觉 epoch。
+6. 发送 START；机载端会自动开启本次执行的视觉 epoch，无需再手动发送 ARM。
 7. 观察当前位置、航点进度、检测记录与终态 Summary；必要时发送 STOP。
 8. 任务结束后核对本地检测数据库和 `runtime/active_mission_plan.json`。
 
@@ -196,7 +196,7 @@ terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
 | `COMMAND_TYPE_PING` | 命令 | 验证命令链路并获取当前任务上下文。 |
 | `COMMAND_TYPE_START_MISSION` | 命令 | 由 `mission_coordinator` 直接启动速度闭环。 |
 | `COMMAND_TYPE_STOP_MISSION` | 命令 | 请求进入不可恢复 Cancelled 终态并安全下降。 |
-| `COMMAND_TYPE_ARM_TARGETING` | 命令 | 开启当前任务的视觉识别 epoch。 |
+| `COMMAND_TYPE_ARM_TARGETING` | 兼容命令 | 手动开启视觉 epoch；正常一键流程由 START 自动完成。 |
 | `COMMAND_TYPE_RESET_TARGETING` | 命令 | 复位并创建新的视觉 epoch。 |
 
 `plan_revision`、`execution_id`、`vision_epoch` 和已接受 command sequence 的权威均在

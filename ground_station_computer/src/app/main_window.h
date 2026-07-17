@@ -39,9 +39,7 @@ private:
     void handlePlanningButtonClicked();
     void handleExecuteMissionClicked();
     void handleStopMissionClicked();
-    void handleArmVisionClicked();
     void handleProbeAirborneLinkClicked();
-    void sendManualVisionArmCommand();
 
     void handleCommandLinkHealthChanged(CommandLinkSnapshot snapshot);
     bool commandLinkHealthy() const;
@@ -58,7 +56,6 @@ private:
     QPushButton *planning_button_ = nullptr;
     QPushButton *execute_button_ = nullptr;
     QPushButton *stop_button_ = nullptr;
-    QPushButton *arm_vision_button_ = nullptr;
     QPushButton *probe_airborne_link_button_ = nullptr;
     QLabel *airborne_status_label_ = nullptr;
     bool command_sync_enabled_ = true;

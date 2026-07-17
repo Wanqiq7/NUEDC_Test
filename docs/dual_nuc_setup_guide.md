@@ -178,8 +178,11 @@ terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
 
 - 点击 `执行任务`：地面站发送 `START_MISSION`。
 - 点击 `停止任务`：地面站发送 `STOP_MISSION`。
-- 在机载端在线且已确认加载当前任务后，点击 `视觉武装`：地面站发送 `ARM_TARGETING`。
-- 在机载端在线且已确认加载当前任务后，点击 `视觉复位`：地面站发送 `RESET_TARGETING`。
+- `START_MISSION` 成功后机载端自动开启视觉；地面站不再提供飞行中的手动视觉按钮。
+- `ARM_TARGETING` 与 `RESET_TARGETING` 仍保留在线协议兼容能力，不属于正常一键流程。
+
+每次启动地面站都会创建独立检测会话，不会加载上一次启动的记录。任务结束后可点击
+`动物查询`，按动物品种查看本次会话的总数以及各 `A?B?` 方格内的数量。
 
 外部机载端需要按 `shared/proto/messages.proto` 的协议返回确认。确认中的 `vision_armed` 字段会显示为“视觉瞄准: 已武装”或“未武装”；外部机载端也应持续通过遥测端口发布任务事件。
 

@@ -33,6 +33,7 @@ bool addNullableColumnIfMissing(const QSqlDatabase &database, const QString &col
 
 DetectionRepository::DetectionRepository(const QString &database_path)
     : connection_name_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+      session_id_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
       database_path_(database_path) {}
 
 DetectionRepository::~DetectionRepository() {
@@ -62,19 +63,26 @@ bool DetectionRepository::open() {
         "animal_name TEXT NOT NULL,"
         "count INTEGER NOT NULL,"
         "timestamp_ms INTEGER NOT NULL,"
+        "session_id TEXT,"
         "task_id TEXT,"
         "track_id TEXT)")) {
         return false;
     }
 
-    if (!addNullableColumnIfMissing(database_, "task_id") || !addNullableColumnIfMissing(database_, "track_id")) {
+    if (!addNullableColumnIfMissing(database_, "session_id")
+        || !addNullableColumnIfMissing(database_, "task_id")
+        || !addNullableColumnIfMissing(database_, "track_id")) {
         return false;
     }
 
+    if (!query.exec("DROP INDEX IF EXISTS detections_task_track_unique")) {
+        return false;
+    }
     return query.exec(
-        "CREATE UNIQUE INDEX IF NOT EXISTS detections_task_track_unique "
-        "ON detections(task_id, track_id) "
-        "WHERE task_id IS NOT NULL AND task_id <> '' "
+        "CREATE UNIQUE INDEX IF NOT EXISTS detections_session_task_track_unique "
+        "ON detections(session_id, task_id, track_id) "
+        "WHERE session_id IS NOT NULL AND session_id <> '' "
+        "AND task_id IS NOT NULL AND task_id <> '' "
         "AND track_id IS NOT NULL AND track_id <> ''");
 }
 
@@ -88,8 +96,9 @@ DetectionRepository::StoreResult DetectionRepository::storeDetection(
     QSqlQuery query(database_);
     query.prepare(
         "INSERT OR IGNORE INTO detections "
-        "(task_id, track_id, cell_code, animal_name, count, timestamp_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?)");
+        "(session_id, task_id, track_id, cell_code, animal_name, count, timestamp_ms) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)");
+    query.addBindValue(session_id_);
     query.addBindValue(task_id);
     query.addBindValue(track_id);
     query.addBindValue(cell_code);
@@ -109,7 +118,9 @@ DetectionRepository::StoreResult DetectionRepository::storeDetection(
 
     QSqlQuery duplicate_query(database_);
     duplicate_query.prepare(
-        "SELECT 1 FROM detections WHERE task_id = ? AND track_id = ? LIMIT 1");
+        "SELECT 1 FROM detections "
+        "WHERE session_id = ? AND task_id = ? AND track_id = ? LIMIT 1");
+    duplicate_query.addBindValue(session_id_);
     duplicate_query.addBindValue(task_id);
     duplicate_query.addBindValue(track_id);
     if (!duplicate_query.exec() || !duplicate_query.next()) {
@@ -121,9 +132,43 @@ DetectionRepository::StoreResult DetectionRepository::storeDetection(
 QMap<QString, int> DetectionRepository::summarizeByAnimal() const {
     QMap<QString, int> totals;
     QSqlQuery query(database_);
-    query.exec("SELECT animal_name, SUM(count) FROM detections GROUP BY animal_name");
+    query.prepare(
+        "SELECT animal_name, SUM(count) FROM detections "
+        "WHERE session_id = ? GROUP BY animal_name ORDER BY animal_name");
+    query.addBindValue(session_id_);
+    query.exec();
     while (query.next()) {
         totals.insert(query.value(0).toString(), query.value(1).toInt());
     }
     return totals;
+}
+
+QStringList DetectionRepository::animalNames() const {
+    QStringList names;
+    QSqlQuery query(database_);
+    query.prepare(
+        "SELECT DISTINCT animal_name FROM detections "
+        "WHERE session_id = ? ORDER BY animal_name");
+    query.addBindValue(session_id_);
+    query.exec();
+    while (query.next()) {
+        names.append(query.value(0).toString());
+    }
+    return names;
+}
+
+QMap<QString, int> DetectionRepository::locationsForAnimal(const QString &animal_name) const {
+    QMap<QString, int> locations;
+    QSqlQuery query(database_);
+    query.prepare(
+        "SELECT cell_code, SUM(count) FROM detections "
+        "WHERE session_id = ? AND animal_name = ? "
+        "GROUP BY cell_code ORDER BY cell_code");
+    query.addBindValue(session_id_);
+    query.addBindValue(animal_name);
+    query.exec();
+    while (query.next()) {
+        locations.insert(query.value(0).toString(), query.value(1).toInt());
+    }
+    return locations;
 }

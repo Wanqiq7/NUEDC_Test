@@ -3,6 +3,7 @@
 #include <QMap>
 #include <QSqlDatabase>
 #include <QString>
+#include <QStringList>
 
 class DetectionRepository {
 public:
@@ -24,9 +25,12 @@ public:
         int count,
         qint64 timestamp_ms);
     QMap<QString, int> summarizeByAnimal() const;
+    QStringList animalNames() const;
+    QMap<QString, int> locationsForAnimal(const QString &animal_name) const;
 
 private:
     QString connection_name_;
+    QString session_id_;
     QString database_path_;
     QSqlDatabase database_;
 };

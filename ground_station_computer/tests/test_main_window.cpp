@@ -14,6 +14,8 @@
 #include <QMetaObject>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QComboBox>
+#include <QStackedWidget>
 #include <QUuid>
 
 #include <QCoreApplication>
@@ -114,12 +116,13 @@ private slots:
     void defaultAdapterConsumesCommandAckRuntimeState();
     void defaultAdapterIgnoresStateOnlyVisionAckWithoutIdentity();
     void legacyStartAckWithoutIdentityDoesNotMarkMissionRunning();
-    void exposesManualVisionArmWithoutStandaloneReset();
+    void doesNotExposeManualVisionControls();
     void executionControlsExistAndAreDisabledInTestMode();
     void taskMapExpandsInsideLargeShellWindow();
     void manualNoFlyFlowPersistsPlan();
     void targetUpdateOnlyUpdatesLiveTargetStatus();
     void duplicateDetectionDoesNotDuplicateUiTotals();
+    void animalQueryPageShowsCurrentSessionLocations();
     void unknownEventDoesNotFallThroughToTelemetry();
     void telemetryHealthExpiresAfterTtl();
     void telemetryCannotEnableCommandControlsWhenCommandLinkIsOffline();
@@ -227,12 +230,12 @@ void MainWindowTests::legacyStartAckWithoutIdentityDoesNotMarkMissionRunning() {
     QVERIFY(!window.task_adapter_->missionRunning());
 }
 
-void MainWindowTests::exposesManualVisionArmWithoutStandaloneReset() {
+void MainWindowTests::doesNotExposeManualVisionControls() {
     MainWindow window(nullptr, false);
     window.show();
     QTest::qWait(50);
 
-    QVERIFY(window.findChild<QPushButton *>("ArmVisionButton") != nullptr);
+    QVERIFY(window.findChild<QPushButton *>("ArmVisionButton") == nullptr);
     QVERIFY(window.findChild<QPushButton *>("ResetVisionButton") == nullptr);
 }
 
@@ -243,19 +246,16 @@ void MainWindowTests::executionControlsExistAndAreDisabledInTestMode() {
 
     auto *execute_button = window.findChild<QPushButton *>("ExecuteMissionButton");
     auto *stop_button = window.findChild<QPushButton *>("StopMissionButton");
-    auto *arm_vision_button = window.findChild<QPushButton *>("ArmVisionButton");
     auto *airborne_status = window.findChild<QLabel *>("AirborneStatusLabel");
     auto *planning_button = window.findChild<QPushButton *>("PlanningButton");
 
     QVERIFY(execute_button != nullptr);
     QVERIFY(stop_button != nullptr);
-    QVERIFY(arm_vision_button != nullptr);
     QVERIFY(airborne_status != nullptr);
     QVERIFY(planning_button != nullptr);
     QVERIFY(planning_button->isEnabled());
     QVERIFY(!execute_button->isEnabled());
     QVERIFY(!stop_button->isEnabled());
-    QVERIFY(!arm_vision_button->isEnabled());
     QVERIFY(airborne_status->text().contains("测试模式"));
 }
 
@@ -338,7 +338,7 @@ void MainWindowTests::targetUpdateOnlyUpdatesLiveTargetStatus() {
     QVERIFY(!adapter.activeTaskId().isEmpty());
 
     auto *detection_list = task_view->findChild<QListWidget *>();
-    auto *summary_table = task_view->findChild<QTableWidget *>();
+    auto *summary_table = task_view->findChild<QTableWidget *>("DetectionSummaryTable");
     auto *target_status = task_view->findChild<QLabel *>("TargetStatusLabel");
     QVERIFY(detection_list != nullptr);
     QVERIFY(summary_table != nullptr);
@@ -374,7 +374,7 @@ void MainWindowTests::duplicateDetectionDoesNotDuplicateUiTotals() {
     QVERIFY(!adapter.activeTaskId().isEmpty());
 
     auto *detection_list = task_view->findChild<QListWidget *>();
-    auto *summary_table = task_view->findChild<QTableWidget *>();
+    auto *summary_table = task_view->findChild<QTableWidget *>("DetectionSummaryTable");
     QVERIFY(detection_list != nullptr);
     QVERIFY(summary_table != nullptr);
     const int initial_detection_count = detection_list->count();
@@ -402,6 +402,56 @@ void MainWindowTests::duplicateDetectionDoesNotDuplicateUiTotals() {
         }
     }
     QCOMPARE(matching_rows, 1);
+}
+
+void MainWindowTests::animalQueryPageShowsCurrentSessionLocations() {
+    HProblemTaskAdapter adapter;
+    QWidget parent;
+    std::unique_ptr<QWidget> task_view(adapter.createTaskView(&parent));
+    QVERIFY(task_view != nullptr);
+    adapter.loadInitialPreview();
+    const QString animal_name = QString("query-tiger-%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    adapter.handleTaskEvent(
+        {adapter.activeTaskId(),
+         "detection",
+         1,
+         "A2B1",
+         QString(R"({"track_id":"query-track-1","cell":"A2B1","animal":"%1","count":1})")
+             .arg(animal_name)},
+        1000);
+    adapter.handleTaskEvent(
+        {adapter.activeTaskId(),
+         "detection",
+         2,
+         "A3B2",
+         QString(R"({"track_id":"query-track-2","cell":"A3B2","animal":"%1","count":2})")
+             .arg(animal_name)},
+        2000);
+
+    auto *query_button = task_view->findChild<QPushButton *>("AnimalQueryButton");
+    auto *pages = task_view->findChild<QStackedWidget *>("HProblemPages");
+    QVERIFY(query_button != nullptr);
+    QVERIFY(pages != nullptr);
+    QCOMPARE(pages->currentIndex(), 0);
+
+    query_button->click();
+    QCoreApplication::processEvents();
+
+    QCOMPARE(pages->currentIndex(), 1);
+    auto *species = task_view->findChild<QComboBox *>("AnimalSpeciesCombo");
+    auto *locations = task_view->findChild<QTableWidget *>("AnimalLocationTable");
+    auto *total = task_view->findChild<QLabel *>("AnimalQueryTotal");
+    QVERIFY(species != nullptr);
+    QVERIFY(locations != nullptr);
+    QVERIFY(total != nullptr);
+    QCOMPARE(species->currentText(), animal_name);
+    QCOMPARE(locations->rowCount(), 2);
+    QCOMPARE(total->text(), QString("总数: 3"));
+    QCOMPARE(locations->item(0, 0)->text(), QString("A2B1"));
+    QCOMPARE(locations->item(0, 1)->text(), QString("1"));
+    QCOMPARE(locations->item(1, 0)->text(), QString("A3B2"));
+    QCOMPARE(locations->item(1, 1)->text(), QString("2"));
 }
 
 void MainWindowTests::unknownEventDoesNotFallThroughToTelemetry() {
@@ -444,10 +494,8 @@ void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffli
 
     auto *execute_button = window.findChild<QPushButton *>("ExecuteMissionButton");
     auto *stop_button = window.findChild<QPushButton *>("StopMissionButton");
-    auto *arm_vision_button = window.findChild<QPushButton *>("ArmVisionButton");
     QVERIFY(execute_button != nullptr);
     QVERIFY(stop_button != nullptr);
-    QVERIFY(arm_vision_button != nullptr);
 
     window.task_adapter_->applyCommandAck(CommandSendResult{
         true,
@@ -461,7 +509,6 @@ void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffli
 
     QVERIFY(!execute_button->isEnabled());
     QVERIFY(!stop_button->isEnabled());
-    QVERIFY(!arm_vision_button->isEnabled());
 
     window.handleTaskEvent(
         competition::TaskEvent{
@@ -474,7 +521,6 @@ void MainWindowTests::telemetryCannotEnableCommandControlsWhenCommandLinkIsOffli
 
     QVERIFY(!execute_button->isEnabled());
     QVERIFY(!stop_button->isEnabled());
-    QVERIFY(!arm_vision_button->isEnabled());
 
     qunsetenv("NUEDC_AIRBORNE_HOST");
     qunsetenv("NUEDC_COMMAND_PORT");

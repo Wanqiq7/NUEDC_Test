@@ -13,6 +13,8 @@ class GridScene;
 class QLabel;
 class QListWidget;
 class QTableWidget;
+class QComboBox;
+class QStackedWidget;
 class QWidget;
 
 // H 题被动视图：只负责构建控件树并按语义化 setter 更新 UI，不含任何业务逻辑、
@@ -21,6 +23,9 @@ class QWidget;
 // 实现 HMissionViewSink，使控制器可仅依赖窄接口而不依赖具体 UI 类型。
 class HProblemView : public HMissionViewSink {
 public:
+    using AnimalNamesProvider = std::function<QStringList()>;
+    using AnimalLocationsProvider = std::function<QMap<QString, int>(const QString &)>;
+
     using CellClickedHandler = std::function<void(const QString &)>;
 
     // 构建并返回根控件；initial_totals 用于首帧填充统计表。
@@ -28,6 +33,9 @@ public:
 
     // 网格被点击时的回调（选择禁飞格）。在 buildWidget 之后设置即可。
     void setCellClickedHandler(CellClickedHandler handler) { cell_clicked_handler_ = std::move(handler); }
+    void setAnimalQueryProviders(
+        AnimalNamesProvider names_provider,
+        AnimalLocationsProvider locations_provider);
 
     // 概览标签。
     void setCaseLabel(const QString &text) override;
@@ -60,11 +68,19 @@ public:
     void setSummaryTotals(const QMap<QString, int> &totals) override;
 
 private:
+    void openAnimalQuery();
+    void refreshAnimalQuery();
     GridScene *grid_scene_ = nullptr;
     QLabel *case_label_ = nullptr;
     QLabel *mission_label_ = nullptr;
     QLabel *target_status_label_ = nullptr;
     QListWidget *detection_list_ = nullptr;
     QTableWidget *summary_table_ = nullptr;
+    QStackedWidget *pages_ = nullptr;
+    QComboBox *animal_species_combo_ = nullptr;
+    QLabel *animal_query_total_ = nullptr;
+    QTableWidget *animal_location_table_ = nullptr;
+    AnimalNamesProvider animal_names_provider_;
+    AnimalLocationsProvider animal_locations_provider_;
     CellClickedHandler cell_clicked_handler_;
 };

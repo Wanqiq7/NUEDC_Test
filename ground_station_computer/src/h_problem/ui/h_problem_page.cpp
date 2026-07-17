@@ -22,6 +22,11 @@ QWidget *HProblemTaskAdapter::createTaskView(QWidget *parent) {
     view_.setCellClickedHandler([this](const QString &cell_code) {
         controller_->handleGridSceneCellClicked(cell_code);
     });
+    view_.setAnimalQueryProviders(
+        [this]() { return controller_->detectedAnimalNames(); },
+        [this](const QString &animal_name) {
+            return controller_->detectionLocations(animal_name);
+        });
     return view_.buildWidget(parent, controller_->detectionTotals());
 }
 

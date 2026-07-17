@@ -14,6 +14,7 @@ private slots:
     void returnsDuplicateForRepeatedTrackedDetection();
     void storesRepeatedLegacyEmptyTrackDetections();
     void upgradesLegacySchemaWithoutLosingDetections();
+    void separatesRecordsAcrossApplicationSessions();
 };
 
 void DetectionRepositoryTests::storesAndAggregatesDetections() {
@@ -94,8 +95,31 @@ void DetectionRepositoryTests::upgradesLegacySchemaWithoutLosingDetections() {
         DetectionRepository::StoreResult::Stored);
 
     const auto totals = repository.summarizeByAnimal();
-    QCOMPARE(totals.value("elephant"), 1);
+    QCOMPARE(totals.value("elephant"), 0);
     QCOMPARE(totals.value("tiger"), 1);
+}
+
+void DetectionRepositoryTests::separatesRecordsAcrossApplicationSessions() {
+    QTemporaryDir temporary_directory;
+    QVERIFY(temporary_directory.isValid());
+    const QString database_path = temporary_directory.filePath("detections.sqlite");
+    {
+        DetectionRepository first_session(database_path);
+        QVERIFY(first_session.open());
+        QCOMPARE(
+            first_session.storeDetection("mission-1", "track-1", "A2B1", "tiger", 1, 1000),
+            DetectionRepository::StoreResult::Stored);
+        QCOMPARE(first_session.summarizeByAnimal().value("tiger"), 1);
+    }
+    {
+        DetectionRepository second_session(database_path);
+        QVERIFY(second_session.open());
+        QVERIFY(second_session.summarizeByAnimal().isEmpty());
+        QCOMPARE(
+            second_session.storeDetection("mission-1", "track-1", "A3B2", "tiger", 1, 2000),
+            DetectionRepository::StoreResult::Stored);
+        QCOMPARE(second_session.summarizeByAnimal().value("tiger"), 1);
+    }
 }
 
 QTEST_MAIN(DetectionRepositoryTests)

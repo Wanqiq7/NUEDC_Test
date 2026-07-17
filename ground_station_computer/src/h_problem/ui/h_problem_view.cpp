@@ -9,7 +9,10 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QListWidget>
+#include <QComboBox>
 #include <QPainter>
+#include <QPushButton>
+#include <QStackedWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
@@ -95,6 +98,7 @@ QWidget *HProblemView::buildWidget(QWidget *parent, const QMap<QString, int> &in
 
     detection_list_ = new QListWidget(parent);
     summary_table_ = new QTableWidget(0, 2, parent);
+    summary_table_->setObjectName("DetectionSummaryTable");
     summary_table_->setHorizontalHeaderLabels({"动物", "数量"});
     summary_table_->horizontalHeader()->setStretchLastSection(true);
     summary_table_->verticalHeader()->setVisible(false);
@@ -135,6 +139,11 @@ QWidget *HProblemView::buildWidget(QWidget *parent, const QMap<QString, int> &in
     summary_title->setObjectName("CardTitle");
     summary_layout->addWidget(summary_title);
     summary_layout->addWidget(summary_table_);
+    auto *query_button = new QPushButton("动物查询", parent);
+    query_button->setObjectName("AnimalQueryButton");
+    query_button->setFixedHeight(40);
+    query_button->setCursor(Qt::PointingHandCursor);
+    summary_layout->addWidget(query_button);
 
     auto *right_layout = new QVBoxLayout();
     right_layout->setSpacing(12);
@@ -142,13 +151,108 @@ QWidget *HProblemView::buildWidget(QWidget *parent, const QMap<QString, int> &in
     right_layout->addWidget(detection_card, 1);
     right_layout->addWidget(summary_card);
 
+    auto *mission_page = new QWidget(parent);
+    auto *mission_layout = new QHBoxLayout(mission_page);
+    mission_layout->setContentsMargins(0, 0, 0, 0);
+    mission_layout->setSpacing(16);
+    mission_layout->addWidget(view, 3);
+    mission_layout->addLayout(right_layout, 2);
+
+    auto *query_page = new QWidget(parent);
+    query_page->setObjectName("AnimalQueryPage");
+    auto *query_layout = new QVBoxLayout(query_page);
+    query_layout->setContentsMargins(24, 20, 24, 20);
+    query_layout->setSpacing(14);
+    auto *query_header = new QHBoxLayout();
+    auto *back_button = new QPushButton("返回巡查", query_page);
+    back_button->setObjectName("AnimalQueryBackButton");
+    back_button->setFixedHeight(40);
+    auto *query_title = new QLabel("动物位置查询", query_page);
+    query_title->setObjectName("PanelTitle");
+    query_header->addWidget(back_button);
+    query_header->addWidget(query_title);
+    query_header->addStretch();
+    query_layout->addLayout(query_header);
+    animal_species_combo_ = new QComboBox(query_page);
+    animal_species_combo_->setObjectName("AnimalSpeciesCombo");
+    animal_species_combo_->setMinimumHeight(40);
+    query_layout->addWidget(animal_species_combo_);
+    animal_query_total_ = new QLabel("总数: 0", query_page);
+    animal_query_total_->setObjectName("AnimalQueryTotal");
+    query_layout->addWidget(animal_query_total_);
+    animal_location_table_ = new QTableWidget(0, 2, query_page);
+    animal_location_table_->setObjectName("AnimalLocationTable");
+    animal_location_table_->setHorizontalHeaderLabels({"方格坐标", "数量"});
+    animal_location_table_->horizontalHeader()->setStretchLastSection(true);
+    animal_location_table_->verticalHeader()->setVisible(false);
+    animal_location_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    animal_location_table_->setSelectionMode(QAbstractItemView::NoSelection);
+    query_layout->addWidget(animal_location_table_, 1);
+
+    pages_ = new QStackedWidget(parent);
+    pages_->setObjectName("HProblemPages");
+    pages_->addWidget(mission_page);
+    pages_->addWidget(query_page);
+    QObject::connect(query_button, &QPushButton::clicked, pages_, [this] { openAnimalQuery(); });
+    QObject::connect(back_button, &QPushButton::clicked, pages_, [this] {
+        pages_->setCurrentIndex(0);
+    });
+    QObject::connect(
+        animal_species_combo_,
+        &QComboBox::currentTextChanged,
+        pages_,
+        [this](const QString &) { refreshAnimalQuery(); });
+
     auto *root = new QWidget(parent);
-    auto *root_layout = new QHBoxLayout(root);
+    auto *root_layout = new QVBoxLayout(root);
     root_layout->setContentsMargins(0, 0, 0, 0);
-    root_layout->setSpacing(16);
-    root_layout->addWidget(view, 3);
-    root_layout->addLayout(right_layout, 2);
+    root_layout->addWidget(pages_);
     return root;
+}
+
+void HProblemView::setAnimalQueryProviders(
+    AnimalNamesProvider names_provider,
+    AnimalLocationsProvider locations_provider) {
+    animal_names_provider_ = std::move(names_provider);
+    animal_locations_provider_ = std::move(locations_provider);
+}
+
+void HProblemView::openAnimalQuery() {
+    if (pages_ == nullptr || animal_species_combo_ == nullptr) {
+        return;
+    }
+    const QString previous = animal_species_combo_->currentText();
+    animal_species_combo_->blockSignals(true);
+    animal_species_combo_->clear();
+    if (animal_names_provider_) {
+        animal_species_combo_->addItems(animal_names_provider_());
+    }
+    const int previous_index = animal_species_combo_->findText(previous);
+    if (previous_index >= 0) {
+        animal_species_combo_->setCurrentIndex(previous_index);
+    }
+    animal_species_combo_->blockSignals(false);
+    refreshAnimalQuery();
+    pages_->setCurrentIndex(1);
+}
+
+void HProblemView::refreshAnimalQuery() {
+    if (animal_species_combo_ == nullptr || animal_query_total_ == nullptr ||
+        animal_location_table_ == nullptr) {
+        return;
+    }
+    const QMap<QString, int> locations = animal_locations_provider_
+        ? animal_locations_provider_(animal_species_combo_->currentText())
+        : QMap<QString, int>{};
+    int total = 0;
+    animal_location_table_->setRowCount(locations.size());
+    int row = 0;
+    for (auto iterator = locations.cbegin(); iterator != locations.cend(); ++iterator, ++row) {
+        total += iterator.value();
+        animal_location_table_->setItem(row, 0, new QTableWidgetItem(iterator.key()));
+        animal_location_table_->setItem(row, 1, new QTableWidgetItem(QString::number(iterator.value())));
+    }
+    animal_query_total_->setText(QString("总数: %1").arg(total));
 }
 
 void HProblemView::setCaseLabel(const QString &text) {

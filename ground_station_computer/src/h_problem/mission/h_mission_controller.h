@@ -44,6 +44,8 @@ public:
     bool missionRunning() const;
     MissionRuntimeInputs missionRuntimeInputs() const;
     const QMap<QString, int> &detectionTotals() const { return detection_totals_; }
+    QStringList detectedAnimalNames() const;
+    QMap<QString, int> detectionLocations(const QString &animal_name) const;
 
     // 配置。
     void setCommandSyncEnabled(bool enabled);

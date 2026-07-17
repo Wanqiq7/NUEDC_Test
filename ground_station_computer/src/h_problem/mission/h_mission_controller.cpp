@@ -64,6 +64,14 @@ QString HMissionController::activeTaskId() const {
     return current_case_id_;
 }
 
+QStringList HMissionController::detectedAnimalNames() const {
+    return repository_.animalNames();
+}
+
+QMap<QString, int> HMissionController::detectionLocations(const QString &animal_name) const {
+    return repository_.locationsForAnimal(animal_name);
+}
+
 bool HMissionController::missionSyncedToAirborne() const {
     return sync_state_.syncedToAirborne();
 }
