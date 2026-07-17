@@ -10,7 +10,8 @@ public:
     explicit ScriptedTransport(QVector<CommandSendResult> replies)
         : replies_(std::move(replies)) {}
 
-    CommandSendResult sendEnvelope(const Envelope &) const override {
+    CommandSendResult sendEnvelope(const Envelope &envelope) const override {
+        last_envelope_ = envelope;
         ++attempts_;
         if (attempts_ <= replies_.size()) {
             return replies_.at(attempts_ - 1);
@@ -19,10 +20,12 @@ public:
     }
 
     int attempts() const { return attempts_; }
+    const Envelope &lastEnvelope() const { return last_envelope_; }
 
 private:
     QVector<CommandSendResult> replies_;
     mutable int attempts_ = 0;
+    mutable Envelope last_envelope_;
 };
 
 }
@@ -43,6 +46,7 @@ private slots:
     void formatsIdempotentSuccessForOperatorStatus();
     void formatsNormalSuccessForOperatorStatus();
     void heartbeatCachesOnlineState();
+    void heartbeatUsesUnsequencedProbe();
 };
 
 void ReliableCommandClientTests::retriesUntilCommandSucceeds() {
@@ -225,6 +229,19 @@ void ReliableCommandClientTests::heartbeatCachesOnlineState() {
     QVERIFY(result.ok);
     QCOMPARE(result.message, QString("pong"));
     QCOMPARE(static_cast<int>(client.status()), static_cast<int>(CommandLinkStatus::Connected));
+}
+
+void ReliableCommandClientTests::heartbeatUsesUnsequencedProbe() {
+    ScriptedTransport transport({CommandSendResult{true, "pong"}});
+    ReliableCommandClient client(&transport, ReliableCommandPolicy{1, 0});
+
+    const CommandSendResult result = client.ping("task-001");
+
+    QVERIFY(result.ok);
+    QCOMPARE(transport.lastEnvelope().sequence(), quint64{0});
+    QCOMPARE(transport.lastEnvelope().control_command().type(), COMMAND_TYPE_PING);
+    QCOMPARE(QString::fromStdString(transport.lastEnvelope().control_command().task_id()),
+             QString("task-001"));
 }
 
 QTEST_MAIN(ReliableCommandClientTests)

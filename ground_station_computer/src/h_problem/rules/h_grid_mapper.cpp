@@ -1,22 +1,24 @@
 #include "h_problem/rules/h_grid_mapper.h"
 
+#include <QRegularExpression>
+
 #include <stdexcept>
 
-QPoint GridMapper::toPoint(const QString &code) {
-    const int a_index = code.indexOf('A');
-    const int b_index = code.indexOf('B');
-    if (a_index == -1 || b_index == -1 || b_index <= a_index + 1) {
-        throw std::invalid_argument("invalid grid code");
+std::optional<QPoint> GridMapper::tryToPoint(const QString &code) {
+    static const QRegularExpression pattern(QStringLiteral("\\AA([1-9])B([1-7])\\z"));
+    const QRegularExpressionMatch match = pattern.match(code);
+    if (!match.hasMatch()) {
+        return std::nullopt;
     }
+    return QPoint(match.captured(1).toInt() - 1, match.captured(2).toInt() - 1);
+}
 
-    bool x_ok = false;
-    bool y_ok = false;
-    const int x = code.mid(a_index + 1, b_index - a_index - 1).toInt(&x_ok) - 1;
-    const int y = code.mid(b_index + 1).toInt(&y_ok) - 1;
-    if (!x_ok || !y_ok) {
+QPoint GridMapper::toPoint(const QString &code) {
+    const auto point = tryToPoint(code);
+    if (!point.has_value()) {
         throw std::invalid_argument("invalid grid code");
     }
-    return {x, y};
+    return point.value();
 }
 
 QString GridMapper::toCode(const QPoint &point) {

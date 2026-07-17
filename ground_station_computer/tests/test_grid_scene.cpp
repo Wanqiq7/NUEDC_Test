@@ -85,9 +85,11 @@ private slots:
     void clickingWithoutEditingDoesNotEmitSignal();
     void clickingWithEditingEmitsSelectedCellCode();
     void reusesCurrentMarkerWhenCurrentCellChanges();
+    void showsCurrentMarkerAtLandingTargetForTouchdown();
+    void hidesCurrentMarkerForUnknownNonGridWaypoint();
     void drawsSeparateDescentStartAndTouchdownMarkers();
-    void zeroTouchdownCoordinatesRemainValid_data();
-    void zeroTouchdownCoordinatesRemainValid();
+    void touchdownCoordinatesDoNotOffsetLandingMarker_data();
+    void touchdownCoordinatesDoNotOffsetLandingMarker();
     void clearsLandingItemsWhenDisabled();
 };
 
@@ -146,9 +148,37 @@ void GridSceneTests::reusesCurrentMarkerWhenCurrentCellChanges() {
     QVERIFY(first_marker->isVisible());
 }
 
+void GridSceneTests::showsCurrentMarkerAtLandingTargetForTouchdown() {
+    TestableGridScene scene;
+    scene.setLandingTarget("A9B1", "A8B3", 444.0, 333.0, true);
+    scene.setCurrentCell(QStringLiteral("A8B3"));
+    auto *marker = findCurrentMarker(scene);
+    QVERIFY(marker != nullptr);
+    QVERIFY(marker->isVisible());
+
+    scene.setCurrentCell(QStringLiteral("touchdown"));
+
+    QCOMPARE(findCurrentMarker(scene), marker);
+    QVERIFY(marker->isVisible());
+    QCOMPARE(marker->sceneBoundingRect().center(), testCellCenter("A9B1"));
+}
+
+void GridSceneTests::hidesCurrentMarkerForUnknownNonGridWaypoint() {
+    TestableGridScene scene;
+    scene.setCurrentCell(QStringLiteral("A8B3"));
+    auto *marker = findCurrentMarker(scene);
+    QVERIFY(marker != nullptr);
+    QVERIFY(marker->isVisible());
+
+    scene.setCurrentCell(QStringLiteral("unknown-terminal"));
+
+    QCOMPARE(findCurrentMarker(scene), marker);
+    QVERIFY(!marker->isVisible());
+}
+
 void GridSceneTests::drawsSeparateDescentStartAndTouchdownMarkers() {
     TestableGridScene scene;
-    scene.setLandingTarget("A8B3", 260.0, 190.0, true);
+    scene.setLandingTarget("A9B1", "A8B3", 260.0, 190.0, true);
 
     auto *descent_start = findItemByRole(scene, "descent_start_marker");
     auto *touchdown = findItemByRole(scene, "touchdown_marker");
@@ -160,16 +190,14 @@ void GridSceneTests::drawsSeparateDescentStartAndTouchdownMarkers() {
     QVERIFY(scene.items().contains(findSimpleText(scene, QStringLiteral("下降起点"))));
     QVERIFY(scene.items().contains(findSimpleText(scene, QStringLiteral("降落终点"))));
 
-    const QPointF expected_touchdown(
-        ((260.0 - 25.0) / 50.0) * 52.0,
-        ((190.0 - 25.0) / 50.0) * 52.0);
+    const QPointF expected_touchdown = testCellCenter("A9B1");
     QCOMPARE(descent_start->sceneBoundingRect().center(), testCellCenter("A8B3"));
     QCOMPARE(touchdown->sceneBoundingRect().center(), expected_touchdown);
     QCOMPARE(corridor->line().p1(), testCellCenter("A8B3"));
     QCOMPARE(corridor->line().p2(), expected_touchdown);
 
     const int initial_item_count = scene.items().size();
-    scene.setLandingTarget("A7B2", 210.0, 140.0, true);
+    scene.setLandingTarget("A1B1", "A7B2", 210.0, 140.0, true);
 
     QCOMPARE(scene.items().size(), initial_item_count);
     QCOMPARE(countItemsByRole(scene, QStringLiteral("descent_start_marker")), 1);
@@ -180,9 +208,12 @@ void GridSceneTests::drawsSeparateDescentStartAndTouchdownMarkers() {
     QCOMPARE(
         findItemByRole(scene, QStringLiteral("descent_start_marker"))->sceneBoundingRect().center(),
         testCellCenter("A7B2"));
+    QCOMPARE(
+        findItemByRole(scene, QStringLiteral("touchdown_marker"))->sceneBoundingRect().center(),
+        testCellCenter("A1B1"));
 }
 
-void GridSceneTests::zeroTouchdownCoordinatesRemainValid_data() {
+void GridSceneTests::touchdownCoordinatesDoNotOffsetLandingMarker_data() {
     QTest::addColumn<double>("touchdown_x_cm");
     QTest::addColumn<double>("touchdown_y_cm");
 
@@ -191,30 +222,32 @@ void GridSceneTests::zeroTouchdownCoordinatesRemainValid_data() {
     QTest::newRow("zero-y") << 260.0 << 0.0;
 }
 
-void GridSceneTests::zeroTouchdownCoordinatesRemainValid() {
+void GridSceneTests::touchdownCoordinatesDoNotOffsetLandingMarker() {
     QFETCH(double, touchdown_x_cm);
     QFETCH(double, touchdown_y_cm);
 
     TestableGridScene scene;
-    scene.setLandingTarget("A9B1", touchdown_x_cm, touchdown_y_cm, true);
+    scene.setLandingTarget(
+        "A9B1", "A8B3", touchdown_x_cm, touchdown_y_cm, true);
 
     auto *touchdown = findItemByRole(scene, "touchdown_marker");
     QVERIFY(touchdown != nullptr);
-    QCOMPARE(touchdown->sceneBoundingRect().center(),
-             QPointF(((touchdown_x_cm - 25.0) / 50.0) * 52.0,
-                     ((touchdown_y_cm - 25.0) / 50.0) * 52.0));
+    QCOMPARE(touchdown->sceneBoundingRect().center(), testCellCenter("A9B1"));
 }
 
 void GridSceneTests::clearsLandingItemsWhenDisabled() {
     TestableGridScene scene;
-    scene.setLandingTarget("A8B3", 260.0, 190.0, true);
-    scene.setLandingTarget({}, 0.0, 0.0, false);
+    scene.setLandingTarget("A9B1", "A8B3", 260.0, 190.0, true);
+    scene.setCurrentCell("A8B3");
+    scene.setLandingTarget({}, {}, 0.0, 0.0, false);
+    scene.setCurrentCell("touchdown");
 
     QVERIFY(findItemByRole(scene, "descent_start_marker") == nullptr);
     QVERIFY(findItemByRole(scene, "touchdown_marker") == nullptr);
     QVERIFY(findItemByRole(scene, "landing_corridor") == nullptr);
     QVERIFY(findSimpleText(scene, QStringLiteral("下降起点")) == nullptr);
     QVERIFY(findSimpleText(scene, QStringLiteral("降落终点")) == nullptr);
+    QVERIFY(!findCurrentMarker(scene)->isVisible());
 }
 
 QTEST_MAIN(GridSceneTests)

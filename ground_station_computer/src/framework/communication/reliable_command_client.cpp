@@ -74,7 +74,10 @@ CommandSendResult ReliableCommandClient::sendReliable(const Envelope &envelope) 
 }
 
 CommandSendResult ReliableCommandClient::ping(const QString &task_id) {
-    return sendReliable(ZmqCommandClient::buildControlCommandEnvelope(GroundControlCommandType::Ping, task_id));
+    return sendReliable(ZmqCommandClient::buildControlCommandEnvelope(
+        0,
+        GroundControlCommandType::Ping,
+        task_id));
 }
 
 CommandLinkStatus ReliableCommandClient::status() const {
