@@ -85,6 +85,7 @@ private slots:
     void clickingWithoutEditingDoesNotEmitSignal();
     void clickingWithEditingEmitsSelectedCellCode();
     void reusesCurrentMarkerWhenCurrentCellChanges();
+    void hidesCurrentMarkerForNonGridWaypoint();
     void drawsSeparateDescentStartAndTouchdownMarkers();
     void zeroTouchdownCoordinatesRemainValid_data();
     void zeroTouchdownCoordinatesRemainValid();
@@ -144,6 +145,19 @@ void GridSceneTests::reusesCurrentMarkerWhenCurrentCellChanges() {
     QCOMPARE(findCurrentMarker(scene), first_marker);
     QCOMPARE(first_marker->sceneBoundingRect().center(), testCellCenter("A1B2"));
     QVERIFY(first_marker->isVisible());
+}
+
+void GridSceneTests::hidesCurrentMarkerForNonGridWaypoint() {
+    TestableGridScene scene;
+    scene.setCurrentCell(QStringLiteral("A8B4"));
+    auto *marker = findCurrentMarker(scene);
+    QVERIFY(marker != nullptr);
+    QVERIFY(marker->isVisible());
+
+    scene.setCurrentCell(QStringLiteral("touchdown"));
+
+    QCOMPARE(findCurrentMarker(scene), marker);
+    QVERIFY(!marker->isVisible());
 }
 
 void GridSceneTests::drawsSeparateDescentStartAndTouchdownMarkers() {

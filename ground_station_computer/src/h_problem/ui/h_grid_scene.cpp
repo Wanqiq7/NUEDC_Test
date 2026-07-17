@@ -332,7 +332,8 @@ void GridScene::setStartCell(const QString &cell_code) {
 }
 
 void GridScene::setCurrentCell(const QString &cell_code) {
-    if (cell_code.isEmpty()) {
+    const auto point = GridMapper::tryToPoint(cell_code);
+    if (!point.has_value()) {
         if (current_marker_ != nullptr) {
             current_marker_->hide();
         }
@@ -351,7 +352,10 @@ void GridScene::setCurrentCell(const QString &cell_code) {
         current_marker_->setZValue(5.0);
     }
 
-    current_marker_->setPos(cellCenter(cell_code));
+    const qreal scene_y_index = (kRows - 1) - point->y();
+    current_marker_->setPos(
+        (point->x() * kCellSize) + (kCellSize / 2.0),
+        (scene_y_index * kCellSize) + (kCellSize / 2.0));
     current_marker_->show();
 }
 

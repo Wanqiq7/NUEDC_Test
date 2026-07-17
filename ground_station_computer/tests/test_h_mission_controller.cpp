@@ -68,6 +68,7 @@ public:
     bool last_landing = false;
     QStringList last_candidates;
     QString last_current_cell;
+    QString last_status;
     QStringList detections;
     QMap<QString, int> last_totals;
 };
@@ -229,6 +230,7 @@ private slots:
     void passesExecutableRouteAndTouchdownCoordinates_data();
     void passesExecutableRouteAndTouchdownCoordinates();
     void telemetryDoesNotStartMission();
+    void terminalTelemetryKeepsWaypointIdentity();
     void telemetryAfterStopDoesNotRestartMission();
     void ignoresEventsFromAnotherTask();
     void ignoresSummaryFromAnotherTask();
@@ -370,6 +372,22 @@ void HMissionControllerTests::telemetryDoesNotStartMission() {
     QCOMPARE(sink.last_current_cell, QStringLiteral("C3"));
     QVERIFY(!controller.missionRunning());
     QCOMPARE(runtime_changes, runtime_changes_before);
+}
+
+void HMissionControllerTests::terminalTelemetryKeepsWaypointIdentity() {
+    RecordingSink sink;
+    HMissionController controller(
+        &sink,
+        [&](const QString &value) { sink.last_status = value; },
+        [&](const QString &) {},
+        [&]() {});
+    controller.handleTaskPlan(makeCanonicalTaskPlan());
+
+    controller.handleTaskEvent(
+        makeTelemetryEvent(controller.activeTaskId(), "touchdown", 61, 62), 1000);
+
+    QCOMPARE(sink.last_current_cell, QStringLiteral("touchdown"));
+    QVERIFY(sink.last_status.contains(QStringLiteral("当前方格: touchdown")));
 }
 
 void HMissionControllerTests::telemetryAfterStopDoesNotRestartMission() {
