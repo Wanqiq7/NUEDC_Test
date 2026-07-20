@@ -448,6 +448,9 @@ function fit(): void {
 <style scoped>
 .mission-map {
   position: relative;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   min-width: 0;
   color: #dce4ea;
 }
@@ -455,11 +458,13 @@ function fit(): void {
 .map-canvas {
   display: block;
   width: 100%;
-  max-height: min(62vh, 570px);
+  min-height: 0;
+  flex: 1 1 auto;
+  max-height: none;
   aspect-ratio: 500 / 410;
-  background: #10171c;
-  border: 1px solid #3c4850;
-  border-radius: 6px;
+  background: #101a1f;
+  border: 1px solid #455a63;
+  border-radius: 3px;
   touch-action: manipulation;
 }
 
@@ -645,13 +650,13 @@ function fit(): void {
 
 .map-legend {
   display: flex;
-  min-height: 36px;
+  min-height: 28px;
   flex-wrap: wrap;
   gap: 10px 18px;
   align-items: center;
-  padding-top: 8px;
+  padding: 8px 2px 0;
   color: #abb8c0;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .map-legend span {

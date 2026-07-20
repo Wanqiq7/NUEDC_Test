@@ -2,11 +2,11 @@
   <section class="planning-panel" aria-labelledby="planning-title">
     <header class="panel-header">
       <div>
-        <p class="eyebrow">H 题 / 航线规划</p>
-        <h2 id="planning-title">任务区域</h2>
+        <p class="eyebrow"><span class="eyebrow-mark">01</span> H 题 / 航线规划</p>
+        <h2 id="planning-title">任务区域 <small>MISSION FIELD</small></h2>
       </div>
-      <div class="plan-identity">
-        <span>任务</span>
+      <div class="plan-identity" aria-label="当前任务">
+        <span>ACTIVE TASK</span>
         <strong>{{ taskName }}</strong>
       </div>
     </header>
@@ -20,6 +20,10 @@
       />
 
       <aside class="planning-controls" aria-label="禁飞区规划控制">
+        <div class="control-heading">
+          <span class="section-label">规划输入</span>
+          <span class="control-index">INPUT</span>
+        </div>
         <label class="case-input">
           <span class="section-label">案例文件</span>
           <input
@@ -31,7 +35,7 @@
           />
         </label>
         <div class="control-section">
-          <span class="section-label">禁飞区</span>
+          <span class="section-label">禁飞区选择</span>
           <strong>{{ editing ? `${selectedCells.length} / 3` : `${officialNoFlyCells.length} 格` }}</strong>
           <p data-testid="selection-status" :class="{ invalid: editing && selectedCells.length === 3 && !isContiguous }">
             {{ selectionStatus }}
@@ -39,7 +43,7 @@
         </div>
 
         <div v-if="metadata.terminal_cell" class="control-section route-summary">
-          <span class="section-label">下降起点</span>
+          <span class="section-label">当前航线</span>
           <strong>{{ metadata.terminal_cell }}</strong>
           <span v-if="typeof metadata.estimated_mission_time_s === 'number'">
             预计 {{ metadata.estimated_mission_time_s.toFixed(1) }} 秒
@@ -185,18 +189,22 @@ function contiguousLine(cells: string[]): boolean {
 .planning-panel {
   height: 100%;
   min-height: 0;
-  padding: 18px 22px;
+  padding: 20px 24px 16px;
   color: #e7ecef;
-  background: #111a1f;
+  background:
+    linear-gradient(rgb(18 30 36 / 52%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(18 30 36 / 52%) 1px, transparent 1px),
+    #0d161b;
+  background-size: 36px 36px;
 }
 
 .panel-header {
   display: flex;
-  min-height: 58px;
+  min-height: 68px;
   justify-content: space-between;
   align-items: flex-start;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #3b4d55;
+  padding: 0 2px 14px;
+  border-bottom: 1px solid #41535b;
 }
 
 .eyebrow,
@@ -209,16 +217,22 @@ function contiguousLine(cells: string[]): boolean {
   text-transform: uppercase;
 }
 
+.eyebrow { display: flex; align-items: center; gap: 9px; color: #f5c451; }
+.eyebrow-mark { display: inline-grid; width: 24px; height: 18px; place-items: center; color: #10181c; background: #f5c451; font-size: 10px; }
+
 h2 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 650;
+  color: #f3f7f7;
+  font-size: 26px;
+  font-weight: 700;
   letter-spacing: 0;
 }
 
+h2 small { margin-left: 8px; color: #73878f; font: 700 10px "JetBrains Mono", ui-monospace, monospace; vertical-align: middle; }
+
 .plan-identity {
   display: grid;
-  gap: 2px;
+  gap: 5px;
   text-align: right;
 }
 
@@ -228,36 +242,46 @@ h2 {
 }
 
 .plan-identity span {
-  color: #8fa1ab;
-  font-size: 11px;
+  color: #6f858e;
+  font: 700 10px "JetBrains Mono", ui-monospace, monospace;
 }
 
 .planning-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 248px;
-  gap: 20px;
+  height: calc(100% - 84px);
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 272px;
+  gap: 18px;
   padding-top: 16px;
 }
+
+.planning-workspace > .mission-map { min-height: 0; }
 
 .planning-controls {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 14px;
-  padding-left: 18px;
-  border-left: 1px solid #3b4d55;
+  gap: 12px;
+  padding: 14px 0 0 18px;
+  border-left: 1px solid #40535c;
+  background: rgb(14 24 29 / 76%);
 }
+
+.control-heading { display: flex; justify-content: space-between; align-items: center; padding-bottom: 9px; border-bottom: 1px solid #2e4149; }
+.control-heading .section-label { margin: 0; color: #e8eff0; }
+.control-index { color: #637b84; font: 700 10px "JetBrains Mono", ui-monospace, monospace; }
 
 .control-section {
   display: grid;
   gap: 4px;
-  padding-bottom: 14px;
+  padding: 12px 12px 14px 0;
   border-bottom: 1px solid #2b383f;
 }
 
 .case-input {
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  padding-right: 12px;
 }
 
 .case-input input {
@@ -281,7 +305,7 @@ h2 {
 
 .control-section strong {
   color: #f4c95d;
-  font: 700 24px "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+  font: 700 28px "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   letter-spacing: 0;
 }
 
@@ -318,7 +342,8 @@ h2 {
 
 .actions {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  padding-right: 12px;
   margin-top: auto;
 }
 
@@ -350,6 +375,8 @@ h2 {
   background: #f4c95d;
   border: 1px solid #f4c95d;
 }
+
+.secondary-action { background: #1d3037; }
 
 .actions button:disabled {
   color: #7e8a90;
