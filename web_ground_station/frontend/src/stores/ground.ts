@@ -55,7 +55,11 @@ export const useGroundStore = defineStore('ground', () => {
     recordingError: recordingError.value,
   }));
 
-  function applySnapshot(snapshot: GroundSnapshot): void {
+  function applySnapshot(snapshot: GroundSnapshot): boolean {
+    if (hasSnapshot.value && snapshot.snapshot_seq <= snapshotSeq.value) {
+      return false;
+    }
+
     snapshotSeq.value = snapshot.snapshot_seq;
     timestampMs.value = snapshot.timestamp_ms;
     activeTaskId.value = snapshot.active_task_id;
@@ -76,6 +80,7 @@ export const useGroundStore = defineStore('ground', () => {
     recentError.value = snapshot.recent_error;
     recordingError.value = snapshot.recording_error;
     hasSnapshot.value = true;
+    return true;
   }
 
   function applyEvent(webEvent: WebEvent): void {

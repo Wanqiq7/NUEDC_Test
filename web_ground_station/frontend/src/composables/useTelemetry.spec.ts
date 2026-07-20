@@ -15,6 +15,7 @@ vi.mock('vue', async (importOriginal) => ({
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
+  closed = false;
   onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   onclose: (() => void) | null = null;
@@ -23,7 +24,9 @@ class FakeWebSocket {
     FakeWebSocket.instances.push(this);
   }
 
-  close() {}
+  close() {
+    this.closed = true;
+  }
 }
 
 const snapshot = (overrides: Partial<GroundSnapshot> = {}): GroundSnapshot => ({
@@ -127,5 +130,59 @@ describe('useTelemetry', () => {
     socket.onopen?.();
 
     await vi.waitFor(() => expect(useGroundStore().currentCell).toBe('A8B1'));
+  });
+
+  it('ignores a late snapshot from a superseded connection', async () => {
+    let resolveFirst!: (value: GroundSnapshot) => void;
+    fetchSnapshot
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(snapshot({ snapshot_seq: 20, current_cell: 'A2B1' }));
+    const { useTelemetry } = await import('./useTelemetry');
+    const { useGroundStore } = await import('../stores/ground');
+
+    const telemetry = useTelemetry();
+    const firstSocket = FakeWebSocket.instances[0];
+    firstSocket.onopen?.();
+    telemetry.connect();
+    const secondSocket = FakeWebSocket.instances[1];
+    secondSocket.onopen?.();
+    await vi.waitFor(() => expect(useGroundStore().snapshotSeq).toBe(20));
+
+    resolveFirst(snapshot({ snapshot_seq: 10, current_cell: 'A1B1' }));
+    await Promise.resolve();
+
+    expect(useGroundStore().snapshotSeq).toBe(20);
+    expect(useGroundStore().currentCell).toBe('A2B1');
+    expect(secondSocket.closed).toBe(false);
+  });
+
+  it('does not close the current socket when a superseded snapshot request rejects', async () => {
+    let rejectFirst!: (reason: unknown) => void;
+    fetchSnapshot
+      .mockReturnValueOnce(
+        new Promise((_, reject) => {
+          rejectFirst = reject;
+        }),
+      )
+      .mockResolvedValueOnce(snapshot({ snapshot_seq: 20, current_cell: 'A2B1' }));
+    const { useTelemetry } = await import('./useTelemetry');
+    const { useGroundStore } = await import('../stores/ground');
+
+    const telemetry = useTelemetry();
+    FakeWebSocket.instances[0].onopen?.();
+    telemetry.connect();
+    const secondSocket = FakeWebSocket.instances[1];
+    secondSocket.onopen?.();
+    await vi.waitFor(() => expect(useGroundStore().snapshotSeq).toBe(20));
+
+    rejectFirst(new Error('stale request failed'));
+    await Promise.resolve();
+
+    expect(useGroundStore().snapshotSeq).toBe(20);
+    expect(secondSocket.closed).toBe(false);
   });
 });

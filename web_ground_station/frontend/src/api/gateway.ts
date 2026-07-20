@@ -22,11 +22,34 @@ export class ApiError extends Error {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
-  const body = (await response.json()) as T & ErrorBody;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      ...init,
+    });
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(0, 'network_error', '网络连接失败');
+  }
+
+  let body: T & ErrorBody;
+  try {
+    const parsed = JSON.parse(await response.text()) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new SyntaxError('response body is not an object');
+    }
+    body = parsed as T & ErrorBody;
+  } catch {
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        'http_error',
+        response.statusText || `HTTP ${response.status}`,
+      );
+    }
+    throw new ApiError(response.status, 'invalid_response', '网关返回无效响应');
+  }
 
   if (!response.ok || body.ok === false) {
     throw new ApiError(

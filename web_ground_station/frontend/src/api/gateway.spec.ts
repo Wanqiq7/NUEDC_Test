@@ -21,4 +21,38 @@ describe('gateway API', () => {
       new ApiError(409, 'mission_not_ready', 'mission is not ready'),
     );
   });
+
+  it('maps a non-JSON HTTP failure to an http_error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('<html>bad gateway</html>', {
+        status: 502,
+        statusText: 'Bad Gateway',
+        headers: { 'Content-Type': 'text/html' },
+      }),
+    );
+
+    await expect(startMission()).rejects.toMatchObject({
+      status: 502,
+      errorCode: 'http_error',
+      message: 'Bad Gateway',
+    });
+  });
+
+  it('maps an empty successful response to an invalid_response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 200 }));
+
+    await expect(startMission()).rejects.toMatchObject({
+      status: 200,
+      errorCode: 'invalid_response',
+    });
+  });
+
+  it('maps a network rejection to a stable ApiError', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await expect(startMission()).rejects.toMatchObject({
+      status: 0,
+      errorCode: 'network_error',
+    });
+  });
 });

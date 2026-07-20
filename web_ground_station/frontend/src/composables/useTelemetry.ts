@@ -25,7 +25,11 @@ export function useTelemetry() {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
     const pendingMessages: TelemetryMessage[] = [];
     let synchronized = false;
-    socket = new WebSocket(`${scheme}://${location.host}/ws/telemetry`);
+    const thisSocket = new WebSocket(`${scheme}://${location.host}/ws/telemetry`);
+    socket = thisSocket;
+
+    const isCurrentConnection = (): boolean =>
+      !stopped && currentConnectionId === connectionId && socket === thisSocket;
 
     const applyMessage = (message: TelemetryMessage): void => {
       if (isSnapshotEnvelope(message)) {
@@ -37,19 +41,21 @@ export function useTelemetry() {
       }
     };
 
-    socket.onopen = async () => {
+    thisSocket.onopen = async () => {
       reconnectDelayMs = 250;
       try {
-        store.applySnapshot(await fetchSnapshot());
-        if (stopped || currentConnectionId !== connectionId) return;
+        const snapshot = await fetchSnapshot();
+        if (!isCurrentConnection()) return;
+        store.applySnapshot(snapshot);
         synchronized = true;
         pendingMessages.splice(0).forEach(applyMessage);
       } catch {
-        socket?.close();
+        if (isCurrentConnection()) thisSocket.close();
       }
     };
 
-    socket.onmessage = (event: MessageEvent<string>) => {
+    thisSocket.onmessage = (event: MessageEvent<string>) => {
+      if (!isCurrentConnection()) return;
       try {
         const message = JSON.parse(event.data) as TelemetryMessage;
         if (synchronized) {
@@ -62,8 +68,8 @@ export function useTelemetry() {
       }
     };
 
-    socket.onclose = () => {
-      if (stopped || currentConnectionId !== connectionId) return;
+    thisSocket.onclose = () => {
+      if (!isCurrentConnection()) return;
       reconnectTimer = window.setTimeout(connect, reconnectDelayMs);
       reconnectDelayMs = Math.min(reconnectDelayMs * 2, 5_000);
     };

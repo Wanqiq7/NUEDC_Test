@@ -102,4 +102,41 @@ describe('ground store', () => {
     });
     expect(store.missionRunning).toBe(false);
   });
+
+  it('accepts an initial snapshot at sequence zero', () => {
+    const store = useGroundStore();
+
+    expect(store.applySnapshot(snapshot({ snapshot_seq: 0, current_cell: 'A8B1' }))).toBe(true);
+    expect(store.currentCell).toBe('A8B1');
+  });
+
+  it('rejects a stale snapshot without replacing authoritative state', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({ snapshot_seq: 20, current_cell: 'A8B1' }));
+
+    expect(store.applySnapshot(snapshot({ snapshot_seq: 19, current_cell: 'A1B1' }))).toBe(false);
+    expect(store.snapshotSeq).toBe(20);
+    expect(store.currentCell).toBe('A8B1');
+  });
+
+  it('rejects an equal-sequence snapshot for a conflicting task', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({ snapshot_seq: 20, active_task_id: 'case-1' }));
+
+    expect(store.applySnapshot(snapshot({ snapshot_seq: 20, active_task_id: 'case-2' }))).toBe(
+      false,
+    );
+    expect(store.activeTaskId).toBe('case-1');
+  });
+
+  it('accepts a newer snapshot for a new task', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({ snapshot_seq: 20, active_task_id: 'case-1' }));
+
+    expect(store.applySnapshot(snapshot({ snapshot_seq: 21, active_task_id: 'case-2' }))).toBe(
+      true,
+    );
+    expect(store.activeTaskId).toBe('case-2');
+    expect(store.snapshotSeq).toBe(21);
+  });
 });
