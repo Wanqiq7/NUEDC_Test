@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+import threading
 import time
 
 import pytest
@@ -138,3 +139,81 @@ async def test_slow_writer_does_not_block_record_call(tmp_path, monkeypatch):
     await recorder.stop()
 
     assert elapsed < 0.05
+
+
+@pytest.mark.asyncio
+async def test_concurrent_stop_drains_every_accepted_event(tmp_path):
+    recorder = JsonlRecorder(tmp_path, GroundState(), queue_size=1000)
+    await recorder.start()
+    accepted: list[int] = []
+
+    def produce() -> None:
+        for seq in range(1, 501):
+            if recorder.record(event(seq, "detection")):
+                accepted.append(seq)
+            time.sleep(0.0001)
+
+    producer = threading.Thread(target=produce)
+    producer.start()
+    await asyncio.sleep(0.005)
+    await recorder.stop()
+    producer.join(timeout=1)
+
+    assert producer.is_alive() is False
+    assert [item["seq"] for item in read_session_lines(tmp_path)] == accepted
+    assert recorder.record(event(501, "detection")) is False
+
+
+@pytest.mark.asyncio
+async def test_running_writer_atomically_evicts_oldest_telemetry_for_critical_event(
+    tmp_path, monkeypatch
+):
+    recorder = JsonlRecorder(tmp_path, GroundState(), queue_size=2)
+    entered_write = threading.Event()
+    release_write = threading.Event()
+    real_write = recorder._write_line
+
+    def blocked_write(line: str) -> None:
+        entered_write.set()
+        release_write.wait(timeout=1)
+        real_write(line)
+
+    monkeypatch.setattr(recorder, "_write_line", blocked_write)
+    await recorder.start()
+    assert recorder.record(event(1)) is True
+    assert entered_write.wait(timeout=1)
+    assert recorder.record(event(2)) is True
+    assert recorder.record(event(3)) is True
+    assert recorder.record(event(4, "detection")) is True
+    release_write.set()
+    await recorder.stop()
+
+    assert [item["seq"] for item in read_session_lines(tmp_path)] == [1, 3, 4]
+
+
+@pytest.mark.asyncio
+async def test_close_flush_failure_marks_recording_error(tmp_path, monkeypatch):
+    state = GroundState()
+    recorder = JsonlRecorder(tmp_path, state, queue_size=2)
+
+    class FailOnCloseFlush:
+        def __init__(self) -> None:
+            self.flushes = 0
+
+        def write(self, value: str) -> int:
+            return len(value)
+
+        def flush(self) -> None:
+            self.flushes += 1
+            if self.flushes > 1:
+                raise OSError("flush unavailable")
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(Path, "open", lambda *args, **kwargs: FailOnCloseFlush())
+    await recorder.start()
+    assert recorder.record(event(1, "detection")) is True
+    await recorder.stop()
+
+    assert "flush unavailable" in state.snapshot(200).recording_error

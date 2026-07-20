@@ -32,6 +32,7 @@ class GroundState:
         self._last_command_success_ms: int | None = None
         self._last_telemetry_ms: int | None = None
         self._last_pid_ms: int | None = None
+        self._highest_ack_sequence = -1
         self._highest_event_seq = -1
         self._current_cell: str | None = None
         self._visited_count = 0
@@ -90,6 +91,14 @@ class GroundState:
             if self._active_task_id is not None and ack.task_id != self._active_task_id:
                 logger.debug("ignoring ACK for inactive task %s", ack.task_id)
                 return
+            if ack.last_accepted_sequence <= self._highest_ack_sequence:
+                logger.debug(
+                    "ignoring stale ACK sequence %d (highest %d)",
+                    ack.last_accepted_sequence,
+                    self._highest_ack_sequence,
+                )
+                return
+            self._highest_ack_sequence = ack.last_accepted_sequence
             self._ack = ack.model_copy(deep=True)
             if ack.ok:
                 self._last_command_success_ms = timestamp_ms
@@ -204,6 +213,7 @@ class GroundState:
         self._last_command_success_ms = None
         self._last_telemetry_ms = None
         self._last_pid_ms = None
+        self._highest_ack_sequence = -1
         self._highest_event_seq = -1
         self._current_cell = None
         self._visited_count = 0

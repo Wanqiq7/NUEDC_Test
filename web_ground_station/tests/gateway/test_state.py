@@ -137,6 +137,86 @@ def test_summary_marks_running_mission_complete():
     assert state.snapshot(103).mission_running is False
 
 
+def test_old_ack_cannot_restore_running_after_newer_summary():
+    state = active_state()
+
+    def running_ack(sequence: int) -> AckSnapshot:
+        return AckSnapshot(
+            ok=True,
+            message="running",
+            task_id="active",
+            mission_loaded=True,
+            mission_running=True,
+            last_accepted_sequence=sequence,
+            vision_armed=True,
+        )
+
+    state.apply_ack(running_ack(10), 101)
+    state.apply_summary("active", 20, 102, True, {})
+    state.apply_ack(running_ack(9), 103)
+    state.apply_ack(running_ack(10), 104)
+    assert state.snapshot(105).mission_running is False
+
+    state.apply_ack(running_ack(11), 106)
+    assert state.snapshot(107).mission_running is True
+
+
+def test_plan_switch_resets_ack_sequence_watermark():
+    state = active_state("first")
+    state.apply_ack(
+        AckSnapshot(
+            ok=True,
+            message="first",
+            task_id="first",
+            mission_loaded=True,
+            mission_running=False,
+            last_accepted_sequence=10,
+            vision_armed=False,
+        ),
+        101,
+    )
+    state.apply_plan(
+        {"task_id": "second", "message_type": "task_plan", "waypoints": []},
+        102,
+    )
+
+    state.apply_ack(
+        AckSnapshot(
+            ok=True,
+            message="second",
+            task_id="second",
+            mission_loaded=True,
+            mission_running=False,
+            last_accepted_sequence=1,
+            vision_armed=False,
+        ),
+        103,
+    )
+
+    assert state.snapshot(104).ack is not None
+    assert state.snapshot(104).ack.message == "second"
+
+
+def test_command_ack_and_telemetry_use_independent_sequence_domains():
+    state = active_state()
+    state.apply_ack(
+        AckSnapshot(
+            ok=True,
+            message="timestamp based command",
+            task_id="active",
+            mission_loaded=True,
+            mission_running=False,
+            last_accepted_sequence=2**62,
+            vision_armed=False,
+        ),
+        101,
+    )
+
+    state.apply_task_event("active", "telemetry", 1, 102, {"current_cell": "A7B1"})
+
+    assert state.snapshot(103).current_cell == "A7B1"
+
+
 def test_ack_mirror_and_command_link_failure_threshold():
     state = active_state()
     successful = AckSnapshot(
@@ -156,8 +236,11 @@ def test_ack_mirror_and_command_link_failure_threshold():
     assert snapshot.ack == successful
 
     failed = successful.model_copy(update={"ok": False, "message": "timeout"})
-    for timestamp in range(201, 201 + COMMAND_FAILURES_OFFLINE):
-        state.apply_ack(failed, timestamp)
+    for offset in range(1, COMMAND_FAILURES_OFFLINE + 1):
+        state.apply_ack(
+            failed.model_copy(update={"last_accepted_sequence": 7 + offset}),
+            200 + offset,
+        )
     assert state.snapshot(205).command_link == "offline"
     assert COMMAND_HEARTBEAT_MS == 2000
 
