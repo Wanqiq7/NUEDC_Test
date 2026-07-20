@@ -1,15 +1,6 @@
 <template>
   <footer data-testid="command-bar" class="command-bar">
-    <div class="command-context">
-      <span>任务</span>
-      <strong>{{ store.activeTaskId ?? '未规划' }}</strong>
-      <small>{{ stateLabel }}</small>
-    </div>
-
-    <p data-testid="command-feedback" :class="['command-feedback', { failed: feedbackFailed }]" role="status">
-      {{ feedback || '等待操作命令' }}
-    </p>
-
+    <p data-testid="command-feedback" class="sr-only" role="status">{{ feedback }}</p>
     <div class="command-actions">
       <q-btn data-testid="load-command" icon="download" label="LOAD" :loading="pending === 'load'" :disable="!store.canLoad || pending !== null" @click="execute('load')">
         <q-tooltip>加载当前任务到机载端</q-tooltip>
@@ -45,8 +36,6 @@ const pending = ref<Command | null>(null);
 const confirmOpen = ref(false);
 const selectedCommand = ref<'start' | 'stop'>('start');
 const feedback = ref('');
-const feedbackFailed = ref(false);
-const stateLabel = computed(() => store.missionRunning ? '运行中' : store.missionLoaded ? '已加载' : '未加载');
 
 function openConfirmation(command: 'start' | 'stop'): void {
   selectedCommand.value = command;
@@ -62,12 +51,10 @@ async function execute(command: Command): Promise<void> {
   if (pending.value) return;
   pending.value = command;
   feedback.value = '';
-  feedbackFailed.value = false;
   try {
     const response = await ({ load: store.loadMission, start: store.startMission, stop: store.stopMission }[command])();
     feedback.value = response.message || response.ack?.message || '命令已确认';
   } catch (error) {
-    feedbackFailed.value = true;
     feedback.value = error instanceof ApiError ? error.message : '命令执行失败';
   } finally {
     pending.value = null;

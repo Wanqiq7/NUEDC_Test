@@ -2,7 +2,7 @@
   <section class="planning-panel" aria-labelledby="planning-title">
     <header class="panel-header">
       <div>
-        <p class="eyebrow"><span class="eyebrow-mark">01</span> H 题 / 航线规划</p>
+        <p class="eyebrow">H 题 / 航线规划</p>
         <h2 id="planning-title">任务区域 <small>MISSION FIELD</small></h2>
       </div>
       <div class="plan-identity" aria-label="当前任务">

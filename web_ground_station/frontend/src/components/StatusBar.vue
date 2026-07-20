@@ -1,10 +1,5 @@
 <template>
   <header data-testid="status-bar" class="status-bar">
-    <div class="brand" aria-label="全国大学生电子设计竞赛地面任务站">
-      <span class="brand-mark">NUEDC</span>
-      <strong>任务主控台</strong>
-    </div>
-
     <div class="link-status" aria-label="链路状态">
       <span data-testid="command-link"><i :class="['status-dot', store.commandLink]" />命令 {{ linkLabel(store.commandLink) }}</span>
       <span><i :class="['status-dot', store.telemetryLink]" />遥测 {{ linkLabel(store.telemetryLink) }}</span>
