@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from .airborne import AirborneClient, GroundControlCommand
 from .config import GatewayConfig
 from .models import AckSnapshot, PlanningRequest, WebEvent
-from .planner import PlannerClient, PlannerError, store_plan_atomic
+from .planner import PlannerClient, PlannerError, is_canonical_plan, store_plan_atomic
 from .recorder import JsonlRecorder
 from .state import GroundState
 
@@ -43,7 +43,7 @@ class GatewayServices:
         path = self.config.runtime_dir / "active_mission_plan.json"
         try:
             plan = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(plan, dict) and isinstance(plan.get("task_id"), str):
+            if is_canonical_plan(plan):
                 self.state.apply_plan(plan, _now_ms(), publish=False)
                 self.state.mark_resyncing()
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
@@ -65,19 +65,26 @@ async def _initial_probe(services: GatewayServices) -> None:
     except asyncio.CancelledError:
         raise
     except Exception as error:
-        services.state.set_recording_error(f"airborne probe failed: {error}")
+        services.state.set_recent_error(f"airborne probe failed: {error}")
+
+
+async def _heartbeat_after_probe(services: GatewayServices) -> None:
+    probe = services.initial_probe_task
+    if probe is not None:
+        await asyncio.gather(probe, return_exceptions=True)
+    if not services.stop.is_set():
+        await services.airborne.heartbeat_loop(services.stop)
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     services: GatewayServices = app.state.services
     await services.recorder.start()
+    services.state.mark_resyncing()
     services.stop.clear()
     services.initial_probe_task = asyncio.create_task(_initial_probe(services))
     services.tasks = [
-        asyncio.create_task(
-            _run_background(services.airborne.heartbeat_loop, services.stop)
-        ),
+        asyncio.create_task(_heartbeat_after_probe(services)),
         asyncio.create_task(
             _run_background(services.airborne.telemetry_loop, services.stop)
         ),
@@ -136,20 +143,19 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
 
     @app.post("/api/mission/plan")
     async def plan(request: PlanRequest):
-        cases_root = (
-            Path(__file__).resolve().parents[4] / "shared" / "cases"
-        ).resolve()
+        repo_root = Path(__file__).resolve().parents[3]
+        cases_root = (repo_root / "shared" / "cases").resolve()
         candidate = Path(request.case_path)
         if candidate.is_absolute():
             return _error(422, "invalid_request", "case_path must be relative")
         try:
-            resolved = (cases_root / candidate).resolve()
+            resolved = (repo_root / candidate).resolve(strict=False)
             resolved.relative_to(cases_root)
         except ValueError:
             return _error(422, "invalid_request", "case_path escapes cases root")
         try:
             result = await services.planner.plan(
-                PlanningRequest(request.case_path, request.no_fly_cells)
+                PlanningRequest(str(resolved), request.no_fly_cells)
             )
             store_plan_atomic(
                 result, services.config.runtime_dir / "active_mission_plan.json"
@@ -266,20 +272,25 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
             while True:
                 event_task = asyncio.create_task(queue.get())
                 receive_task = asyncio.create_task(websocket.receive())
-                done, pending = await asyncio.wait(
-                    {event_task, receive_task}, return_when=asyncio.FIRST_COMPLETED
-                )
-                for task in pending:
-                    task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
-                if receive_task in done:
-                    message = receive_task.result()
-                    if message.get("type") == "websocket.disconnect":
-                        break
-                    continue
-                event = event_task.result()
-                queue.task_done()
-                await websocket.send_json(event.model_dump(mode="json"))
+                try:
+                    done, _ = await asyncio.wait(
+                        {event_task, receive_task}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    if event_task in done:
+                        event = event_task.result()
+                        queue.task_done()
+                        await websocket.send_json(event.model_dump(mode="json"))
+                    if receive_task in done:
+                        message = receive_task.result()
+                        if message.get("type") == "websocket.disconnect":
+                            break
+                finally:
+                    for task in (event_task, receive_task):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(
+                        event_task, receive_task, return_exceptions=True
+                    )
         except (WebSocketDisconnect, asyncio.CancelledError):
             pass
         finally:

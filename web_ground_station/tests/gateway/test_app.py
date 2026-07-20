@@ -36,8 +36,10 @@ def ack_for(task_id="case-1", loaded=True, running=False, seq=1):
 class FakePlanner:
     def __init__(self):
         self.result, self.error = plan_for(), None
+        self.requests = []
 
     async def plan(self, request):
+        self.requests.append(request)
         if self.error:
             raise self.error
         return self.result
@@ -62,12 +64,17 @@ class FakeAirborne:
         self.state, self.probe_ack, self.next_ack = state, None, ack_for()
         self.probe_count, self.commands, self.loads = 0, [], []
         self.loop_users, self.closed = 0, False
+        self.probe_gate = None
+        self.heartbeat_started = False
 
     async def probe_once(self):
         self.probe_count += 1
+        if self.probe_gate is not None:
+            await self.probe_gate.wait()
         return self.probe_ack or ack_for("", loaded=False)
 
     async def heartbeat_loop(self, stop):
+        self.heartbeat_started = True
         self.loop_users += 1
         try:
             while not stop.is_set():
@@ -143,20 +150,41 @@ async def test_health_snapshot_probe_and_lifespan(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_initial_probe_completes_before_heartbeat(tmp_path):
+    svc, _, _, airborne = services(tmp_path)
+    airborne.probe_ack = ack_for("case-1", loaded=True)
+    airborne.probe_gate = asyncio.Event()
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        await asyncio.sleep(0)
+        assert airborne.probe_count == 1
+        assert not airborne.heartbeat_started
+        assert svc.state.snapshot(1).command_link == "resyncing"
+        airborne.probe_gate.set()
+        for _ in range(10):
+            await asyncio.sleep(0)
+            if airborne.heartbeat_started:
+                break
+        assert airborne.heartbeat_started
+
+
+@pytest.mark.asyncio
 async def test_plan_success_persists(tmp_path):
     svc, planner, _, _ = services(tmp_path)
-    async with create_app(svc).router.lifespan_context(create_app(svc)):
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
         response = await request(
-            create_app(svc),
+            app,
             "POST",
             "/api/mission/plan",
-            json={"case_path": "case.json", "no_fly_cells": []},
+            json={"case_path": "shared/cases/case.json", "no_fly_cells": []},
         )
     assert response.status_code == 200
     assert (
         json.loads((tmp_path / "active_mission_plan.json").read_text())
         == planner.result
     )
+    assert planner.requests[0].case_path.endswith("/shared/cases/case.json")
 
 
 @pytest.mark.asyncio
@@ -180,7 +208,7 @@ async def test_plan_failure_keeps_file(tmp_path, code, status):
             app,
             "POST",
             "/api/mission/plan",
-            json={"case_path": "x", "no_fly_cells": []},
+            json={"case_path": "shared/cases/case.json", "no_fly_cells": []},
         )
     assert response.status_code == status and path.read_text() == previous
 

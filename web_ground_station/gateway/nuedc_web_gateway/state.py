@@ -57,6 +57,11 @@ class GroundState:
             self._recording_error = message
             self._advance_snapshot()
 
+    def set_recent_error(self, message: str) -> None:
+        with self._lock:
+            self._recent_error = {"message": message}
+            self._advance_snapshot()
+
     def mark_resyncing(self) -> None:
         with self._lock:
             self._resyncing = True

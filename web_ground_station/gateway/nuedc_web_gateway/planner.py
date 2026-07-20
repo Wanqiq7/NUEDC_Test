@@ -95,7 +95,7 @@ class PlannerClient:
             )
         return plan
 
-    def _run_planner(self, request_bytes: bytes) -> bytes:
+    def _run_planner(self, request_bytes: bytes) -> tuple[bytes, int]:
         try:
             process = subprocess.Popen(
                 [str(self._executable)],
