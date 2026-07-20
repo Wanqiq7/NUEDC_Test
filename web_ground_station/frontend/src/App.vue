@@ -5,7 +5,7 @@
       <section data-testid="map-region" class="map-region" aria-label="任务规划地图">
         <PlanningPanel />
       </section>
-      <aside class="console-rail" aria-label="运行和检测详情">
+      <aside data-testid="console-rail" class="console-rail" aria-label="运行和检测详情">
         <RuntimePanel />
         <DetectionPanel />
       </aside>

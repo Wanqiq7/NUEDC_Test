@@ -67,6 +67,12 @@ button, input { font: inherit; }
 .detail-grid { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; font-size: 13px; }
 .detail-grid span { color: #91a1a8; }
 .detail-grid strong { overflow-wrap: anywhere; }
+.dialog-detection-totals { display: flex; min-height: 58px; gap: 18px; align-items: center; overflow-x: auto; border-bottom: 1px solid #35434a; }
+.dialog-detection-totals span { display: grid; flex: 0 0 auto; color: #a6b3b9; font-size: 12px; }
+.dialog-detection-totals strong { color: #f2c94c; font-size: 22px; }
+.dialog-detection-list { max-height: 240px; margin: 10px 0 0; padding: 0; overflow-y: auto; list-style: none; }
+.dialog-detection-list li { display: flex; min-height: 36px; justify-content: space-between; align-items: center; color: #b9c4c9; font-size: 13px; border-bottom: 1px solid #2e3b41; }
+.dialog-detection-list strong { color: #eef2f4; font-family: ui-monospace, Consolas, monospace; }
 .confirm-dialog h2 { margin: 0 0 8px; font-size: 18px; }
 .confirm-dialog p { margin: 0; color: #b3c0c5; font-size: 13px; }
 .confirm-dialog .q-btn { min-width: 72px; min-height: 44px; }

@@ -17,13 +17,16 @@
       <span :class="['run-state', { running: store.missionRunning }]">
         {{ store.missionRunning ? '运行中' : '待命' }}
       </span>
+      <q-btn data-testid="open-detections" flat round icon="radar" aria-label="打开检测详情" @click="detectionsOpen = true">
+        <q-tooltip>检测详情</q-tooltip>
+      </q-btn>
       <q-btn data-testid="open-details" flat round icon="info" aria-label="打开任务详情" @click="detailsOpen = true">
         <q-tooltip>任务详情</q-tooltip>
       </q-btn>
     </div>
 
     <q-dialog v-model="detailsOpen">
-      <q-card class="details-dialog">
+      <q-card v-if="detailsOpen" class="details-dialog">
         <q-card-section class="dialog-title">
           <strong>任务详情</strong>
           <q-btn v-close-popup flat round icon="close" aria-label="关闭任务详情" />
@@ -40,6 +43,30 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <q-dialog v-model="detectionsOpen">
+      <q-card v-if="detectionsOpen" data-testid="detection-dialog-content" class="details-dialog detection-dialog">
+        <q-card-section class="dialog-title">
+          <strong>检测详情</strong>
+          <q-btn v-close-popup flat round icon="close" aria-label="关闭检测详情" />
+        </q-card-section>
+        <q-separator dark />
+        <q-card-section>
+          <div v-if="detectionEntries.length" class="dialog-detection-totals" aria-label="检测总计">
+            <span v-for="[label, count] in detectionEntries" :key="label">
+              <strong>{{ count }}</strong>{{ label }}
+            </span>
+          </div>
+          <p v-else class="empty-copy">暂无检测记录</p>
+          <ol class="dialog-detection-list" aria-label="最近检测">
+            <li v-for="(item, index) in store.recentDetections" :key="index">
+              <span>{{ detectionName(item) }}</span>
+              <strong>{{ detectionLocation(item) }}</strong>
+            </li>
+          </ol>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
   </header>
 </template>
 
@@ -50,7 +77,9 @@ import { useGroundStore } from '../stores/ground';
 
 const store = useGroundStore();
 const detailsOpen = ref(false);
+const detectionsOpen = ref(false);
 const detectionCount = computed(() => Object.values(store.detectionTotals).reduce((sum, count) => sum + count, 0));
+const detectionEntries = computed(() => Object.entries(store.detectionTotals));
 
 function linkLabel(link: string): string {
   return ({ online: '在线', offline: '离线', resyncing: '同步中', unknown: '未知' } as Record<string, string>)[link] ?? link;
@@ -62,5 +91,19 @@ function readable(value: Record<string, unknown> | null): string {
     if (typeof value[key] === 'string') return value[key] as string;
   }
   return JSON.stringify(value);
+}
+
+function detectionName(item: Record<string, unknown>): string {
+  for (const key of ['label', 'target', 'type', 'name']) {
+    if (typeof item[key] === 'string') return item[key] as string;
+  }
+  return '目标';
+}
+
+function detectionLocation(item: Record<string, unknown>): string {
+  for (const key of ['cell', 'current_cell', 'location']) {
+    if (typeof item[key] === 'string') return item[key] as string;
+  }
+  return '--';
 }
 </script>

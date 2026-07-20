@@ -67,8 +67,7 @@ export const useGroundStore = defineStore('ground', () => {
   const canStop = computed(
     () =>
       commandLink.value === 'online' &&
-      missionRunning.value &&
-      activeTaskId.value !== null,
+      missionRunning.value,
   );
 
   function applySnapshot(snapshot: GroundSnapshot): boolean {
