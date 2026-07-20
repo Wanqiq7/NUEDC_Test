@@ -144,6 +144,7 @@ export const useGroundStore = defineStore('ground', () => {
     activeTaskId,
     commandLink,
     currentCell,
+    plan,
     missionLoaded,
     missionRunning,
     snapshotSeq,
