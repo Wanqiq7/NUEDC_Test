@@ -7,11 +7,11 @@
 ## 审查重点
 
 - 通用层是否仍然独立于题目层。
-- 新题目是否只通过 Adapter / Runtime / Codec 接入。
+- 新题目是否按共享 core、Gateway 转换和前端面板边界接入。
 - 通信失败是否有测试和可读错误。
 - 规划算法是否覆盖边界案例和成本回归。
 - UI 状态是否避免误操作。
-- 新增题目是否已经注册到工厂并可通过环境变量选择。
+- Gateway 与前端是否保持消息契约一致。
 
 ## 禁止事项
 
@@ -24,8 +24,10 @@
 ```bash
 cmake --build build
 ctest --test-dir build --output-on-failure
+cd web_ground_station && uv run pytest tests/gateway -q
+cd frontend && corepack pnpm test && corepack pnpm typecheck && corepack pnpm build
 ```
 
 ## 推荐提示词
 
-请按架构边界、通信可靠性、规划边界、UI 状态、工厂注册和测试覆盖六个维度审查当前 diff，优先列出会影响比赛现场的风险。
+请按架构边界、通信可靠性、规划边界、UI 状态、消息契约和测试覆盖六个维度审查当前 diff，优先列出会影响比赛现场的风险。

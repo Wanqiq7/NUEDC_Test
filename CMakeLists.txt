@@ -11,15 +11,18 @@ enable_testing()
 foreach(shell_test
     test_start_ground_hotspot
     test_check_ground_control_network
-    test_start_ground_integration
 )
     add_test(
         NAME ${shell_test}
         COMMAND bash ${PROJECT_SOURCE_DIR}/scripts/tests/${shell_test}.sh
     )
 endforeach()
+add_test(
+    NAME test_web_ground_station_scripts
+    COMMAND bash ${PROJECT_SOURCE_DIR}/web_ground_station/tests/test_scripts.sh
+)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Sql Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Test)
 find_package(protobuf CONFIG QUIET)
 if(protobuf_FOUND)
     set(NUEDC_PROTOC_EXECUTABLE protobuf::protoc)
@@ -56,4 +59,3 @@ target_include_directories(proto_messages PUBLIC
 target_link_libraries(proto_messages PUBLIC protobuf::libprotobuf)
 
 add_subdirectory(shared/cpp)
-add_subdirectory(ground_station_computer)

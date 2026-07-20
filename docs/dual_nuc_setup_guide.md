@@ -2,13 +2,14 @@
 
 ## 1. 目标
 
-本文档说明当前地面站仓库如何连接外部机载端，完成任务下发、启动执行和遥测回传联调。
+本文档说明 Web 地面站如何连接外部机载端，完成任务下发、启动执行和遥测回传联调。
+标准操作入口为 `http://10.42.0.1:8000`。
 
 当前仓库只保留地面站端代码、共享协议/规划核心和运行态数据：
 
 ```text
 NUEDC_Test/
-├─ ground_station_computer/
+├─ web_ground_station/
 ├─ shared/
 ├─ runtime/
 ├─ docs/
@@ -26,7 +27,9 @@ NUEDC_Test/
 - Ubuntu 20.04 / 22.04 / 24.04
 - CMake 3.16 或更高
 - g++ / clang++，支持 C++17
-- Qt6（至少包含 `Core`、`Widgets`、`Sql`、`Test`）
+- Chromium
+- Python 3.10、uv、Node.js、Corepack/pnpm
+- Qt6 Core、Test（仅供共享 C++ 规划核心使用）
 - Protobuf 编译器与运行库
 - ZeroMQ / cppzmq
 
@@ -54,11 +57,20 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-以上命令会生成 C++ Protobuf 代码，并编译共享核心库与 Qt 地面站。
+以上命令会生成 C++ Protobuf 代码，并编译共享核心库与无状态规划 CLI。
+赛前还需预热并构建 Web 依赖：
+
+```bash
+cd web_ground_station
+uv sync --frozen
+cd frontend
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+```
 
 ## 4. 地面站重点目录
 
-- `ground_station_computer/`：Qt 地面站源码和测试。
+- `web_ground_station/`：比赛使用的 Gateway、Web 主控、启动脚本和测试。
 - `shared/proto/`：与机载端约定的 Protobuf 协议。
 - `shared/cpp/`：地面站使用的通用任务模型、H 题规划与协议编解码。
 - `shared/cases/`：固定样例案例。
@@ -124,24 +136,27 @@ export NUEDC_MODEL_PATH=/home/cat/Mid360_add_groundstation/packages/models/ani_r
 该入口先确认地面站 `10.42.0.1` 可达，再调用受控的
 `start_airborne_hardware.sh`；模型和 STM32 证据门禁仍然生效。
 
-机载服务启动后，在地面站端执行：
+机载服务启动后，在地面站端执行 Web 比赛入口：
 
 ```bash
-cd /home/sb/Ground_station/NUEDC_Test
-./scripts/start_ground_integration.sh
+cd /home/sb/Ground_station/.worktrees/nuedc-web
+source runtime/web_ground_station.env
+web_ground_station/scripts/check_web_ground_station.sh
+web_ground_station/scripts/start_competition.sh
 ```
 
-该入口加载 `runtime/ground_control_network.env`，要求 Ping、遥测端口 `5557` 和
-命令端口 `5558` 全部通过后才启动地面站。任一检查失败时脚本返回非零且不启动 UI。
+该入口要求机载 `10.42.0.2`、遥测端口 `5557` 和命令端口 `5558` 全部通过，且确认
+静态前端、锁文件、runtime 目录和 C++ 规划器均可用。任一检查失败时不启动服务。
+启动后在 Chromium 打开 `http://10.42.0.1:8000`。
 
-仅调试 UI、不要求机载服务在线时，仍可手动执行：
+仅调试 UI、不要求机载服务在线时，使用带热更新的开发入口：
 
 ```bash
-source runtime/ground_control_network.env
-./build/ground_station_computer/ground_station_app
+web_ground_station/scripts/start_dev.sh
 ```
 
-启动后，地面站会持续 PING 外部机载端，并显示 `机载状态: 在线` 或 `机载状态: 离线`。
+开发入口不得用于比赛。任何时刻只允许一个 Web Gateway 向 `10.42.0.2:5558`
+发送控制命令。
 
 ### 命令链路保活与状态
 
@@ -162,7 +177,7 @@ terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
 
 在地面站界面中：
 
-1. 点击 `设置禁飞区`。
+1. 在 Web 主控点击 `设置禁飞区`。
 2. 在左侧地图选择 3 个横向或纵向连续格子。
 3. 按钮变成 `航线生成`。
 4. 点击 `航线生成`。
@@ -176,8 +191,8 @@ terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
 
 ## 8. 执行、停止与视觉控制
 
-- 点击 `执行任务`：地面站发送 `START_MISSION`。
-- 点击 `停止任务`：地面站发送 `STOP_MISSION`。
+- 点击 `START` 并确认：地面站发送 `START_MISSION`。
+- 点击 `STOP` 并确认：地面站发送 `STOP_MISSION`。
 - `START_MISSION` 成功后机载端自动开启视觉；地面站不再提供飞行中的手动视觉按钮。
 - `ARM_TARGETING` 与 `RESET_TARGETING` 仍保留在线协议兼容能力，不属于正常一键流程。
 
@@ -186,13 +201,30 @@ terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
 
 外部机载端需要按 `shared/proto/messages.proto` 的协议返回确认。确认中的 `vision_armed` 字段会显示为“视觉瞄准: 已武装”或“未武装”；外部机载端也应持续通过遥测端口发布任务事件。
 
-## 9. 故障检查
+浏览器失效且 Web Gateway 已退出时，可独立发送一次应急 STOP：
+
+```bash
+cd /home/sb/Ground_station/.worktrees/nuedc-web/web_ground_station
+uv run python -m nuedc_web_gateway.emergency_stop \
+  --task-id '<当前任务 ID>' --env-file ../runtime/web_ground_station.env
+```
+
+只有退出码为 0 且输出“紧急停止已确认”才表示收到机载 ACK。浏览器刷新或 Gateway 重启
+不会自动 STOP；重启后等待状态从“同步中”恢复“在线”，再允许 START。
+
+## 9. PlotJuggler PID 波形调试
+
+Web 地面站不提供 PID 调试页。需要波形调参时，让机载端把既有 UDP JSON 发送到
+`10.42.0.1:9870`，并在地面站 PlotJuggler 中选择 UDP Streaming/JSON 解析、监听
+`9870`。Gateway 不绑定该端口。比赛任务执行不依赖 PlotJuggler，非调试时无需启动。
+
+## 10. 故障检查
 
 地面端显示机载离线时：
 
 ```bash
-ping 192.168.10.20
-nc -vz 192.168.10.20 5558
+ping 10.42.0.2
+nc -vz 10.42.0.2 5558
 ```
 
 任务生成成功但同步失败时，检查：

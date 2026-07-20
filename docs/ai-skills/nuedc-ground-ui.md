@@ -6,16 +6,13 @@
 
 ## 允许修改
 
-- `ground_station_computer/src/app/**`
-- `ground_station_computer/src/h_problem/ui/**`
-- `ground_station_computer/src/framework/runtime/**`
-- `ground_station_computer/tests/test_main_window.cpp`
-- `ground_station_computer/tests/test_grid_scene.cpp`
+- `web_ground_station/frontend/src/**`
+- `web_ground_station/frontend/e2e/**`
 
 ## 工作规则
 
 - 主界面只保留比赛现场需要的关键动作。
-- 所有按钮状态必须由任务状态机驱动。
+- 所有按钮状态必须由 Pinia ground store 和可靠 ACK 状态驱动。
 - 调试信息默认收纳到次级区域，不占主操作路径。
 
 ## 禁止事项
@@ -27,7 +24,10 @@
 ## 必跑测试
 
 ```bash
-ctest --test-dir build --output-on-failure -R "test_main_window|test_grid_scene|test_mission_runtime_state"
+cd web_ground_station/frontend
+corepack pnpm test
+corepack pnpm typecheck
+corepack pnpm build
 ```
 
 ## 推荐提示词

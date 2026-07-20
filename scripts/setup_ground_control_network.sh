@@ -101,15 +101,15 @@ cat <<EOF
 EOF
 
 if [[ ${LAUNCH_APP} -eq 1 ]]; then
-  # 这里使用当前 shell 导出环境，确保地面站进程能读取到目标机载地址。
+  # 这里使用当前 shell 导出环境，确保 Web Gateway 能读取到目标机载地址。
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
-  exec "${ROOT_DIR}/build/ground_station_computer/ground_station_app"
+  exec "${ROOT_DIR}/web_ground_station/scripts/start_competition.sh"
 fi
 
 cat <<EOF
 后续可执行:
   source "${ENV_FILE}"
   ${ROOT_DIR}/scripts/check_ground_control_network.sh --host ${AIRBORNE_HOST}
-  ./build/ground_station_computer/ground_station_app
+  ${ROOT_DIR}/web_ground_station/scripts/start_competition.sh
 EOF

@@ -2,10 +2,10 @@
 
 # NUEDC GROUND STATION
 
-**面向无人机竞赛任务规划与执行监控的 Qt 6 地面站**
+**面向无人机竞赛任务规划与执行监控的 Web 地面站**
 
 <p>
-  <img src="https://img.shields.io/badge/Qt-6-41CD52.svg?style=for-the-badge&logo=qt">
+  <img src="https://img.shields.io/badge/Vue-3-42B883.svg?style=for-the-badge&logo=vuedotjs">
   <img src="https://img.shields.io/badge/C%2B%2B-17-00599C.svg?style=for-the-badge&logo=cplusplus">
   <img src="https://img.shields.io/badge/Protocol-Protobuf%20%2B%20ZeroMQ-DF0000.svg?style=for-the-badge">
   <img src="https://img.shields.io/badge/H%20Task-h__field__m__v1-4B8BBE.svg?style=for-the-badge">
@@ -17,14 +17,15 @@
 
 # 项目简介
 
-NUEDC Ground Station 是面向无人机竞赛任务的 Qt 6 地面站。工作站集成任务规划、
-操作员交互、航线预览、任务下发、状态监控和检测结果汇总，当前内置 2025 年电赛
-H 题野生动物巡查 Adapter。
+NUEDC Ground Station 是面向无人机竞赛任务的 Web 地面站，由 FastAPI Gateway、
+Vue 3/Quasar 主控台、C++ H 题规划核心和 ZeroMQ/Protobuf 机载协议组成。
+
+标准比赛入口是 `http://10.42.0.1:8000`。
 
 地面站负责案例加载、禁飞区编辑、航线生成与校验、任务下发和结果展示，但不负责机载
 飞行决策。任务下发后，机载 `mission_coordinator` 根据 LIO 定位运行速度闭环；STM32
 只执行机体系 XYZ 速度。地面站与机载端通过 ZeroMQ 和 Protobuf 通信，新增赛题应扩展
-Adapter，而不是修改通用 Shell。
+对应的 Gateway 转换和前端面板，而不是修改通用核心。
 
 本仓库的软件闭环覆盖 H 题的禁飞区规划、非禁飞格覆盖、120 cm 巡查高度、动物检测事件
 传输与结果汇总，以及 `takeoff -> navigate -> land` 任务执行。动物识别模型、LIO、串口
@@ -67,12 +68,12 @@ Adapter，而不是修改通用 Shell。
 
 - **可重复的双端联调**
 
-  提供固定案例、runtime plan、mock airborne 自测和完整 Qt/协议测试，可从无机载端
+  提供固定案例、runtime plan、mock airborne 自测和完整 Web/协议测试，可从无机载端
   的本地验证逐步扩展到双 NUC 联调。
 
 - **明确的验证边界**
 
-  规划器、协议编解码和 Qt 页面可在本地验证；300 s 内完成、航线偏差、定高误差和落点
+  规划器、协议编解码和 Web 页面可在本地验证；300 s 内完成、航线偏差、定高误差和落点
   误差必须在目标机载硬件与实际场地上单独测量。
 
 ---
@@ -81,12 +82,11 @@ Adapter，而不是修改通用 Shell。
 
 | 模块 | 主要目录 | 说明 |
 | :--- | :--- | :--- |
-| Qt 应用 Shell | `ground_station_computer/src/framework` | 管理页面、通信组件、任务 Adapter 和应用生命周期。 |
-| H 题 Adapter | `ground_station_computer/src/h_problem` | 连接 H 题规划、协议校验、地图 UI 和检测数据库。 |
+| Web 主控台 | `web_ground_station/` | FastAPI Gateway、Vue/Quasar 单页主控、离线启动和浏览器测试。 |
 | 通用任务核心 | `shared/cpp/include/competition_core`、`shared/cpp/src` | 定义 `TaskPlan`、任务存储、命令与 Protobuf codec。 |
 | H 题核心 | `shared/cpp/include/h_problem_core`、`shared/cpp/src` | 负责案例、禁飞区、航线规划、坐标转换和 45° 降落几何。 |
 | Wire 合约 | `shared/proto/messages.proto` | 定义跨地面站与机载端的 Protobuf `Envelope`。 |
-| 测试与案例 | `ground_station_computer/tests`、`shared/cases` | 提供 UI、协议、规划与固定联调案例。 |
+| 测试与案例 | `web_ground_station/tests`、`shared/cpp/tests`、`shared/cases` | 提供 UI、协议、规划与固定联调案例。 |
 
 ---
 
@@ -97,7 +97,7 @@ Adapter，而不是修改通用 Shell。
 - Linux 开发环境
 - C++17
 - CMake 3.16 或更高版本
-- Qt 6 Core、Widgets、Sql、Test
+- Qt 6 Core、Test（仅供 C++ 规划核心使用）
 - Protobuf 编译器与 C++ 库
 - ZeroMQ 与 cppzmq
 
@@ -129,18 +129,20 @@ cmake --build build --parallel 2
 
 ## 启动地面站
 
-```bash
-./build/ground_station_computer/ground_station_app
-```
-
-默认连接本机机载端：事件端口 `5557`，命令端口 `5558`。双 NUC 部署时先设置：
+比赛默认启动 Web 地面站。先构建 C++ 规划器和静态前端，再执行离线预检：
 
 ```bash
-export NUEDC_AIRBORNE_HOST=192.168.10.20
-export NUEDC_TELEMETRY_PORT=5557
-export NUEDC_COMMAND_PORT=5558
-./build/ground_station_computer/ground_station_app
+cd web_ground_station/frontend
+corepack pnpm install --offline --frozen-lockfile
+corepack pnpm build
+cd ../..
+source runtime/web_ground_station.env
+web_ground_station/scripts/check_web_ground_station.sh
+web_ground_station/scripts/start_competition.sh
 ```
+
+在 Chromium 打开 `http://10.42.0.1:8000`。完整开发、应急 STOP、PlotJuggler PID 诊断和
+离线验收命令见 [Web 地面站操作手册](web_ground_station/README.md)。
 
 ## 无机载端自测
 
@@ -157,7 +159,7 @@ python3 scripts/mock_airborne.py --self-test \
 
 1. 首次部署时分别运行地面站 `start_ground_hotspot.sh` 和机载端
    `connect_ground_hotspot.sh`；日常联调使用机载端 `start_airborne_integration.sh`
-   和地面站 `start_ground_integration.sh` 启动双端。
+   和地面站 `web_ground_station/scripts/start_competition.sh` 启动双端。
 2. 使用“刷新机载链路”发送 PING。
 3. 加载 H 题案例或设置 3 个横向/纵向连续禁飞格。
 4. 生成航线，核对起飞点、巡查顺序、下降起点与降落终点。
@@ -251,10 +253,9 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph Ground["Ground Station"]
-        Shell["Qt Shell"]
-        Adapter["CompetitionTaskAdapter"]
-        HUi["H Problem UI"]
+    subgraph Ground["Web Ground Station"]
+        Browser["Vue / Quasar UI"]
+        Gateway["FastAPI Gateway"]
         Core["competition_core"]
         HCore["h_problem_core"]
     end
@@ -264,16 +265,15 @@ flowchart TB
         Zmq["ZeroMQ REQ/SUB"]
     end
 
-    Shell --> Adapter
-    Adapter --> HUi
-    Adapter --> Core
-    Adapter --> HCore
+    Browser --> Gateway
+    Gateway --> Core
+    Gateway --> HCore
     Core --> Proto
     Proto --> Zmq
     Zmq <--> Airborne["Airborne ground_link"]
 ```
 
-题目专有的解析、规划和 UI 属于 Adapter；通用任务模型和 wire codec 属于共享核心；
+题目专有的解析、规划和 UI 属于题目 core、Gateway 转换和前端面板；通用任务模型和 wire codec 属于共享核心；
 跨端通信必须经过 `messages.proto`，不得把机载任务状态复制成地面站本地权威。
 
 ---
@@ -293,11 +293,7 @@ NUEDC_Test
 |       |   `-- h_problem_core    # H 题规划与几何接口
 |       |-- src                   # 两个共享库的实现
 |       `-- tests                 # 共享核心测试
-|-- ground_station_computer
-|   |-- src
-|   |   |-- framework         # Qt Shell 与通信框架
-|   |   `-- h_problem         # H 题 Adapter、页面与存储
-|   `-- tests                 # Qt Test
+|-- web_ground_station       # Web Gateway、SPA、启动脚本和 E2E
 |-- runtime                   # 当前运行时计划
 |-- scripts                   # mock 与开发工具
 `-- docs                      # 架构、部署与扩展文档
@@ -312,8 +308,7 @@ NUEDC_Test
 ```bash
 cmake -S . -B build
 cmake --build build
-QT_QPA_PLATFORM=offscreen \
-  ctest --test-dir build -j1 --output-on-failure
+ctest --test-dir build -j1 --output-on-failure
 python3 scripts/mock_airborne.py --self-test \
   --runtime-path /tmp/nuedc-mock-self-test-plan.json
 ```
@@ -322,17 +317,15 @@ python3 scripts/mock_airborne.py --self-test \
 
 - 使用 C++17、四空格缩进、`snake_case` 文件名和 `PascalCase` 类型名。
 - 不直接编辑或提交 `build/generated/proto/`。
-- 新赛题新增 `CompetitionTaskAdapter`，不要把题目逻辑写入 Shell 或
+- 新赛题在 Web Gateway 和前端面板中扩展，不要把题目逻辑写入
   `competition_core`。
 - 协议、坐标或计划变更必须覆盖 round-trip、错误路径和边界值。
-- UI 变更至少运行 offscreen Qt 测试；涉及交互时在 PR 中附截图或录屏。
+- UI 变更至少运行 Vitest、类型检查和生产构建；涉及交互时在 PR 中附截图或录屏。
 
 ---
 
 # 相关文档
 
 - [双 NUC 部署与网络](docs/dual_nuc_setup_guide.md)
-- [地面站框架架构](docs/framework_architecture.md)
-- [新增任务 Adapter](docs/adding_task_adapter.md)
-- [地面站架构规格](docs/ground_station_architecture_spec.md)
+- [Web 地面站操作手册](web_ground_station/README.md)
 - [共享 C++ 核心](shared/cpp/README.md)

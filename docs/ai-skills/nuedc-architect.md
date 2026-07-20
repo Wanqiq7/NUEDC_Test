@@ -8,29 +8,29 @@
 
 - `shared/cpp/include/competition_core/**`
 - `shared/cpp/src/**`
-- `ground_station_computer/src/framework/**`
-- `ground_station_computer/tests/**`
-- `docs/framework_architecture.md`
-- `docs/adding_task_adapter.md`
+- `web_ground_station/gateway/**`
+- `web_ground_station/frontend/src/**`
+- `web_ground_station/tests/**`
 
 ## 工作规则
 
-- 先判断变更属于 `competition_core`、题目 core、地面站 framework、题目 UI 还是协议通信。
-- 优先保持 Shell 薄，题目逻辑只能通过 Adapter / Codec 进入。
-- 任何新增题目都必须注册到适配器工厂，默认选择由 `NUEDC_TASK_ADAPTER` 决定。
+- 先判断变更属于 `competition_core`、题目 core、Gateway、前端 UI 还是协议通信。
+- Gateway 只承载协议转换、连接状态和持久化边界，飞行决策留在机载端。
+- 高频状态允许覆盖中间帧，任务事件和 ACK 必须可靠保留。
 
 ## 禁止事项
 
 - 不允许把题目专有模型放进 `competition_core`。
-- 不允许让 `MainWindow` 直接 include 题目目录。
-- 不允许新增题目时复制主流程或复制通信客户端。
+- 不允许前端直接解析 Protobuf 或持有 ZMQ 连接。
+- 不允许新增题目时复制 Gateway 通信主流程。
 
 ## 必跑测试
 
 ```bash
-ctest --test-dir build --output-on-failure -R "test_task_ports|test_architecture_boundaries|test_main_window"
+ctest --test-dir build --output-on-failure -R "test_task_ports|test_task_protocol"
+cd web_ground_station && uv run pytest tests/gateway -q
 ```
 
 ## 推荐提示词
 
-请按 `docs/framework_architecture.md` 审查这次变更属于哪一层，指出任何题目逻辑污染通用框架的风险，并给出最小改造方案。
+请审查这次变更属于共享 C++ 核心、Gateway、前端 UI 还是机载协议层，指出跨层耦合风险并给出最小改造方案。

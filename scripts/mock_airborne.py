@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""本地机载端 Mock，用于调试 Qt 地面站的 ZeroMQ/Protobuf 链路。"""
+"""本地机载端 Mock，用于调试 Web Gateway 的 ZeroMQ/Protobuf 链路。"""
 
 from __future__ import annotations
 

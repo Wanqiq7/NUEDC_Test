@@ -35,6 +35,7 @@ env/
 runtime/active_mission_plan.json
 runtime/ground_control_results.db
 runtime/*.env
+!runtime/web_ground_station.env
 
 # Qt / IDE
 *.user
@@ -52,3 +53,10 @@ runtime/*.env
 .DS_Store
 Thumbs.db
 *.log
+
+/web_ground_station/.generated/
+/web_ground_station/.venv/
+/web_ground_station/frontend/node_modules/
+/web_ground_station/frontend/dist/
+/web_ground_station/tests/e2e/output/
+/runtime/sessions/
