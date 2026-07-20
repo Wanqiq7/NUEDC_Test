@@ -45,6 +45,7 @@ class GroundState:
         self._recent_summary: dict[str, Any] | None = None
         self._recent_error: dict[str, Any] | None = None
         self._recording_error = ""
+        self._resyncing = False
 
     @property
     def recording_error(self) -> str:
@@ -56,6 +57,11 @@ class GroundState:
             self._recording_error = message
             self._advance_snapshot()
 
+    def mark_resyncing(self) -> None:
+        with self._lock:
+            self._resyncing = True
+            self._advance_snapshot()
+
     def subscribe(self, maxsize: int = 64) -> asyncio.Queue[WebEvent]:
         if maxsize <= 0:
             raise ValueError("subscriber maxsize must be positive")
@@ -63,6 +69,13 @@ class GroundState:
         with self._lock:
             self._subscribers.append(queue)
         return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[WebEvent]) -> None:
+        with self._lock:
+            try:
+                self._subscribers.remove(queue)
+            except ValueError:
+                pass
 
     def apply_plan(
         self,
@@ -109,6 +122,7 @@ class GroundState:
             self._highest_ack_sequence = ack.last_accepted_sequence
             self._ack = ack.model_copy(deep=True)
             if ack.ok:
+                self._resyncing = False
                 self._last_command_success_ms = timestamp_ms
                 self._command_failures = 0
             else:
@@ -291,6 +305,8 @@ class GroundState:
         return self._snapshot_seq
 
     def _command_link(self, now_ms: int) -> str:
+        if self._resyncing:
+            return "resyncing"
         if self._command_failures >= COMMAND_FAILURES_OFFLINE:
             return "offline"
         if self._last_command_success_ms is None:

@@ -307,3 +307,13 @@ def test_snapshot_sequence_tracks_applied_envelope_sequence():
     assert second.snapshot_seq >= first.snapshot_seq
     assert PID_TTL_MS == 500
     assert isinstance(state.subscribe(), asyncio.Queue)
+
+
+def test_unsubscribe_stops_delivery_to_disconnected_client():
+    state = active_state()
+    subscriber = state.subscribe()
+
+    state.unsubscribe(subscriber)
+    state.apply_task_event("active", "telemetry", 1, 101, {})
+
+    assert subscriber.empty()
