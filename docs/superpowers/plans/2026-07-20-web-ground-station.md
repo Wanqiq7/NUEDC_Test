@@ -6,7 +6,7 @@
 
 **Architecture:** 地面 NUC 上的 FastAPI Gateway 通过无状态 C++ CLI 规划，通过 ZeroMQ/Protobuf 与机载端通信，并将规范化 JSON 状态通过 HTTP/WebSocket 提供给单个 Vue 3 主控工作台。Gateway 只维护地面镜像、命令串行化、重试、TTL 和 JSONL；机载端继续是运行态与安全处置权威。
 
-**Tech Stack:** C++17、Qt6 Core、CMake、Protobuf 3.12、ZeroMQ、Python 3.10、FastAPI、Uvicorn、asyncio、pyzmq、uv、Vue 3、Vite、TypeScript、Quasar、Pinia、ECharts、SVG、pnpm、Pytest、Vitest、Playwright。
+**Tech Stack:** C++17、Qt6 Core、CMake、Protobuf 3.12、ZeroMQ、Python 3.10、FastAPI、Uvicorn、asyncio、pyzmq、uv、Vue 3、Vite、TypeScript、Quasar、Pinia、SVG、pnpm、Pytest、Vitest、Playwright；PID 波形调试继续使用现有 UDP 通道和 PlotJuggler，不纳入 Web 地面站。
 
 ## Global Constraints
 
@@ -17,7 +17,7 @@
 - 命令走 HTTP，连续状态走 WebSocket；浏览器不直接访问 ZeroMQ。
 - 命令链路和遥测链路分别计算健康状态；telemetry 不得建立命令在线状态。
 - 浏览器断开、刷新或 Gateway 重启不自动 STOP；飞行安全语义沿用原工程。
-- 生产模式不使用热重载，默认禁用 PID 调试，不依赖 CDN 或互联网。
+- 生产模式不使用热重载，不依赖 CDN 或互联网；PID 波形调试由 PlotJuggler 负责，不在 Web 地面站中重复实现。
 - 前端核心类型保持 `strict: true`，但 Vite 开发服务器不运行阻塞式类型检查。
 - 只提交 `pnpm-lock.yaml` 和 `uv.lock`，不提交 npm/Yarn/Poetry 的第二套 lockfile。
 - 完整主控必须支持 Chromium 的 `1920x1080`、`1366x768`、`1024x600`。
@@ -46,7 +46,6 @@ web_ground_station/
 │   ├── proto_runtime.py       # Load generated messages_pb2
 │   ├── recorder.py            # Bounded JSONL writer
 │   ├── state.py               # Authoritative ground-side mirror/broadcast
-│   ├── pid_debug.py           # Optional UDP PID receiver
 │   └── emergency_stop.py      # Browser-independent STOP CLI
 ├── frontend/
 │   ├── package.json / pnpm-lock.yaml / vite.config.ts / tsconfig*.json
@@ -57,12 +56,10 @@ web_ground_station/
 │       ├── models/gateway.ts
 │       ├── stores/ground.ts
 │       ├── composables/useTelemetry.ts
-│       ├── composables/usePidSeries.ts
 │       ├── components/HMissionMap.vue
 │       ├── panels/PlanningPanel.vue
 │       ├── panels/RuntimePanel.vue
 │       ├── panels/DetectionPanel.vue
-│       ├── panels/PidDebugWorkspace.vue
 │       └── styles/app.scss
 ├── scripts/
 │   ├── generate_python_proto.py
@@ -650,7 +647,7 @@ git commit -m "feat(web): connect the reliable airborne link"
 **Interfaces:**
 - Consumes: `GatewayConfig`, `PlannerClient`, `GroundState`, `JsonlRecorder`, `AirborneClient`.
 - Produces: `GatewayServices(config: GatewayConfig, planner: PlannerClient, state: GroundState,
-  recorder: JsonlRecorder, airborne: AirborneClient)`; Task 10 extends it with optional PID state.
+  recorder: JsonlRecorder, airborne: AirborneClient)`.
 - Produces: `create_app(services: GatewayServices | None = None) -> FastAPI` and routes from design.
 
 - [ ] **Step 1: Write failing HTTP and WebSocket tests with fake services**
@@ -778,7 +775,7 @@ git commit -m "feat(web): expose the ground station API"
 
 - [ ] **Step 1: Create package metadata and write failing store tests**
 
-Pin compatible major versions and lock them with pnpm: Vue 3, Quasar 2, Pinia 2, ECharts 5,
+Pin compatible major versions and lock them with pnpm: Vue 3, Quasar 2, Pinia 2,
 Vite 5, TypeScript 5.5, Vitest 2, Vue Test Utils 2, jsdom 24, Playwright 1,
 `@quasar/vite-plugin` 1, `@quasar/extras` 1 and Sass 1. Icons/fonts are imported from the bundled
 `@quasar/extras` package; no HTML or CSS may reference a CDN. Set `packageManager` to
@@ -1036,81 +1033,7 @@ git add web_ground_station/frontend/src
 git commit -m "feat(web): add the responsive mission console"
 ```
 
-### Task 10: Add the Environment-Gated PID Debug Workspace
-
-**Files:**
-- Create: `web_ground_station/gateway/nuedc_web_gateway/pid_debug.py`
-- Create: `web_ground_station/tests/gateway/test_pid_debug.py`
-- Create: `web_ground_station/frontend/src/composables/usePidSeries.ts`
-- Create: `web_ground_station/frontend/src/panels/PidDebugWorkspace.vue`
-- Create: `web_ground_station/frontend/src/panels/PidDebugWorkspace.spec.ts`
-- Modify: `web_ground_station/gateway/nuedc_web_gateway/app.py`
-- Modify: `web_ground_station/frontend/src/App.vue`
-
-**Interfaces:**
-- Consumes: existing airborne UDP JSON on port 9870.
-- Produces: `parse_pid_packet(data: bytes, received_ms: int) -> dict[str, Any]` and optional
-  `PidDebugReceiver`, `pid_debug` WebEvents, one-axis-at-a-time small-screen chart.
-- Modifies: `GatewayServices.pid_receiver: PidDebugReceiver | None` and lifecycle startup/shutdown.
-
-- [ ] **Step 1: Write failing backend UDP tests**
-
-```python
-def test_parses_complete_xyz_packet():
-    packet = {f"{axis}_{field}": 1.0 for axis in "xyz" for field in
-              ("target", "measurement", "error", "p", "i", "d", "output")}
-    sample = parse_pid_packet(json.dumps(packet).encode(), received_ms=100)
-    assert sample["x"]["target"] == 1.0
-    assert sample["received_ms"] == 100
-
-def test_disabled_config_does_not_create_receiver():
-    services = build_services(config_with(pid_debug_enabled=False))
-    assert services.pid_receiver is None
-```
-
-- [ ] **Step 2: Write failing frontend bounded-series tests**
-
-Assert 301 samples added to a capacity-300 series yields exactly 300, X/Y/Z can switch at
-1024 width, and the PID entry is absent when snapshot capability is false.
-
-- [ ] **Step 3: Run RED**
-
-Run:
-
-```bash
-cd web_ground_station && uv run pytest tests/gateway/test_pid_debug.py -v
-cd frontend && corepack pnpm vitest run src/panels/PidDebugWorkspace.spec.ts
-```
-
-Expected: both suites FAIL because PID components are missing.
-
-- [ ] **Step 4: Implement optional receiver and ECharts workspace**
-
-Validate all 21 numeric fields and finite values; malformed packets increment a bounded error
-counter and are dropped. Receiver only starts when `NUEDC_PID_DEBUG_ENABLED=1`; stale after 500 ms.
-Frontend keeps 300 samples per axis, disables chart animation, batches redraws, displays one axis on
-1024x600 and three axes on wide screens. Switch to this full-screen workspace through `groundStore.ui`
-without Vue Router; close returns to main console.
-
-- [ ] **Step 5: Run GREEN**
-
-Run:
-
-```bash
-cd web_ground_station && uv run pytest tests/gateway/test_pid_debug.py -v
-cd frontend && corepack pnpm test && corepack pnpm typecheck && corepack pnpm build
-```
-
-Expected: PID tests PASS; disabled production snapshot exposes no PID capability.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add web_ground_station
-git commit -m "feat(web): add optional PID diagnostics"
-```
-
-### Task 11: Add Emergency STOP, Competition Startup, and Offline Preflight
+### Task 10: Add Emergency STOP, Competition Startup, and Offline Preflight
 
 **Files:**
 - Create: `web_ground_station/gateway/nuedc_web_gateway/emergency_stop.py`
@@ -1140,7 +1063,7 @@ loads runtime/web_ground_station.env
 requires 10.42.0.1-compatible web host
 runs network preflight
 requires frontend/dist and planner CLI
-does not invoke pnpm install, uv sync, --reload, or PID debug by default
+does not invoke pnpm install, uv sync, --reload, or any PID Web receiver by default
 executes uvicorn on 0.0.0.0:8000
 ```
 
@@ -1200,7 +1123,7 @@ git add .gitignore web_ground_station runtime/web_ground_station.env runtime/web
 git commit -m "feat(web): add competition launch and emergency stop"
 ```
 
-### Task 12: Close the Mock-Airborne, Responsive Browser, and Documentation Loop
+### Task 11: Close the Mock-Airborne, Responsive Browser, and Documentation Loop
 
 **Files:**
 - Create: `web_ground_station/frontend/playwright.config.ts`
@@ -1272,7 +1195,7 @@ Expected: FAIL until fixture/startup/data-testid details are complete.
 
 - [ ] **Step 4: Complete fixtures, stable selectors, and operator docs**
 
-Document exact dev, competition, PID debug, emergency STOP, offline preflight and worktree commands.
+Document exact dev, competition, PlotJuggler PID diagnostics, emergency STOP, offline preflight and worktree commands.
 Update root README and dual-NUC guide to make `http://10.42.0.1:8000` the Web entry while explicitly
 retaining Qt as migration fallback and prohibiting simultaneous control clients.
 
@@ -1324,8 +1247,8 @@ web_ground_station/scripts/start_competition.sh
 
 Expected: both dependency checks use only prewarmed caches; Chromium loads `http://10.42.0.1:8000`;
 planning, LOAD, START, telemetry, detection, STOP and Summary work; browser refresh and one Gateway
-restart resynchronize from snapshot/ACK; production UI has no PID entry; no process attempts an
-Internet connection.
+restart resynchronize from snapshot/ACK; PID diagnostics remain external to the Web UI and use the
+existing UDP channel with PlotJuggler; no process attempts an Internet connection.
 
 - [ ] **Step 8: Commit**
 
