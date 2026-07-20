@@ -26,7 +26,7 @@ SEQUENCE_COUNTER_BITS = 20
 
 
 def initial_command_sequence(timestamp_ms: int) -> int:
-    """Return the sender-independent command epoch shared with the Qt client."""
+    """Return the sender-independent command epoch used by command clients."""
     return max(0, timestamp_ms) << SEQUENCE_COUNTER_BITS
 
 

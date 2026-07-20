@@ -142,5 +142,5 @@ echo "  Environment file: ${ENV_FILE}"
 if [[ ${LAUNCH_APP} -eq 1 ]]; then
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
-  exec "${ROOT_DIR}/build/ground_station_computer/ground_station_app"
+  exec "${ROOT_DIR}/web_ground_station/scripts/start_competition.sh"
 fi

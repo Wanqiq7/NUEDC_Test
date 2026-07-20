@@ -638,7 +638,7 @@ def test_ground_control_command_is_a_string_enum():
     }
 
 
-def test_command_epoch_matches_qt_sender_independent_contract():
+def test_command_epoch_matches_sender_independent_contract():
     assert initial_command_sequence(1_720_000_000_123) == (
         1_720_000_000_123 << 20
     )

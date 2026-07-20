@@ -101,7 +101,7 @@ describe('HMissionMap', () => {
     { touchdown_x_cm: 450, touchdown_y_cm: 350 },
     { touchdown_x_cm: 444, touchdown_y_cm: 344 },
   ])(
-    'keeps touchdown marker in the Qt start cell regardless of physical coordinates (%o)',
+    'keeps touchdown marker in the mission start cell regardless of physical coordinates (%o)',
     (touchdown) => {
       const collisionPlan = {
         ...plan,

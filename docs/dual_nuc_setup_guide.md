@@ -3,13 +3,13 @@
 ## 1. 目标
 
 本文档说明 Web 地面站如何连接外部机载端，完成任务下发、启动执行和遥测回传联调。
-标准操作入口为 `http://10.42.0.1:8000`；Qt 地面站只作为迁移期回退。
+标准操作入口为 `http://10.42.0.1:8000`。
 
 当前仓库只保留地面站端代码、共享协议/规划核心和运行态数据：
 
 ```text
 NUEDC_Test/
-├─ ground_station_computer/
+├─ web_ground_station/
 ├─ shared/
 ├─ runtime/
 ├─ docs/
@@ -29,7 +29,7 @@ NUEDC_Test/
 - g++ / clang++，支持 C++17
 - Chromium
 - Python 3.10、uv、Node.js、Corepack/pnpm
-- Qt6（仅回退实现需要，至少包含 `Core`、`Widgets`、`Sql`、`Test`）
+- Qt6 Core、Test（仅供共享 C++ 规划核心使用）
 - Protobuf 编译器与运行库
 - ZeroMQ / cppzmq
 
@@ -57,7 +57,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-以上命令会生成 C++ Protobuf 代码，并编译共享核心库、无状态规划 CLI 与 Qt 回退地面站。
+以上命令会生成 C++ Protobuf 代码，并编译共享核心库与无状态规划 CLI。
 赛前还需预热并构建 Web 依赖：
 
 ```bash
@@ -70,7 +70,6 @@ corepack pnpm build
 
 ## 4. 地面站重点目录
 
-- `ground_station_computer/`：Qt 地面站源码和测试。
 - `web_ground_station/`：比赛使用的 Gateway、Web 主控、启动脚本和测试。
 - `shared/proto/`：与机载端约定的 Protobuf 协议。
 - `shared/cpp/`：地面站使用的通用任务模型、H 题规划与协议编解码。
@@ -156,8 +155,8 @@ web_ground_station/scripts/start_competition.sh
 web_ground_station/scripts/start_dev.sh
 ```
 
-开发入口不得用于比赛。Qt 回退程序仍可手动启动，但启动前必须停止 Web Gateway；严禁 Qt
-和 Web 同时向 `10.42.0.2:5558` 发送控制命令。
+开发入口不得用于比赛。任何时刻只允许一个 Web Gateway 向 `10.42.0.2:5558`
+发送控制命令。
 
 ### 命令链路保活与状态
 

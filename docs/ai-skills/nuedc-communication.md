@@ -6,16 +6,16 @@
 
 ## 允许修改
 
-- `ground_station_computer/src/framework/communication/**`
-- `ground_station_computer/src/h_problem/mission/h_mission_command_service.*`
+- `web_ground_station/gateway/nuedc_web_gateway/**`
+- `web_ground_station/tests/gateway/**`
 - `shared/cpp/src/protocol/**`
-- `shared/cpp/tests/test_h_command_handler.cpp`
+- `shared/cpp/tests/test_task_protocol.cpp`
 
 ## 工作规则
 
 - 优先把同步能力做成幂等、可重试、可观测。
 - 任务下发和状态确认必须保留清晰错误信息。
-- 地面站命令客户端与共享协议处理尽量复用同一套核心语义。
+- Gateway 负责 Protobuf/ZMQ 到 Web JSON/WebSocket 的专用转换。
 
 ## 禁止事项
 
@@ -26,7 +26,8 @@
 ## 必跑测试
 
 ```bash
-ctest --test-dir build --output-on-failure -R "test_reliable_command_client|test_mission_command_service|test_zmq_command_client|test_h_command_handler"
+ctest --test-dir build --output-on-failure -R "test_task_protocol"
+cd web_ground_station && uv run pytest tests/gateway -q
 ```
 
 ## 推荐提示词

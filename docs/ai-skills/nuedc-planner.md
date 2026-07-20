@@ -10,7 +10,7 @@
 - `shared/cpp/src/planning/**`
 - `shared/cpp/tests/test_h_route_planner.cpp`
 - `shared/cpp/tests/test_h_planning_result.cpp`
-- `ground_station_computer/src/h_problem/mission/h_route_planner_bridge.cpp`
+- `web_ground_station/gateway/nuedc_web_gateway/planner.py`
 
 ## 工作规则
 

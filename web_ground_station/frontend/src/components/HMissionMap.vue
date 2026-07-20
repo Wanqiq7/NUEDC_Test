@@ -326,7 +326,7 @@ const descentStartPoint = computed(() => {
   return typeof terminalCell === 'string' ? decodeCell(terminalCell) : null;
 });
 const touchdownPoint = computed(() => {
-  // Qt deliberately renders the touchdown marker at the takeoff/start cell.
+  // The mission contract renders touchdown at the takeoff/start cell.
   // touchdown_x/y are physical centimetres used by protocol validation only.
   return startPoint.value;
 });
