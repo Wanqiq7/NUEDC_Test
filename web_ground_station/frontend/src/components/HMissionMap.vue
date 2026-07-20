@@ -52,6 +52,18 @@
           <text :x="cell.x + 25" :y="cell.y + 30" aria-hidden="true">{{ cell.code }}</text>
         </g>
       </g>
+      <g class="selected-cell-overlays" aria-hidden="true">
+        <rect
+          v-for="cell in selectedCells"
+          :key="`selected-${cell.code}`"
+          data-testid="selected-cell-outline"
+          :x="cell.x"
+          :y="cell.y"
+          width="50"
+          height="50"
+          class="selected-cell-outline"
+        />
+      </g>
 
       <polyline
         v-if="routePoints"
@@ -214,11 +226,12 @@ const cells = columns.flatMap((column) =>
   rows.map((row) => ({
     code: `A${column}B${row}`,
     x: 25 + (column - 1) * 50,
-    y: 25 + (row - 1) * 50,
+    y: 25 + (7 - row) * 50,
   })),
 );
 
 const selectedNoFlySet = computed(() => new Set(props.selectedNoFlyCells));
+const selectedCells = computed(() => cells.filter((cell) => selectedNoFlySet.value.has(cell.code)));
 const viewBox = computed(() => {
   const box = currentViewBox.value;
   return `${box.x} ${box.y} ${box.width} ${box.height}`;
@@ -491,6 +504,14 @@ function fit(): void {
 
 .cell.no-fly text {
   fill: #fff4ef;
+}
+
+.selected-cell-outline {
+  fill: none;
+  stroke: #ff9b84;
+  stroke-width: 2.5;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 
 .route {

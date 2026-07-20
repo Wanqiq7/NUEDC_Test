@@ -35,6 +35,8 @@ describe('HMissionMap', () => {
 
     expect(wrapper.findAll('[data-cell]')).toHaveLength(63);
     expect(wrapper.get('[data-cell="A2B2"]').classes()).toContain('no-fly');
+    expect(wrapper.find('[data-testid="selected-cell-outline"]').attributes('x')).toBe('75');
+    expect(wrapper.find('[data-testid="selected-cell-outline"]').attributes('y')).toBe('275');
     expect(wrapper.get('[data-marker="start"]').exists()).toBe(true);
     expect(wrapper.get('[data-marker="descent-start"]').exists()).toBe(true);
     expect(wrapper.get('[data-marker="touchdown"]').exists()).toBe(true);
