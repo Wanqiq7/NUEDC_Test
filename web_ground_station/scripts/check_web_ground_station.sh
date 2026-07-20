@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="${ROOT_DIR}/runtime/web_ground_station.env"
+ENV_FILE="${NUEDC_WEB_ENV_FILE:-${ROOT_DIR}/runtime/web_ground_station.env}"
 [[ -f "${ENV_FILE}" ]] || { echo "缺少 ${ENV_FILE}" >&2; exit 1; }
 set -a
 # shellcheck disable=SC1090

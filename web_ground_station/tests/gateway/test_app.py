@@ -4,6 +4,7 @@ import json
 import httpx
 import pytest
 
+import nuedc_web_gateway.app as app_module
 from nuedc_web_gateway.airborne import GroundControlCommand
 from nuedc_web_gateway.app import GatewayServices, create_app
 from nuedc_web_gateway.config import GatewayConfig
@@ -132,6 +133,40 @@ async def request(app, method, path, **kwargs):
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         return await client.request(method, path, **kwargs)
+
+
+def test_app_factory_uses_exported_runtime_environment(monkeypatch, tmp_path):
+    planner_path = tmp_path / "planner"
+    captured = {}
+
+    class FactoryPlanner:
+        def __init__(self, path, **kwargs):
+            captured["planner_path"] = path
+
+    class FactoryRecorder:
+        def __init__(self, path, state):
+            captured["recorder_path"] = path
+
+    class FactoryAirborne:
+        def __init__(self, config, state, recorder):
+            captured["config"] = config
+
+    monkeypatch.setenv("NUEDC_AIRBORNE_HOST", "192.0.2.20")
+    monkeypatch.setenv("NUEDC_TELEMETRY_PORT", "16557")
+    monkeypatch.setenv("NUEDC_COMMAND_PORT", "16558")
+    monkeypatch.setenv("NUEDC_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("NUEDC_PLANNER_CLI", str(planner_path))
+    monkeypatch.setattr(app_module, "PlannerClient", FactoryPlanner)
+    monkeypatch.setattr(app_module, "JsonlRecorder", FactoryRecorder)
+    monkeypatch.setattr(app_module, "AirborneClient", FactoryAirborne)
+
+    application = app_module.create_app()
+
+    assert application.state.services.config is captured["config"]
+    assert captured["config"].telemetry_endpoint == "tcp://192.0.2.20:16557"
+    assert captured["config"].command_endpoint == "tcp://192.0.2.20:16558"
+    assert captured["planner_path"] == planner_path
+    assert captured["recorder_path"] == tmp_path / "sessions"
 
 
 @pytest.mark.asyncio

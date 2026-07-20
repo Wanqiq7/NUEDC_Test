@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -121,7 +122,7 @@ def _ack_response(ack: AckSnapshot) -> JSONResponse:
 
 def create_app(services: GatewayServices | None = None) -> FastAPI:
     if services is None:
-        config = GatewayConfig.from_env({})
+        config = GatewayConfig.from_env(os.environ)
         state = GroundState()
         recorder = JsonlRecorder(config.runtime_dir / "sessions", state)
         planner = PlannerClient(
