@@ -25,6 +25,7 @@ set(H_PROBLEM_CORE_SOURCES
     src/planning/route_cost.cpp
     src/planning/route_planner.cpp
     src/runtime/simulator.cpp
+    src/tools/planner_cli.cpp
 )
 
 add_library(h_problem_core STATIC
@@ -43,6 +44,13 @@ target_link_libraries(h_problem_core PUBLIC
 
 add_executable(generate_h_runtime_fixture tools/generate_h_runtime_fixture.cpp)
 target_link_libraries(generate_h_runtime_fixture PRIVATE
+    Qt6::Core
+    h_problem_core
+    competition_core
+)
+
+add_executable(h_route_planner_cli tools/h_route_planner_cli_main.cpp)
+target_link_libraries(h_route_planner_cli PRIVATE
     Qt6::Core
     h_problem_core
     competition_core
@@ -89,3 +97,4 @@ add_h_problem_core_test(test_h_mission_geometry tests/test_h_mission_geometry.cp
 add_h_problem_core_test(test_h_route_planner tests/test_h_route_planner.cpp)
 add_h_problem_core_test(test_h_planning_result tests/test_h_planning_result.cpp)
 add_h_problem_core_test(test_h_simulator tests/test_h_simulator.cpp)
+add_h_problem_core_test(test_h_route_planner_cli tests/test_h_route_planner_cli.cpp)
