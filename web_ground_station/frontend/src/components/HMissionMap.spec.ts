@@ -38,7 +38,9 @@ describe('HMissionMap', () => {
     expect(wrapper.get('[data-marker="start"]').exists()).toBe(true);
     expect(wrapper.get('[data-marker="descent-start"]').exists()).toBe(true);
     expect(wrapper.get('[data-marker="touchdown"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="route"]').attributes('points').split(' ')).toHaveLength(3);
+    expect(wrapper.get('[data-testid="route"]').attributes('points')).toBe(
+      '450,350 400,350 400,200',
+    );
   });
 
   it('emits one cell toggle from click, keyboard, and touch activation', async () => {
@@ -84,7 +86,7 @@ describe('HMissionMap', () => {
     { touchdown_x_cm: 450, touchdown_y_cm: 350 },
     { touchdown_x_cm: 444, touchdown_y_cm: 344 },
   ])(
-    'offsets a colliding touchdown symbol while preserving its real anchor (%o)',
+    'keeps touchdown marker in the Qt start cell regardless of physical coordinates (%o)',
     (touchdown) => {
       const collisionPlan = {
         ...plan,
@@ -101,23 +103,32 @@ describe('HMissionMap', () => {
       const start = wrapper.get('[data-marker="start"]');
       const descent = wrapper.get('[data-marker="descent-start"]');
       const touchdownMarker = wrapper.get('[data-marker="touchdown"]');
-      const leader = wrapper.get('[data-testid="touchdown-leader"]');
-
       const positions = [start, descent, touchdownMarker].map(
         (marker) => `${marker.attributes('data-display-x')},${marker.attributes('data-display-y')}`,
       );
-      expect(new Set(positions).size).toBe(3);
-      expect(leader.attributes('x1')).toBe(String(touchdown.touchdown_x_cm));
-      expect(leader.attributes('y1')).toBe(String(400 - touchdown.touchdown_y_cm));
-      expect(leader.attributes('x2')).toBe(touchdownMarker.attributes('data-display-x'));
-      expect(leader.attributes('y2')).toBe(touchdownMarker.attributes('data-display-y'));
-      expect(Number(touchdownMarker.attributes('data-display-x'))).toBeGreaterThanOrEqual(12);
-      expect(Number(touchdownMarker.attributes('data-display-x'))).toBeLessThanOrEqual(488);
-      expect(Number(touchdownMarker.attributes('data-display-y'))).toBeGreaterThanOrEqual(12);
-      expect(Number(touchdownMarker.attributes('data-display-y'))).toBeLessThanOrEqual(398);
+      expect(positions[0]).toBe(positions[2]);
+      expect(wrapper.find('[data-testid="touchdown-leader"]').exists()).toBe(false);
       expect(wrapper.get('[data-testid="route"]').attributes('points')).toBe(
-        '450,50 400,50 400,200',
+        '450,350 400,350 400,200',
       );
     },
   );
+
+  it('marks repeated undirected edges with separate lanes, arrows, and a pass badge', () => {
+    const repeatedPlan = {
+      ...plan,
+      waypoints: [
+        { id: 'A9B1', sequence_index: 0 },
+        { id: 'A8B1', sequence_index: 1 },
+        { id: 'A9B1', sequence_index: 2 },
+        { id: 'A8B1', sequence_index: 3 },
+        { id: 'A9B1', sequence_index: 4 },
+      ],
+    };
+    const wrapper = mountMap({ plan: repeatedPlan, selectedNoFlyCells: [], editable: false });
+    expect(wrapper.findAll('[data-testid="repeated-route-segment"]')).toHaveLength(4);
+    expect(wrapper.findAll('.route-badge')).toHaveLength(1);
+    const lines = wrapper.findAll('[data-testid="repeated-route-segment"]');
+    expect(lines[0].attributes('y1')).not.toBe(lines[1].attributes('y1'));
+  });
 });

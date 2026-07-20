@@ -60,6 +60,28 @@
         :points="routePoints"
         vector-effect="non-scaling-stroke"
       />
+      <g v-for="segment in routeSegments" :key="segment.key" class="route-segments" aria-hidden="true">
+        <line
+          :data-testid="segment.repeated ? 'repeated-route-segment' : 'route-segment'"
+          :class="['route-segment', { repeated: segment.repeated }]"
+          :x1="segment.from.x + segment.offset.x"
+          :y1="segment.from.y + segment.offset.y"
+          :x2="segment.to.x + segment.offset.x"
+          :y2="segment.to.y + segment.offset.y"
+          vector-effect="non-scaling-stroke"
+        />
+        <path
+          class="route-arrow"
+          :class="{ repeated: segment.repeated }"
+          :d="arrowPath(segment)"
+        />
+        <text
+          v-if="segment.repeated && segment.passIndex === 1"
+          class="route-badge"
+          :x="segment.mid.x"
+          :y="segment.mid.y - 5"
+        >{{ segment.totalPasses }}x</text>
+      </g>
       <polyline
         v-if="descentLine"
         class="descent-line"
@@ -226,8 +248,50 @@ const routeCells = computed(() => {
 const routePoints = computed(() =>
   routeCells.value.map((point) => `${point.x},${point.y}`).join(' '),
 );
+interface RouteSegment {
+  key: string;
+  from: Point;
+  to: Point;
+  mid: Point;
+  offset: Point;
+  repeated: boolean;
+  passIndex: number;
+  totalPasses: number;
+}
+
+const routeSegments = computed<RouteSegment[]>(() => {
+  const points = routeCells.value;
+  const counts = new Map<string, number>();
+  for (let index = 1; index < points.length; index += 1) {
+    const key = edgeKey(points[index - 1], points[index]);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const passes = new Map<string, number>();
+  return points.slice(1).map((to, index) => {
+    const from = points[index];
+    const key = edgeKey(from, to);
+    const totalPasses = counts.get(key) ?? 1;
+    const passIndex = (passes.get(key) ?? 0) + 1;
+    passes.set(key, passIndex);
+    const repeated = totalPasses > 1;
+    const direction = { x: to.x - from.x, y: to.y - from.y };
+    const length = Math.hypot(direction.x, direction.y) || 1;
+    const lane = repeated ? (passIndex - (totalPasses + 1) / 2) * 7 : 0;
+    const offset = { x: (-direction.y / length) * lane, y: (direction.x / length) * lane };
+    return {
+      key: `${key}-${passIndex}`,
+      from,
+      to,
+      mid: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
+      offset,
+      repeated,
+      passIndex,
+      totalPasses,
+    };
+  });
+});
 const startPoint = computed(() => {
-  const id = props.plan?.start_waypoint_id;
+  const id = metadata.value.start_cell ?? props.plan?.start_waypoint_id;
   return typeof id === 'string' ? decodeCell(id) : (routeCells.value[0] ?? null);
 });
 const descentStartPoint = computed(() => {
@@ -235,38 +299,27 @@ const descentStartPoint = computed(() => {
   return typeof terminalCell === 'string' ? decodeCell(terminalCell) : null;
 });
 const touchdownPoint = computed(() => {
-  const x = metadata.value.touchdown_x_cm;
-  const y = metadata.value.touchdown_y_cm;
-  return typeof x === 'number' && Number.isFinite(x) && typeof y === 'number' && Number.isFinite(y)
-    ? { x, y: 400 - y }
-    : null;
+  // Qt deliberately renders the touchdown marker at the takeoff/start cell.
+  // touchdown_x/y are physical centimetres used by protocol validation only.
+  return startPoint.value;
 });
 const descentDisplayPoint = computed(() => {
-  if (!descentStartPoint.value) return null;
-  return placeMarker(descentStartPoint.value, startPoint.value ? [startPoint.value] : []);
+  return descentStartPoint.value;
 });
 const touchdownDisplayPoint = computed(() => {
   if (!touchdownPoint.value) return null;
-  return placeMarker(
-    touchdownPoint.value,
-    [startPoint.value, descentDisplayPoint.value].filter((point): point is Point => point !== null),
-  );
+  return touchdownPoint.value;
 });
 const descentMarkerOffset = computed(
-  () =>
-    descentStartPoint.value !== null &&
-    descentDisplayPoint.value !== null &&
-    !samePoint(descentStartPoint.value, descentDisplayPoint.value),
+  () => false,
 );
 const touchdownMarkerOffset = computed(
   () =>
-    touchdownPoint.value !== null &&
-    touchdownDisplayPoint.value !== null &&
-    !samePoint(touchdownPoint.value, touchdownDisplayPoint.value),
+    false,
 );
 const descentLine = computed(() => {
-  if (!descentStartPoint.value || !touchdownPoint.value) return '';
-  return `${descentStartPoint.value.x},${descentStartPoint.value.y} ${touchdownPoint.value.x},${touchdownPoint.value.y}`;
+  if (!descentStartPoint.value || !startPoint.value) return '';
+  return `${descentStartPoint.value.x},${descentStartPoint.value.y} ${startPoint.value.x},${startPoint.value.y}`;
 });
 
 const controls = [
@@ -280,13 +333,34 @@ function numeric(value: unknown): number {
 }
 
 function cellCenter(column: number, row: number): Point {
-  return { x: 50 + (column - 1) * 50, y: 50 + (row - 1) * 50 };
+  return { x: 50 + (column - 1) * 50, y: 50 + (7 - row) * 50 };
 }
 
 function decodeCell(code: string): Point | null {
   const match = /^A([1-9])B([1-7])$/.exec(code);
   if (!match) return null;
   return cellCenter(Number(match[1]), Number(match[2]));
+}
+
+function edgeKey(left: Point, right: Point): string {
+  const a = `${left.x},${left.y}`;
+  const b = `${right.x},${right.y}`;
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+function arrowPath(segment: RouteSegment): string {
+  const from = { x: segment.from.x + segment.offset.x, y: segment.from.y + segment.offset.y };
+  const to = { x: segment.to.x + segment.offset.x, y: segment.to.y + segment.offset.y };
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const ux = dx / length;
+  const uy = dy / length;
+  const tip = { x: from.x + dx * 0.72, y: from.y + dy * 0.72 };
+  const base = { x: tip.x - ux * 9, y: tip.y - uy * 9 };
+  const nx = -uy;
+  const ny = ux;
+  return `M ${tip.x} ${tip.y} L ${base.x + nx * 4} ${base.y + ny * 4} L ${base.x - nx * 4} ${base.y - ny * 4} Z`;
 }
 
 function placeMarker(anchor: Point, occupied: Point[]): Point {
@@ -421,10 +495,46 @@ function fit(): void {
 
 .route {
   fill: none;
-  stroke: #45c7a0;
+  stroke: #2f6fed;
   stroke-linecap: round;
   stroke-linejoin: round;
+  stroke-width: 2;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.route-segment {
+  stroke: #2f6fed;
+  stroke-linecap: round;
   stroke-width: 3;
+}
+
+.route-segment.repeated {
+  stroke: #f08c00;
+  stroke-width: 5;
+}
+
+.route-arrow {
+  fill: #2f6fed;
+  stroke: none;
+}
+
+.route-arrow.repeated {
+  fill: #f08c00;
+  stroke: #fff;
+  stroke-width: 1;
+}
+
+.route-badge {
+  fill: #fff3d6;
+  stroke: #f08c00;
+  stroke-width: 1;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
   pointer-events: none;
 }
 
