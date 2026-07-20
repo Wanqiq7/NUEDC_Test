@@ -52,3 +52,9 @@ runtime/*.env
 .DS_Store
 Thumbs.db
 *.log
+
+/web_ground_station/.generated/
+/web_ground_station/.venv/
+/web_ground_station/frontend/node_modules/
+/web_ground_station/frontend/dist/
+/runtime/sessions/
