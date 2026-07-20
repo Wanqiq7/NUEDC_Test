@@ -21,7 +21,13 @@ test('plans, loads, starts, observes and completes one H mission', async ({ page
   await page.getByTestId('start-command').click();
   await page.getByTestId('confirm-command').click();
   await expect(page.getByText('运行中', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/当前格 A\dB\d/).first()).toBeVisible();
+  await expect(page.getByText(/已巡检 [1-9]\d*/).first()).toBeVisible();
   await expect(page.getByTestId('detection-total')).not.toHaveText('0');
+  await page.getByTestId('open-detections').click();
+  await expect(page.getByTestId('detection-dialog-content')).toContainText('hare');
+  await expect(page.getByTestId('detection-dialog-content')).toContainText(/A\dB\d/);
+  await page.getByRole('button', { name: '关闭检测详情' }).click();
   await expect(page.getByTestId('mission-summary')).toHaveText('任务完成', { timeout: 30_000 });
 
   await page.reload();

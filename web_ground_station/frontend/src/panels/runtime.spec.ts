@@ -157,8 +157,8 @@ describe('responsive operator shell', () => {
     setActivePinia(pinia);
     const store = useGroundStore();
     store.$patch({
-      detectionTotals: { red_ball: 3, blue_ball: 1 },
-      recentDetections: [{ label: '红色目标', cell: 'A3B4' }],
+      detectionTotals: { hare: 3, blue_ball: 1 },
+      recentDetections: [{ animal_name: 'hare', cell_code: 'A3B4' }],
     });
     const wrapper = mount(App, {
       attachTo: document.body,
@@ -180,9 +180,9 @@ describe('responsive operator shell', () => {
     await detectionEntry.trigger('click');
 
     const details = wrapper.get('[data-testid="detection-dialog-content"]');
-    expect(details.text()).toContain('red_ball');
+    expect(details.text()).toContain('hare');
     expect(details.text()).toContain('3');
-    expect(details.text()).toContain('红色目标');
+    expect(details.text()).toContain('hare');
     expect(details.text()).toContain('A3B4');
     expect(wrapper.get('svg.map-canvas').element).toBe(mapElement);
     expect(wrapper.get('svg.map-canvas').attributes('viewBox')).toBe(mapViewBox);

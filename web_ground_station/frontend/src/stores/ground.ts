@@ -114,8 +114,11 @@ export const useGroundStore = defineStore('ground', () => {
     if (typeof payload.current_cell === 'string' || payload.current_cell === null) {
       currentCell.value = payload.current_cell;
     }
-    if (typeof payload.visited_count === 'number') {
-      visitedCount.value = payload.visited_count;
+    const visited = payload.visited_count ?? payload.visited_cells;
+    if (typeof visited === 'number' && Number.isInteger(visited)) {
+      visitedCount.value = Math.max(0, visited);
+    } else if (Array.isArray(visited)) {
+      visitedCount.value = visited.length;
     }
     if (typeof payload.mission_running === 'boolean') {
       missionRunning.value = payload.mission_running;

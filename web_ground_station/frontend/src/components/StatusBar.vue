@@ -94,14 +94,14 @@ function readable(value: Record<string, unknown> | null): string {
 }
 
 function detectionName(item: Record<string, unknown>): string {
-  for (const key of ['label', 'target', 'type', 'name']) {
+  for (const key of ['animal_name', 'label', 'target', 'type', 'name']) {
     if (typeof item[key] === 'string') return item[key] as string;
   }
   return '目标';
 }
 
 function detectionLocation(item: Record<string, unknown>): string {
-  for (const key of ['cell', 'current_cell', 'location']) {
+  for (const key of ['cell_code', 'cell', 'current_cell', 'location']) {
     if (typeof item[key] === 'string') return item[key] as string;
   }
   return '--';

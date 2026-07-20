@@ -10,6 +10,7 @@ type ManagedProcess = {
   child: ChildProcess;
   label: string;
   output: string[];
+  startupError?: Error;
 };
 
 type GroundStationFixtures = {
@@ -26,7 +27,7 @@ type GroundStationControl = {
 const repoRoot = resolve(__dirname, '../../..');
 const webRoot = resolve(repoRoot, 'web_ground_station');
 
-async function reservePort(): Promise<number> {
+async function selectEphemeralPort(): Promise<number> {
   return await new Promise((resolvePort, reject) => {
     const server = createServer();
     server.unref();
@@ -51,13 +52,17 @@ function startProcess(label: string, command: string, args: string[], env: NodeJ
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const managed = { child, label, output: [] };
+  const managed: ManagedProcess = { child, label, output: [] };
   const capture = (chunk: Buffer) => {
     managed.output.push(chunk.toString());
     if (managed.output.length > 400) managed.output.shift();
   };
   child.stdout?.on('data', capture);
   child.stderr?.on('data', capture);
+  child.once('error', (error) => {
+    managed.startupError = error;
+    managed.output.push(`${error.name}: ${error.message}\n`);
+  });
   return managed;
 }
 
@@ -73,16 +78,34 @@ async function stopProcess(managed: ManagedProcess | null): Promise<void> {
     }
   };
   signal('SIGTERM');
-  await Promise.race([
-    new Promise<void>((resolveExit) => managed.child.once('exit', () => resolveExit())),
-    new Promise<void>((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
-  ]);
-  if (managed.child.exitCode === null && managed.child.signalCode === null) signal('SIGKILL');
+  if (await waitForExit(managed.child, 2_000)) return;
+  signal('SIGKILL');
+  if (!await waitForExit(managed.child, 2_000)) {
+    throw new Error(`${managed.label} did not exit after SIGKILL`);
+  }
+}
+
+async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return await new Promise((resolveExit) => {
+    const timeout = setTimeout(() => {
+      child.off('exit', onExit);
+      resolveExit(false);
+    }, timeoutMs);
+    const onExit = () => {
+      clearTimeout(timeout);
+      resolveExit(true);
+    };
+    child.once('exit', onExit);
+  });
 }
 
 async function waitForHealth(url: string, process: ManagedProcess): Promise<void> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
+    if (process.startupError) {
+      throw new Error(`${process.label} failed to start\n${process.output.join('')}`);
+    }
     if (process.child.exitCode !== null) {
       throw new Error(`${process.label} exited with ${process.child.exitCode}\n${process.output.join('')}`);
     }
@@ -109,46 +132,48 @@ async function attachLogs(testInfo: TestInfo, processes: ManagedProcess[]): Prom
 
 export const test = base.extend<GroundStationFixtures>({
   groundStation: async ({}, use, testInfo) => {
-    const telemetryPort = await reservePort();
-    const commandPort = await reservePort();
-    const webPort = await reservePort();
-    const runtimeDir = await mkdtemp(resolve(tmpdir(), 'nuedc-web-e2e-'));
     const processes: ManagedProcess[] = [];
-    const env = {
-      ...process.env,
-      PYTHONPATH: resolve(webRoot, 'gateway'),
-      NUEDC_AIRBORNE_HOST: '127.0.0.1',
-      NUEDC_TELEMETRY_PORT: String(telemetryPort),
-      NUEDC_COMMAND_PORT: String(commandPort),
-      NUEDC_WEB_HOST: '127.0.0.1',
-      NUEDC_WEB_PORT: String(webPort),
-      NUEDC_RUNTIME_DIR: runtimeDir,
-      NUEDC_PLANNER_CLI: resolve(repoRoot, 'build/shared/cpp/h_route_planner_cli'),
-      UV_CACHE_DIR: resolve(runtimeDir, 'uv-cache'),
-    };
-    const mock = startProcess('mock-airborne', 'uv', [
-      'run', 'python', resolve(repoRoot, 'scripts/mock_airborne.py'),
-      '--telemetry-port', String(telemetryPort),
-      '--command-port', String(commandPort),
-      '--runtime-path', resolve(runtimeDir, 'mock-plan.json'),
-      '--interval-s', '0.02',
-      '--detection-every', '3',
-      '--pub-warmup-s', '0.1',
-    ], env);
-    processes.push(mock);
-
+    let runtimeDir: string | null = null;
     let gateway: ManagedProcess | null = null;
-    const startGateway = async () => {
-      gateway = startProcess('gateway', 'uv', [
-        'run', 'uvicorn', 'nuedc_web_gateway.app:create_app', '--factory',
-        '--host', '127.0.0.1', '--port', String(webPort),
-      ], env);
-      processes.push(gateway);
-      await waitForHealth(`http://127.0.0.1:${webPort}/api/health`, gateway);
-    };
-    await startGateway();
 
     try {
+      const telemetryPort = await selectEphemeralPort();
+      const commandPort = await selectEphemeralPort();
+      const webPort = await selectEphemeralPort();
+      runtimeDir = await mkdtemp(resolve(tmpdir(), 'nuedc-web-e2e-'));
+      const env = {
+        ...process.env,
+        PYTHONPATH: resolve(webRoot, 'gateway'),
+        NUEDC_AIRBORNE_HOST: '127.0.0.1',
+        NUEDC_TELEMETRY_PORT: String(telemetryPort),
+        NUEDC_COMMAND_PORT: String(commandPort),
+        NUEDC_WEB_HOST: '127.0.0.1',
+        NUEDC_WEB_PORT: String(webPort),
+        NUEDC_RUNTIME_DIR: runtimeDir,
+        NUEDC_PLANNER_CLI: resolve(repoRoot, 'build/shared/cpp/h_route_planner_cli'),
+        UV_CACHE_DIR: resolve(runtimeDir, 'uv-cache'),
+      };
+      const mock = startProcess('mock-airborne', 'uv', [
+        'run', 'python', resolve(repoRoot, 'scripts/mock_airborne.py'),
+        '--telemetry-port', String(telemetryPort),
+        '--command-port', String(commandPort),
+        '--runtime-path', resolve(runtimeDir, 'mock-plan.json'),
+        '--interval-s', '0.02',
+        '--detection-every', '3',
+        '--pub-warmup-s', '0.1',
+      ], env);
+      processes.push(mock);
+
+      const startGateway = async () => {
+        gateway = startProcess('gateway', 'uv', [
+          'run', 'uvicorn', 'nuedc_web_gateway.app:create_app', '--factory',
+          '--host', '127.0.0.1', '--port', String(webPort),
+        ], env);
+        processes.push(gateway);
+        await waitForHealth(`http://127.0.0.1:${webPort}/api/health`, gateway);
+      };
+      await startGateway();
+
       await use({
         baseURL: `http://127.0.0.1:${webPort}`,
         restartGateway: async () => {
@@ -157,10 +182,18 @@ export const test = base.extend<GroundStationFixtures>({
         },
       });
     } finally {
-      await stopProcess(gateway);
-      await stopProcess(mock);
-      await attachLogs(testInfo, processes);
-      await rm(runtimeDir, { recursive: true, force: true });
+      try {
+        const cleanupResults = await Promise.allSettled(
+          [...processes].reverse().map(stopProcess),
+        );
+        await attachLogs(testInfo, processes);
+        const cleanupErrors = cleanupResults
+          .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+          .map((result) => result.reason);
+        if (cleanupErrors.length) throw new AggregateError(cleanupErrors, 'process cleanup failed');
+      } finally {
+        if (runtimeDir !== null) await rm(runtimeDir, { recursive: true, force: true });
+      }
     }
   },
 

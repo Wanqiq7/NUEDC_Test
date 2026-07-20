@@ -99,5 +99,5 @@ corepack pnpm build
 corepack pnpm playwright test
 ```
 
-Playwright 使用独占临时端口启动 `scripts/mock_airborne.py` 和生产 Gateway，覆盖完整任务闭环、
+Playwright 动态选择测试用临时端口启动 `scripts/mock_airborne.py` 和生产 Gateway，覆盖完整任务闭环、
 Gateway 重启、1024x600/1366x768/1920x1080 布局及无外部网络请求。

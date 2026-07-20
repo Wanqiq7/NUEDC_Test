@@ -61,10 +61,18 @@ def test_other_task_event_does_not_change_snapshot():
 
 def test_latest_telemetry_replaces_intermediate_frame():
     state = active_state()
-    state.apply_task_event("active", "telemetry", 1, 101, {"current_cell": "A8B1"})
+    event = state.apply_task_event(
+        "active",
+        "telemetry",
+        1,
+        101,
+        {"current_cell": "A8B1", "visited_cells": 3},
+    )
     state.apply_task_event("active", "telemetry", 2, 102, {"current_cell": "A7B1"})
 
     snapshot = state.snapshot(103)
+    assert event is not None
+    assert event.payload["visited_count"] == 3
     assert snapshot.current_cell == "A7B1"
     assert snapshot.telemetry_link == "online"
     assert state.snapshot(102 + TELEMETRY_TTL_MS + 1).telemetry_link == "stale"

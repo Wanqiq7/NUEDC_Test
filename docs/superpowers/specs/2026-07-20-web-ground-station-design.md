@@ -64,14 +64,13 @@ FastAPI Gateway on ground NUC (10.42.0.1)
   Web API / snapshot / state mirror / JSONL
   C++ planner subprocess adapter
   ZeroMQ + Protobuf airborne adapter
-  optional UDP PID receiver
              |
              | hotspot NUEDC-Ground
              v
 Airborne NUC (10.42.0.2)
   ground_link :5557 PUB / :5558 REP
   mission_coordinator / ROS 2 / flight control
-  optional PID UDP -> 10.42.0.1:9870
+  optional PID UDP -> PlotJuggler at 10.42.0.1:9870
 ```
 
 机载端是任务身份、任务是否加载、是否运行、飞行阶段和安全处置的权威。Gateway
@@ -347,8 +346,12 @@ NUEDC_RUNTIME_DIR
 NUEDC_PLANNER_CLI
 ```
 
+`NUEDC_PID_DEBUG_ENABLED` 和 `NUEDC_PID_DEBUG_PORT` 仅作为既有配置契约的兼容字段保留；
+当前 Web Gateway 不创建 UDP PID 接收器，也不绑定 `9870`。通用 `pid_debug` 任务事件仍可经
+现有 ZeroMQ/Protobuf 链路进入状态镜像，但波形 UDP 流直接由 PlotJuggler 接收。
+
 提供开发、比赛两个启动入口。开发模式运行 Vite 和 Uvicorn reload；比赛模式先构建
-前端，由 FastAPI 同源托管 `dist`，禁止 reload，默认关闭 PID。比赛启动沿用现有网络
+前端，由 FastAPI 同源托管 `dist`，禁止 reload，且不启动 PID UDP 接收器。比赛启动沿用现有网络
 预检语义，且不执行下载、升级或在线检查。
 
 依赖工作流统一为 `pnpm + uv`，不保留 npm/pip/Poetry 项目流程或第二份 lockfile。
@@ -361,7 +364,7 @@ NUEDC_PLANNER_CLI
 - 命令超时：保留原重试和 already-accepted 判断；无法确认时显示未知，不伪造成功。
 - 遥测断线：命令链路独立计算，不以 telemetry 推断命令在线。
 - WebSocket 断线：前端显示 stale，指数退避重连，恢复后重新获取 snapshot。
-- 畸形 UDP PID：记录有界错误计数并丢弃，不中断 Gateway。
+- 畸形 `pid_debug` 事件：按通用任务事件解析规则丢弃或记录，不中断 Gateway。
 - JSONL 写入失败：状态栏提示记录降级，但不得阻塞飞行命令。
 - task_id 不匹配或旧序列消息：安静丢弃并写调试日志，不污染当前任务。
 
@@ -371,7 +374,7 @@ NUEDC_PLANNER_CLI
 
 - C++ CLI：合法规划、非法禁飞区、缺失案例、stdin schema、stdout 纯 JSON、退出码。
 - Gateway：CLI 超时/崩溃/非法 JSON、ZMQ ACK、幂等重试、TTL 和重启同步。
-- PID：合法 UDP、畸形 JSON、stale、开关禁用。
+- PID 兼容：通用 `pid_debug` 事件 TTL 和配置默认值；不测试或实现 Web UDP 端口绑定。
 - 前端 store：snapshot、增量遥测、旧 task_id 丢弃、命令失败不误改运行态。
 - SVG：格子选择、航线、下降起点和触地点。
 - Playwright：一条 LOAD -> START -> telemetry -> Summary 闭环。

@@ -162,6 +162,19 @@ describe('ground store', () => {
     expect(store.missionRunning).toBe(false);
   });
 
+  it('normalizes mock telemetry progress without a browser refresh', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({ active_task_id: 'case-1' }));
+
+    store.applyEvent(event({
+      seq: 1,
+      payload: { current_cell: 'A8B1', visited_cells: 4 },
+    }));
+
+    expect(store.currentCell).toBe('A8B1');
+    expect(store.visitedCount).toBe(4);
+  });
+
   it('shows a resynchronizing command state while reconnecting', () => {
     const store = useGroundStore();
     store.applySnapshot(snapshot({ command_link: 'online' }));

@@ -507,7 +507,12 @@ async def test_event_uses_envelope_sequence_and_preserves_progress_in_payload(
     recorder.subscriber = subscriber
     publish = asyncio.create_task(
         pub_server.publish(
-            task_event("case-1", "telemetry", 44, {"current_cell": "A8B1"})
+            task_event(
+                "case-1",
+                "telemetry",
+                44,
+                {"current_cell": "A8B1", "visited_cells": 3},
+            )
         )
     )
     await client.receive_one_telemetry()
@@ -517,6 +522,8 @@ async def test_event_uses_envelope_sequence_and_preserves_progress_in_payload(
     assert event.seq == 44
     assert event.payload == {
         "current_cell": "A8B1",
+        "visited_cells": 3,
+        "visited_count": 3,
         "sequence_index": 7,
         "waypoint_id": "A8B1",
     }

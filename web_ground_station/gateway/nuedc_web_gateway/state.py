@@ -160,6 +160,7 @@ class GroundState:
                 return None
             if event == "telemetry":
                 self._apply_telemetry(payload_copy, timestamp_ms)
+                payload_copy["visited_count"] = self._visited_count
             elif event == "pid_debug":
                 self._last_pid_ms = timestamp_ms
             elif event == "detection":
