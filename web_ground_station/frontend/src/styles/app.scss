@@ -39,6 +39,7 @@ button, input { font: inherit; }
 .live-status .run-state { min-height: 26px; padding: 0 9px; color: #cbd4d8; border: 1px solid #65737a; }
 .live-status .run-state.running { color: #0c1814; background: #42c69b; border-color: #42c69b; }
 .live-status .q-btn { width: 44px; height: 44px; }
+.live-status .history-button { width: auto; min-width: 88px; padding-inline: 8px; color: #dce6e8; }
 
 .console-main { display: grid; min-height: 0; grid-template-columns: minmax(0, 1fr) 360px; overflow: hidden; background: var(--ink-1); }
 .map-region { min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid #35434a; }

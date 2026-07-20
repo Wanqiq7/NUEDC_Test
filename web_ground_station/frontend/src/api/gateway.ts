@@ -1,5 +1,6 @@
 import type {
   CommandResponse,
+  DynamicPayload,
   GroundSnapshot,
   PlanMissionRequest,
 } from '../models/gateway';
@@ -82,3 +83,6 @@ export const stopMission = (): Promise<CommandResponse> =>
 
 export const probeLink = (): Promise<CommandResponse> =>
   request<CommandResponse>('/api/link/probe', { method: 'POST' });
+
+export const fetchDetectionHistory = (): Promise<{ ok: boolean; detections: DynamicPayload[] }> =>
+  request<{ ok: boolean; detections: DynamicPayload[] }>('/api/detections/history');

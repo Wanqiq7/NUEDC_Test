@@ -15,8 +15,8 @@
       <span :class="['run-state', { running: store.missionRunning }]">
         {{ store.taskSyncState === 'mismatch' ? '任务不一致' : store.missionRunning ? '运行中' : '待命' }}
       </span>
-      <q-btn data-testid="open-detections" flat round icon="radar" aria-label="打开检测详情" @click="detectionsOpen = true">
-        <q-tooltip>检测详情</q-tooltip>
+      <q-btn data-testid="open-detections" class="history-button" flat icon="history" label="检测记录" aria-label="打开检测记录" @click="openDetectionHistory">
+        <q-tooltip>检测记录</q-tooltip>
       </q-btn>
       <q-btn data-testid="open-details" flat round icon="info" aria-label="打开任务详情" @click="detailsOpen = true">
         <q-tooltip>任务详情</q-tooltip>
@@ -47,7 +47,7 @@
     <q-dialog v-model="detectionsOpen">
       <q-card v-if="detectionsOpen" data-testid="detection-dialog-content" class="details-dialog detection-dialog">
         <q-card-section class="dialog-title">
-          <strong>检测详情</strong>
+          <strong>检测记录</strong>
           <q-btn v-close-popup flat round icon="close" aria-label="关闭检测详情" />
         </q-card-section>
         <q-separator dark />
@@ -58,8 +58,10 @@
             </span>
           </div>
           <p v-else class="empty-copy">暂无检测记录</p>
-          <ol class="dialog-detection-list" aria-label="最近检测">
-            <li v-for="(item, index) in store.recentDetections" :key="index">
+          <p v-if="historyLoading" class="empty-copy">正在读取历史记录...</p>
+          <p v-else-if="historyError" class="error-copy">{{ historyError }}</p>
+          <ol class="dialog-detection-list" aria-label="历史检测记录">
+            <li v-for="(item, index) in reviewDetections" :key="index">
               <span>{{ detectionName(item) }}</span>
               <strong>{{ detectionLocation(item) }}</strong>
             </li>
@@ -73,15 +75,38 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { QBtn, QCard, QCardSection, QDialog, QSeparator, QTooltip } from 'quasar';
+import { fetchDetectionHistory } from '../api/gateway';
+import type { DynamicPayload } from '../models/gateway';
 import { useGroundStore } from '../stores/ground';
 
 const store = useGroundStore();
 const detailsOpen = ref(false);
 const detectionsOpen = ref(false);
+const historyDetections = ref<DynamicPayload[]>([]);
+const historyLoading = ref(false);
+const historyError = ref('');
 const probing = ref(false);
 const syncLabel = computed(() => ({ unconfirmed: '未确认', matched: '一致', mismatch: '任务不一致' })[store.taskSyncState]);
 const detectionCount = computed(() => Object.values(store.detectionTotals).reduce((sum, count) => sum + count, 0));
 const detectionEntries = computed(() => Object.entries(store.detectionTotals));
+const reviewDetections = computed(() =>
+  historyDetections.value.length ? historyDetections.value : store.recentDetections,
+);
+
+async function openDetectionHistory(): Promise<void> {
+  detectionsOpen.value = true;
+  historyLoading.value = true;
+  historyError.value = '';
+  try {
+    const response = await fetchDetectionHistory();
+    historyDetections.value = response.detections;
+  } catch {
+    historyError.value = '历史记录读取失败，显示当前会话记录';
+    historyDetections.value = [];
+  } finally {
+    historyLoading.value = false;
+  }
+}
 
 async function probeLink(): Promise<void> {
   if (probing.value) return;

@@ -1,6 +1,7 @@
 import asyncio
 from collections import deque
 from copy import deepcopy
+import json
 import logging
 import threading
 import time
@@ -163,6 +164,10 @@ class GroundState:
             if not self._accept_sequence(task_id, seq, "task event"):
                 return None
             if event == "telemetry":
+                if payload_copy.get("waypoint_id") == "touchdown":
+                    landing_cell = self._start_cell_from_plan()
+                    if landing_cell is not None:
+                        payload_copy["current_cell"] = landing_cell
                 self._apply_telemetry(payload_copy, timestamp_ms)
                 payload_copy["visited_count"] = self._visited_count
             elif event == "pid_debug":
@@ -202,6 +207,10 @@ class GroundState:
                 return None
             summary = {"success": success, **payload_copy}
             self._recent_summary = summary
+            if success:
+                landing_cell = self._start_cell_from_plan()
+                if landing_cell is not None:
+                    self._current_cell = landing_cell
             if self._ack is not None:
                 self._ack = self._ack.model_copy(update={"mission_running": False})
             if not success:
@@ -302,6 +311,19 @@ class GroundState:
             self._visited_count = max(0, visited)
         elif isinstance(visited, (list, tuple, set)):
             self._visited_count = len(visited)
+
+    def _start_cell_from_plan(self) -> str | None:
+        if self._plan is None:
+            return None
+        metadata_raw = self._plan.get("metadata_json")
+        if not isinstance(metadata_raw, str):
+            return None
+        try:
+            metadata = json.loads(metadata_raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        start_cell = metadata.get("start_cell") if isinstance(metadata, dict) else None
+        return start_cell if isinstance(start_cell, str) else None
 
     def _apply_detection(self, task_id: str, seq: int, payload: dict[str, Any]) -> None:
         track_id = payload.get("track_id")

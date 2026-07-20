@@ -45,6 +45,19 @@ describe('HMissionMap', () => {
     );
   });
 
+  it('renders the live drone marker at the current telemetry cell', () => {
+    const wrapper = mountMap({
+      plan,
+      selectedNoFlyCells: [],
+      editable: false,
+      currentCell: 'A9B1',
+    });
+    const marker = wrapper.get('[data-marker="drone"]');
+    expect(marker.attributes('data-cell')).toBe('A9B1');
+    expect(marker.get('circle').attributes('cx')).toBe('450');
+    expect(marker.get('circle').attributes('cy')).toBe('350');
+  });
+
   it('emits one cell toggle from click, keyboard, and touch activation', async () => {
     const wrapper = mountMap({ plan: null, selectedNoFlyCells: [], editable: true });
     const cell = wrapper.get('[data-cell="A2B2"]');

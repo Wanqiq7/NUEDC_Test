@@ -145,6 +145,35 @@ def test_summary_marks_running_mission_complete():
     assert state.snapshot(103).mission_running is False
 
 
+def test_touchdown_and_summary_move_current_position_to_takeoff_cell():
+    state = GroundState()
+    state.apply_plan(
+        {
+            "task_id": "active",
+            "message_type": "task_plan",
+            "metadata_json": '{"start_cell":"A9B1"}',
+            "waypoints": [],
+        },
+        100,
+    )
+    event = state.apply_task_event(
+        "active",
+        "telemetry",
+        1,
+        101,
+        {"waypoint_id": "touchdown", "current_cell": "A6B2"},
+    )
+    assert event is not None
+    assert event.payload["current_cell"] == "A9B1"
+    assert state.snapshot(102).current_cell == "A9B1"
+
+    state.apply_task_event(
+        "active", "telemetry", 2, 102, {"current_cell": "A6B2"}
+    )
+    state.apply_summary("active", 3, 103, True, {})
+    assert state.snapshot(104).current_cell == "A9B1"
+
+
 def test_old_ack_cannot_restore_running_after_newer_summary():
     state = active_state()
 

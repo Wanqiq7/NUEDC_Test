@@ -123,6 +123,16 @@
       />
 
       <g
+        v-if="currentPoint"
+        data-marker="drone"
+        class="marker drone-marker"
+        aria-label="无人机当前位置"
+        :data-cell="currentCell"
+      >
+        <circle :cx="currentPoint.x" :cy="currentPoint.y" r="11" />
+        <path :d="`M ${currentPoint.x - 6} ${currentPoint.y} h 12 M ${currentPoint.x} ${currentPoint.y - 6} v 12`" />
+      </g>
+      <g
         v-if="startPoint"
         data-marker="start"
         class="marker start-marker"
@@ -194,6 +204,7 @@ const props = defineProps<{
   plan: MissionPlan | null;
   selectedNoFlyCells: string[];
   editable: boolean;
+  currentCell?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -307,6 +318,9 @@ const startPoint = computed(() => {
   const id = metadata.value.start_cell ?? props.plan?.start_waypoint_id;
   return typeof id === 'string' ? decodeCell(id) : (routeCells.value[0] ?? null);
 });
+const currentPoint = computed(() =>
+  typeof props.currentCell === 'string' ? decodeCell(props.currentCell) : null,
+);
 const descentStartPoint = computed(() => {
   const terminalCell = metadata.value.terminal_cell;
   return typeof terminalCell === 'string' ? decodeCell(terminalCell) : null;
@@ -615,6 +629,17 @@ function fit(): void {
 }
 
 .touchdown-marker path {
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.drone-marker circle {
+  fill: #ef6a59;
+  stroke: #fff;
+  stroke-width: 2.5;
+}
+
+.drone-marker path {
   stroke: #fff;
   stroke-width: 2;
 }

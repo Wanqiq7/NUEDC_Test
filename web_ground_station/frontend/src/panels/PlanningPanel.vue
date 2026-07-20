@@ -11,11 +11,12 @@
     </header>
 
     <div class="planning-workspace">
-      <HMissionMap
-        :plan="store.plan"
-        :selected-no-fly-cells="displayedNoFlyCells"
-        :editable="editing"
-        @toggle-cell="toggleCell"
+        <HMissionMap
+          :plan="store.plan"
+          :selected-no-fly-cells="displayedNoFlyCells"
+          :editable="editing"
+          :current-cell="store.currentCell"
+          @toggle-cell="toggleCell"
       />
 
       <aside class="planning-controls" aria-label="禁飞区规划控制">

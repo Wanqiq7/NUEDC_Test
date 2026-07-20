@@ -143,6 +143,30 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
     async def snapshot():
         return services.state.snapshot(_now_ms()).model_dump(mode="json")
 
+    @app.get("/api/detections/history")
+    async def detection_history(task_id: str | None = None):
+        """Return persisted detection events for post-flight review."""
+        entries: list[dict[str, Any]] = []
+        sessions_dir = services.config.runtime_dir / "sessions"
+        for path in sorted(sessions_dir.glob("*.jsonl")):
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                try:
+                    event = json.loads(line)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if event.get("event") != "detection":
+                    continue
+                if task_id is not None and event.get("task_id") != task_id:
+                    continue
+                payload = event.get("payload")
+                if isinstance(payload, dict):
+                    entries.append({"task_id": event.get("task_id"), **payload})
+        return {"ok": True, "detections": entries[-500:]}
+
     @app.post("/api/mission/plan")
     async def plan(request: PlanRequest):
         before = services.state.snapshot(_now_ms())
