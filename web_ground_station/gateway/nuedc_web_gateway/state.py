@@ -64,7 +64,14 @@ class GroundState:
             self._subscribers.append(queue)
         return queue
 
-    def apply_plan(self, plan: Mapping[str, Any], timestamp_ms: int) -> None:
+    def apply_plan(
+        self,
+        plan: Mapping[str, Any],
+        timestamp_ms: int,
+        *,
+        seq: int | None = None,
+        publish: bool = True,
+    ) -> WebEvent:
         plan_copy = deepcopy(dict(plan))
         task_id = plan_copy.get("task_id")
         if not isinstance(task_id, str) or not task_id:
@@ -75,16 +82,17 @@ class GroundState:
             self._plan = plan_copy
             if switched:
                 self._reset_task_state()
-            seq = self._advance_snapshot()
-            self._publish(
-                WebEvent(
-                    type="task_plan",
-                    seq=seq,
-                    timestamp_ms=timestamp_ms,
-                    task_id=task_id,
-                    payload=plan_copy,
-                )
+            snapshot_seq = self._advance_snapshot(seq)
+            event = WebEvent(
+                type="task_plan",
+                seq=seq if seq is not None else snapshot_seq,
+                timestamp_ms=timestamp_ms,
+                task_id=task_id,
+                payload=plan_copy,
             )
+            if publish:
+                self._publish(event)
+            return event
 
     def apply_ack(self, ack: AckSnapshot, timestamp_ms: int) -> None:
         with self._lock:
@@ -124,11 +132,13 @@ class GroundState:
         seq: int,
         timestamp_ms: int,
         payload: Mapping[str, Any],
-    ) -> None:
+        *,
+        publish: bool = True,
+    ) -> WebEvent | None:
         payload_copy = deepcopy(dict(payload))
         with self._lock:
             if not self._accept_sequence(task_id, seq, "task event"):
-                return
+                return None
             if event == "telemetry":
                 self._apply_telemetry(payload_copy, timestamp_ms)
             elif event == "pid_debug":
@@ -140,16 +150,17 @@ class GroundState:
             elif event == "error":
                 self._recent_error = payload_copy
             self._advance_snapshot(seq)
-            self._publish(
-                WebEvent(
-                    type="task_event",
-                    seq=seq,
-                    timestamp_ms=timestamp_ms,
-                    task_id=task_id,
-                    event=event,
-                    payload=payload_copy,
-                )
+            web_event = WebEvent(
+                type="task_event",
+                seq=seq,
+                timestamp_ms=timestamp_ms,
+                task_id=task_id,
+                event=event,
+                payload=payload_copy,
             )
+            if publish:
+                self._publish(web_event)
+            return web_event
 
     def apply_summary(
         self,
@@ -158,11 +169,13 @@ class GroundState:
         timestamp_ms: int,
         success: bool,
         payload: Mapping[str, Any],
-    ) -> None:
+        *,
+        publish: bool = True,
+    ) -> WebEvent | None:
         payload_copy = deepcopy(dict(payload))
         with self._lock:
             if not self._accept_sequence(task_id, seq, "summary"):
-                return
+                return None
             summary = {"success": success, **payload_copy}
             self._recent_summary = summary
             if self._ack is not None:
@@ -170,16 +183,21 @@ class GroundState:
             if not success:
                 self._recent_error = payload_copy
             self._advance_snapshot(seq)
-            self._publish(
-                WebEvent(
-                    type="task_summary",
-                    seq=seq,
-                    timestamp_ms=timestamp_ms,
-                    task_id=task_id,
-                    event="summary",
-                    payload=summary,
-                )
+            event = WebEvent(
+                type="task_summary",
+                seq=seq,
+                timestamp_ms=timestamp_ms,
+                task_id=task_id,
+                event="summary",
+                payload=summary,
             )
+            if publish:
+                self._publish(event)
+            return event
+
+    def publish_event(self, event: WebEvent) -> None:
+        with self._lock:
+            self._publish(event)
 
     def snapshot(self, now_ms: int) -> GroundSnapshot:
         with self._lock:

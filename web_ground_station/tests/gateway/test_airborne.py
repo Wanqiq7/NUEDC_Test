@@ -101,11 +101,16 @@ class RecordingRecorder:
         self.state = state
         self.events = []
         self.cells_seen_at_record = []
+        self.subscriber = None
+        self.subscriber_empty_at_record = []
+        self.result = True
 
     def record(self, event):
         self.events.append(event)
         self.cells_seen_at_record.append(self.state.snapshot(now_ms()).current_cell)
-        return True
+        if self.subscriber is not None:
+            self.subscriber_empty_at_record.append(self.subscriber.empty())
+        return self.result
 
 
 class RepServer:
@@ -190,6 +195,30 @@ class PubServer:
         self.socket.close()
 
 
+class RouterServer:
+    def __init__(self, context, endpoint: str) -> None:
+        self.socket = context.socket(zmq.ROUTER)
+        self.socket.setsockopt(zmq.LINGER, 0)
+        self.socket.bind(endpoint)
+        self.identities = []
+
+    async def timeout_once_then_ack(self) -> None:
+        first = await self.socket.recv_multipart()
+        self.identities.append(first[0])
+        second = await self.socket.recv_multipart()
+        self.identities.append(second[0])
+        request = MESSAGES.Envelope.FromString(second[-1])
+        reply = MESSAGES.Envelope()
+        reply.ack.success = True
+        reply.ack.message = "accepted on retry"
+        reply.ack.task_id = request.control_command.task_id
+        reply.ack.last_accepted_sequence = request.sequence
+        await self.socket.send_multipart([second[0], b"", reply.SerializeToString()])
+
+    def close(self) -> None:
+        self.socket.close()
+
+
 @pytest.fixture
 async def transport_fixture(tmp_path):
     context = zmq.asyncio.Context()
@@ -231,6 +260,61 @@ async def test_stale_ack_confirming_sequence_is_success(transport_fixture):
 
 
 @pytest.mark.asyncio
+async def test_stale_ping_ack_can_be_taskless(transport_fixture):
+    client, _, _, rep_server, _ = transport_fixture
+    for _ in range(3):
+        rep_server.queue_ack(
+            success=False,
+            message="stale command",
+            task_id="",
+            last_accepted_sequence=2**62,
+        )
+
+    ack = await client.send_control(GroundControlCommand.PING, "case-1")
+
+    assert ack.ok is True
+    assert ack.message == "command already accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ack_task_id", ["", "other-case"])
+async def test_stateful_stale_ack_requires_exact_nonempty_task_id(
+    transport_fixture, ack_task_id
+):
+    client, _, _, rep_server, _ = transport_fixture
+    for _ in range(3):
+        rep_server.queue_ack(
+            success=False,
+            message="stale command",
+            task_id=ack_task_id,
+            mission_running=True,
+            last_accepted_sequence=2**62,
+        )
+
+    ack = await client.send_control(GroundControlCommand.START, "case-1")
+
+    assert ack.ok is False
+    assert ack.message == "stale command"
+
+
+@pytest.mark.asyncio
+async def test_stateful_stale_ack_accepts_matching_task_and_state(transport_fixture):
+    client, _, _, rep_server, _ = transport_fixture
+    rep_server.queue_ack(
+        success=False,
+        message="stale command",
+        task_id="case-1",
+        mission_running=True,
+        last_accepted_sequence=2**62,
+    )
+
+    ack = await client.send_control(GroundControlCommand.START, "case-1")
+
+    assert ack.ok is True
+    assert ack.message == "command already accepted"
+
+
+@pytest.mark.asyncio
 async def test_commands_are_physically_serialized(transport_fixture):
     client, _, _, rep_server, _ = transport_fixture
     rep_server.block_replies()
@@ -248,6 +332,41 @@ async def test_commands_are_physically_serialized(transport_fixture):
     rep_server.release_replies()
     await asyncio.gather(first, second)
     assert len(rep_server.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_uses_fresh_req_socket_after_first_timeout(tmp_path):
+    context = zmq.asyncio.Context()
+    command_port = reserve_port()
+    telemetry_port = reserve_port()
+    router = RouterServer(context, f"tcp://127.0.0.1:{command_port}")
+    pub = PubServer(context, f"tcp://127.0.0.1:{telemetry_port}")
+    state = GroundState()
+    recorder = RecordingRecorder(state)
+    client = AirborneClient(
+        config(tmp_path, command_port, telemetry_port),
+        state,
+        recorder,
+        context=context,
+        timeout_ms=100,
+        retry_delay_ms=5,
+    )
+    server = asyncio.create_task(router.timeout_once_then_ack())
+    try:
+        ack = await client.send_control(GroundControlCommand.PING, "case-1")
+        await server
+
+        assert ack.ok is True
+        assert ack.message == "accepted on retry"
+        assert len(router.identities) == 2
+        assert router.identities[0] != router.identities[1]
+    finally:
+        server.cancel()
+        await asyncio.gather(server, return_exceptions=True)
+        client.close()
+        router.close()
+        pub.close()
+        context.term()
 
 
 class AlwaysTimeoutTransport:
@@ -343,6 +462,8 @@ async def test_event_uses_envelope_sequence_and_preserves_progress_in_payload(
 ):
     client, ground_state, recorder, _, pub_server = transport_fixture
     ground_state.apply_plan(plan_for("case-1"), now_ms())
+    subscriber = ground_state.subscribe()
+    recorder.subscriber = subscriber
     publish = asyncio.create_task(
         pub_server.publish(
             task_event("case-1", "telemetry", 44, {"current_cell": "A8B1"})
@@ -359,6 +480,60 @@ async def test_event_uses_envelope_sequence_and_preserves_progress_in_payload(
         "waypoint_id": "A8B1",
     }
     assert recorder.cells_seen_at_record[-1] == "A8B1"
+    assert recorder.subscriber_empty_at_record == [True]
+    published = subscriber.get_nowait()
+    assert published is event
+
+
+@pytest.mark.asyncio
+async def test_task_plan_records_then_publishes_exact_envelope_sequence(
+    transport_fixture,
+):
+    client, ground_state, recorder, _, pub_server = transport_fixture
+    subscriber = ground_state.subscribe()
+    recorder.subscriber = subscriber
+    envelope = MESSAGES.Envelope(sequence=73, timestamp_ms=902)
+    plan = envelope.task_plan
+    plan.task_id = "case-73"
+    plan.task_type = "h_problem"
+    plan.start_waypoint_id = "A9B1"
+    plan.terminal_waypoint_id = "A8B1"
+    plan.metadata_json = '{"source":"airborne"}'
+    waypoint = plan.waypoints.add()
+    waypoint.id = "A9B1"
+    publish = asyncio.create_task(pub_server.publish(envelope))
+
+    event = await client.receive_one_telemetry()
+    await publish
+
+    assert event is recorder.events[-1]
+    assert event.seq == 73
+    assert recorder.subscriber_empty_at_record == [True]
+    published = subscriber.get_nowait()
+    assert published is event
+    assert published.seq == 73
+
+
+@pytest.mark.asyncio
+async def test_recorder_rejection_still_publishes_mutated_event(transport_fixture):
+    client, ground_state, recorder, _, pub_server = transport_fixture
+    ground_state.apply_plan(plan_for("case-1"), now_ms())
+    subscriber = ground_state.subscribe()
+    recorder.subscriber = subscriber
+    recorder.result = False
+    publish = asyncio.create_task(
+        pub_server.publish(
+            task_event("case-1", "telemetry", 45, {"current_cell": "A7B1"})
+        )
+    )
+
+    event = await client.receive_one_telemetry()
+    await publish
+
+    assert ground_state.snapshot(now_ms()).current_cell == "A7B1"
+    assert recorder.events[-1] is event
+    assert recorder.subscriber_empty_at_record == [True]
+    assert subscriber.get_nowait() is event
 
 
 @pytest.mark.asyncio

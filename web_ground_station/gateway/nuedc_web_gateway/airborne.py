@@ -152,6 +152,7 @@ class AirborneClient:
             return None
         if event is not None:
             self._recorder.record(event)
+            self._state.publish_event(event)
         return event
 
     async def telemetry_loop(self, stop: asyncio.Event) -> None:
@@ -237,7 +238,8 @@ class AirborneClient:
         if payload != "control_command":
             return False
         command = envelope.control_command
-        if command.task_id and ack.task_id and command.task_id != ack.task_id:
+        is_ping = command.type == messages.COMMAND_TYPE_PING
+        if not is_ping and command.task_id and ack.task_id != command.task_id:
             return False
         if command.type == messages.COMMAND_TYPE_START_MISSION:
             return ack.mission_running
@@ -247,7 +249,7 @@ class AirborneClient:
             return ack.vision_armed
         if command.type == messages.COMMAND_TYPE_RESET_TARGETING:
             return not ack.vision_armed
-        return command.type == messages.COMMAND_TYPE_PING
+        return is_ping
 
     @staticmethod
     def _failure_ack(envelope, message: str) -> AckSnapshot:
@@ -289,13 +291,11 @@ class AirborneClient:
         timestamp_ms = envelope.timestamp_ms or _now_ms()
         if payload_type == "task_plan":
             plan = self._plan_to_dict(envelope.task_plan)
-            self._state.apply_plan(plan, timestamp_ms)
-            return WebEvent(
-                type="task_plan",
+            return self._state.apply_plan(
+                plan,
+                timestamp_ms,
                 seq=envelope.sequence,
-                timestamp_ms=timestamp_ms,
-                task_id=envelope.task_plan.task_id,
-                payload=plan,
+                publish=False,
             )
         if payload_type == "task_event":
             item = envelope.task_event
@@ -305,22 +305,14 @@ class AirborneClient:
             payload["sequence_index"] = item.sequence_index
             if item.waypoint_id:
                 payload["waypoint_id"] = item.waypoint_id
-            event = WebEvent(
-                type="task_event",
-                seq=envelope.sequence,
-                timestamp_ms=timestamp_ms,
-                task_id=item.task_id,
-                event=item.event_type,
-                payload=payload,
-            )
-            self._state.apply_task_event(
+            return self._state.apply_task_event(
                 item.task_id,
                 item.event_type,
                 envelope.sequence,
                 timestamp_ms,
                 payload,
+                publish=False,
             )
-            return event
         if payload_type == "task_summary":
             item = envelope.task_summary
             if not self._is_active_task(item.task_id):
@@ -331,20 +323,13 @@ class AirborneClient:
                 "visited_waypoints": item.visited_waypoints,
                 **_json_object(item.payload_json),
             }
-            self._state.apply_summary(
+            return self._state.apply_summary(
                 item.task_id,
                 envelope.sequence,
                 timestamp_ms,
                 item.success,
                 {key: value for key, value in payload.items() if key != "success"},
-            )
-            return WebEvent(
-                type="task_summary",
-                seq=envelope.sequence,
-                timestamp_ms=timestamp_ms,
-                task_id=item.task_id,
-                event="summary",
-                payload=payload,
+                publish=False,
             )
         return None
 
