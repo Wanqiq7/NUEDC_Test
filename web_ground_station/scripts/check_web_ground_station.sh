@@ -22,7 +22,8 @@ for port_name in NUEDC_TELEMETRY_PORT NUEDC_COMMAND_PORT NUEDC_PID_DEBUG_PORT; d
 done
 [[ -f "${ROOT_DIR}/web_ground_station/uv.lock" ]] || { echo "缺少 uv.lock" >&2; exit 1; }
 [[ -f "${ROOT_DIR}/web_ground_station/frontend/pnpm-lock.yaml" ]] || { echo "缺少 pnpm-lock.yaml" >&2; exit 1; }
-[[ -f "${ROOT_DIR}/web_ground_station/frontend/dist/index.html" ]] || { echo "缺少 frontend/dist" >&2; exit 1; }
+FRONTEND_DIST_DIR="${NUEDC_FRONTEND_DIST_DIR:-${ROOT_DIR}/web_ground_station/frontend/dist}"
+[[ -f "${FRONTEND_DIST_DIR}/index.html" ]] || { echo "缺少 frontend/dist" >&2; exit 1; }
 RUNTIME_DIR="${NUEDC_RUNTIME_DIR:-runtime}"
 [[ "${RUNTIME_DIR}" = /* ]] || RUNTIME_DIR="${ROOT_DIR}/${RUNTIME_DIR}"
 [[ -d "${RUNTIME_DIR}" ]] || { echo "缺少运行目录: ${RUNTIME_DIR}" >&2; exit 1; }
