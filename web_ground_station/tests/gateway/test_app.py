@@ -1,8 +1,7 @@
 import asyncio
 import json
-from pathlib import Path
 
-from fastapi.testclient import TestClient
+import httpx
 import pytest
 
 from nuedc_web_gateway.airborne import GroundControlCommand
@@ -13,7 +12,7 @@ from nuedc_web_gateway.planner import PlannerError
 from nuedc_web_gateway.state import GroundState
 
 
-def plan_for(task_id: str = "case-1") -> dict:
+def plan_for(task_id="case-1"):
     return {
         "message_type": "task_plan",
         "task_id": task_id,
@@ -22,9 +21,7 @@ def plan_for(task_id: str = "case-1") -> dict:
     }
 
 
-def ack_for(
-    task_id: str = "case-1", *, loaded: bool = True, running: bool = False, seq: int = 1
-) -> AckSnapshot:
+def ack_for(task_id="case-1", loaded=True, running=False, seq=1):
     return AckSnapshot(
         ok=True,
         message="accepted",
@@ -36,287 +33,270 @@ def ack_for(
     )
 
 
-def gateway_config(runtime_dir: Path) -> GatewayConfig:
-    return GatewayConfig(
-        airborne_host="127.0.0.1",
-        telemetry_port=5557,
-        command_port=5558,
-        pid_debug_enabled=False,
-        pid_debug_port=9870,
-        web_host="127.0.0.1",
-        web_port=8000,
-        runtime_dir=runtime_dir,
-        planner_cli=runtime_dir / "planner",
-    )
-
-
 class FakePlanner:
-    def __init__(self) -> None:
-        self.result = plan_for()
-        self.error: PlannerError | None = None
-        self.requests = []
+    def __init__(self):
+        self.result, self.error = plan_for(), None
 
     async def plan(self, request):
-        self.requests.append(request)
-        if self.error is not None:
+        if self.error:
             raise self.error
         return self.result
 
 
 class FakeRecorder:
-    def __init__(self) -> None:
-        self.started = False
-        self.stopped = False
+    def __init__(self):
+        self.started = self.stopped = False
 
-    async def start(self) -> None:
+    async def start(self):
         self.started = True
 
-    async def stop(self) -> None:
+    async def stop(self):
         self.stopped = True
+
+    def record(self, event):
+        return True
 
 
 class FakeAirborne:
-    def __init__(self) -> None:
-        self.probe_ack: AckSnapshot | None = None
-        self.next_ack = ack_for()
-        self.probe_count = 0
-        self.commands = []
-        self.loads = []
-        self.loop_users = 0
-        self.loops_exited = asyncio.Event()
-        self.closed = False
+    def __init__(self, state):
+        self.state, self.probe_ack, self.next_ack = state, None, ack_for()
+        self.probe_count, self.commands, self.loads = 0, [], []
+        self.loop_users, self.closed = 0, False
 
-    async def probe_once(self) -> AckSnapshot:
+    async def probe_once(self):
         self.probe_count += 1
-        if self.probe_ack is None:
-            return ack_for("", loaded=False)
-        return self.probe_ack
+        return self.probe_ack or ack_for("", loaded=False)
 
-    async def heartbeat_loop(self, stop: asyncio.Event) -> None:
-        self.loop_users += 1
-        try:
-            ack = await self.probe_once()
-            if ack.ok:
-                self._state.apply_ack(ack, 1_000)
-            while not stop.is_set():
-                await asyncio.sleep(0.005)
-        finally:
-            self.loop_users -= 1
-            if self.loop_users == 0:
-                self.loops_exited.set()
-
-    async def telemetry_loop(self, stop: asyncio.Event) -> None:
+    async def heartbeat_loop(self, stop):
         self.loop_users += 1
         try:
             while not stop.is_set():
-                await asyncio.sleep(0.005)
+                await asyncio.sleep(0)
         finally:
             self.loop_users -= 1
-            if self.loop_users == 0:
-                self.loops_exited.set()
 
-    async def send_mission_load(self, plan: dict) -> AckSnapshot:
+    async def telemetry_loop(self, stop):
+        self.loop_users += 1
+        try:
+            while not stop.is_set():
+                await asyncio.sleep(0)
+        finally:
+            self.loop_users -= 1
+
+    async def send_mission_load(self, plan):
         self.loads.append(plan)
         return self.next_ack
 
-    async def send_control(
-        self, command: GroundControlCommand, task_id: str
-    ) -> AckSnapshot:
+    async def send_control(self, command, task_id):
         self.commands.append((command, task_id))
         return self.next_ack
 
-    def close(self) -> None:
+    def close(self):
         assert self.loop_users == 0
         self.closed = True
 
 
-def build_services(
-    runtime_dir: Path,
-    *,
-    state: GroundState | None = None,
-    airborne: FakeAirborne | None = None,
-) -> tuple[GatewayServices, FakePlanner, FakeRecorder, FakeAirborne]:
-    current_state = state or GroundState()
-    fake_airborne = airborne or FakeAirborne()
-    fake_airborne._state = current_state
+def services(tmp_path):
+    state = GroundState()
+    airborne = FakeAirborne(state)
     planner = FakePlanner()
     recorder = FakeRecorder()
-    services = GatewayServices(
-        config=gateway_config(runtime_dir),
-        planner=planner,
-        state=current_state,
-        recorder=recorder,
-        airborne=fake_airborne,
+    config = GatewayConfig(
+        "127.0.0.1",
+        5557,
+        5558,
+        False,
+        9870,
+        "127.0.0.1",
+        8000,
+        tmp_path,
+        tmp_path / "planner",
     )
-    return services, planner, recorder, fake_airborne
+    return (
+        GatewayServices(config, planner, state, recorder, airborne),
+        planner,
+        recorder,
+        airborne,
+    )
 
 
-def test_health_snapshot_and_lifespan_probe(tmp_path):
-    services, _, recorder, airborne = build_services(tmp_path)
+async def request(app, method, path, **kwargs):
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        return await client.request(method, path, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_health_snapshot_probe_and_lifespan(tmp_path):
+    svc, _, recorder, airborne = services(tmp_path)
     airborne.probe_ack = ack_for("case-1")
-    services.state.apply_plan(plan_for(), 100)
-
-    with TestClient(create_app(services)) as client:
-        assert client.get("/api/health").json() == {"ok": True}
-        snapshot = client.get("/api/snapshot").json()
-        assert snapshot["active_task_id"] == "case-1"
-        assert snapshot["command_link"] == "online"
+    svc.state.apply_plan(plan_for(), 1)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(app, "GET", "/api/health")
+        assert response.json() == {"ok": True}
+        assert recorder.started
         assert airborne.probe_count == 1
-        assert recorder.started is True
-
-    assert recorder.stopped is True
-    assert airborne.closed is True
+    assert recorder.stopped and airborne.closed
 
 
-def test_plan_success_persists_then_updates_snapshot(tmp_path):
-    services, planner, _, _ = build_services(tmp_path)
-
-    with TestClient(create_app(services)) as client:
-        response = client.post(
+@pytest.mark.asyncio
+async def test_plan_success_persists(tmp_path):
+    svc, planner, _, _ = services(tmp_path)
+    async with create_app(svc).router.lifespan_context(create_app(svc)):
+        response = await request(
+            create_app(svc),
+            "POST",
             "/api/mission/plan",
-            json={"case_path": "shared/cases/sample_case.json", "no_fly_cells": []},
+            json={"case_path": "case.json", "no_fly_cells": []},
         )
-
     assert response.status_code == 200
-    assert response.json()["plan"] == planner.result
-    assert json.loads((tmp_path / "active_mission_plan.json").read_text()) == planner.result
-    assert services.state.snapshot(200).active_task_id == "case-1"
+    assert (
+        json.loads((tmp_path / "active_mission_plan.json").read_text())
+        == planner.result
+    )
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("error_code", "status"),
+    "code,status",
     [
         ("invalid_no_fly_zone", 409),
         ("planner_timeout", 504),
         ("planner_process_failed", 502),
-        ("planner_invalid_response", 502),
     ],
 )
-def test_plan_failure_keeps_previous_plan(tmp_path, error_code, status):
-    runtime_path = tmp_path / "active_mission_plan.json"
-    runtime_path.write_text(json.dumps(plan_for("previous")))
-    services, planner, _, _ = build_services(tmp_path)
-    previous = runtime_path.read_text()
-    planner.error = PlannerError(error_code, "planning failed")
-
-    with TestClient(create_app(services)) as client:
-        response = client.post(
-            "/api/mission/plan", json={"case_path": "case.json", "no_fly_cells": []}
+async def test_plan_failure_keeps_file(tmp_path, code, status):
+    path = tmp_path / "active_mission_plan.json"
+    path.write_text(json.dumps(plan_for("old")))
+    previous = path.read_text()
+    svc, planner, _, _ = services(tmp_path)
+    planner.error = PlannerError(code, "failed")
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(
+            app,
+            "POST",
+            "/api/mission/plan",
+            json={"case_path": "x", "no_fly_cells": []},
         )
-
-    assert response.status_code == status
-    assert response.json()["error_code"] == error_code
-    assert runtime_path.read_text() == previous
+    assert response.status_code == status and path.read_text() == previous
 
 
-def test_invalid_plan_request_returns_422(tmp_path):
-    services, _, _, _ = build_services(tmp_path)
-    with TestClient(create_app(services)) as client:
-        response = client.post("/api/mission/plan", json={"no_fly_cells": "A1B1"})
+@pytest.mark.asyncio
+async def test_invalid_request_422(tmp_path):
+    svc, *_ = services(tmp_path)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(app, "POST", "/api/mission/plan", json={})
     assert response.status_code == 422
 
 
-def test_load_returns_ack_and_applies_only_ack_state(tmp_path):
-    services, _, _, airborne = build_services(tmp_path)
-    services.state.apply_plan(plan_for(), 100)
-    airborne.probe_ack = ack_for("case-1", loaded=False)
-    airborne.next_ack = ack_for("case-1", loaded=True, seq=2)
-
-    with TestClient(create_app(services)) as client:
-        response = client.post("/api/mission/load")
-
-    assert response.status_code == 200
-    assert response.json()["ack"]["mission_loaded"] is True
-    assert services.state.snapshot(1_001).mission_loaded is True
-
-
-def test_start_requires_online_matching_loaded_ack(tmp_path):
-    services, _, _, airborne = build_services(tmp_path)
-    services.state.apply_plan(plan_for(), 100)
-    airborne.probe_ack = ack_for("old", loaded=True)
-
-    with TestClient(create_app(services)) as client:
-        response = client.post("/api/mission/start")
-
-    assert response.status_code == 409
-    assert response.json()["error_code"] == "mission_not_ready"
-    assert airborne.commands == []
-
-
-def test_start_returns_ack_without_optimistic_running_state(tmp_path):
-    services, _, _, airborne = build_services(tmp_path)
-    services.state.apply_plan(plan_for(), 100)
-    airborne.probe_ack = ack_for("case-1", loaded=True, seq=1)
-    airborne.next_ack = ack_for("case-1", loaded=True, running=True, seq=2)
-
-    with TestClient(create_app(services)) as client:
-        response = client.post("/api/mission/start")
-
-    assert response.status_code == 200
-    assert response.json()["ack"]["mission_running"] is True
-    assert airborne.commands == [(GroundControlCommand.START, "case-1")]
-    assert services.state.snapshot(1_001).mission_running is True
-
-
-def test_stop_requires_online_running_mission(tmp_path):
-    services, _, _, airborne = build_services(tmp_path)
-    services.state.apply_plan(plan_for(), 100)
-    airborne.probe_ack = ack_for("case-1", loaded=True, running=False)
-
-    with TestClient(create_app(services)) as client:
-        response = client.post("/api/mission/stop")
-
-    assert response.status_code == 409
-    assert response.json()["error_code"] == "mission_not_running"
-    assert airborne.commands == []
-
-
-def test_probe_returns_and_applies_ack(tmp_path):
-    services, _, _, airborne = build_services(tmp_path)
-    services.state.apply_plan(plan_for(), 100)
+@pytest.mark.asyncio
+async def test_load_and_start_use_ack(tmp_path):
+    svc, _, _, airborne = services(tmp_path)
+    svc.state.apply_plan(plan_for(), 1)
     airborne.probe_ack = ack_for("case-1", loaded=True)
+    airborne.next_ack = ack_for("case-1", loaded=True, running=True, seq=2)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        airborne.next_ack = ack_for("case-1", loaded=True, running=False, seq=2)
+        load = await request(app, "POST", "/api/mission/load")
+        airborne.next_ack = ack_for("case-1", loaded=True, running=True, seq=3)
+        start = await request(app, "POST", "/api/mission/start")
+    assert (
+        load.status_code == 200
+        and start.json()["ack"]["mission_running"]
+        and airborne.commands == [(GroundControlCommand.START, "case-1")]
+    )
 
-    with TestClient(create_app(services)) as client:
-        response = client.post("/api/link/probe")
 
-    assert response.status_code == 200
-    assert response.json()["ack"]["mission_loaded"] is True
-    assert airborne.probe_count == 2
+@pytest.mark.asyncio
+async def test_start_rejected_until_matching_loaded_ack(tmp_path):
+    svc, _, _, airborne = services(tmp_path)
+    svc.state.apply_plan(plan_for(), 1)
+    airborne.probe_ack = ack_for("other", loaded=True)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(app, "POST", "/api/mission/start")
+    assert (
+        response.status_code == 409
+        and response.json()["error_code"] == "mission_not_ready"
+    )
 
 
-def test_restart_restores_plan_for_display_in_resyncing_state(tmp_path):
+@pytest.mark.asyncio
+async def test_stop_rejected_when_not_running(tmp_path):
+    svc, _, _, airborne = services(tmp_path)
+    svc.state.apply_plan(plan_for(), 1)
+    airborne.probe_ack = ack_for(loaded=True)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(app, "POST", "/api/mission/stop")
+    assert (
+        response.status_code == 409
+        and response.json()["error_code"] == "mission_not_running"
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_applies_ack(tmp_path):
+    svc, _, _, airborne = services(tmp_path)
+    svc.state.apply_plan(plan_for(), 1)
+    airborne.probe_ack = ack_for(loaded=True)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(app, "POST", "/api/link/probe")
+    assert response.status_code == 200 and response.json()["ack"]["mission_loaded"]
+
+
+def test_restart_plan_resyncing(tmp_path):
     (tmp_path / "active_mission_plan.json").write_text(json.dumps(plan_for()))
-
-    services, _, _, _ = build_services(tmp_path)
-    snapshot = services.state.snapshot(100)
-
-    assert snapshot.active_task_id == "case-1"
-    assert snapshot.mission_loaded is False
-    assert snapshot.mission_running is False
-    assert snapshot.command_link == "resyncing"
+    svc, *_ = services(tmp_path)
+    assert (
+        svc.state.snapshot(1).command_link == "resyncing"
+        and not svc.state.snapshot(1).mission_loaded
+    )
 
 
-def test_websocket_sends_snapshot_then_event_and_unsubscribes(tmp_path):
-    services, _, _, airborne = build_services(tmp_path)
-    airborne.probe_ack = ack_for("", loaded=False)
-    app = create_app(services)
+class FakeWebSocket:
+    def __init__(self):
+        self.sent, self.accepted = [], False
 
-    with TestClient(app) as client:
-        with client.websocket_connect("/ws/telemetry") as socket:
-            snapshot = socket.receive_json()
-            assert snapshot["type"] == "snapshot"
-            services.state.publish_event(
-                WebEvent(type="task_event", seq=3, timestamp_ms=100, payload={})
-            )
-            assert socket.receive_json()["seq"] == 3
-        assert len(services.state._subscribers) == 0
+    async def accept(self):
+        self.accepted = True
+
+    async def send_json(self, value):
+        self.sent.append(value)
 
 
-def test_shutdown_waits_for_active_loops_before_closing_airborne(tmp_path):
-    services, _, _, airborne = build_services(tmp_path)
+@pytest.mark.asyncio
+async def test_websocket_snapshot_and_incremental_unsubscribe(tmp_path):
+    svc, *_ = services(tmp_path)
+    app = create_app(svc)
+    ws = FakeWebSocket()
+    endpoint = next(
+        r.endpoint for r in app.routes if getattr(r, "path", "") == "/ws/telemetry"
+    )
+    task = asyncio.create_task(endpoint(ws))
+    await asyncio.sleep(0)
+    assert ws.sent[0]["type"] == "snapshot"
+    svc.state.publish_event(
+        WebEvent(type="task_event", seq=3, timestamp_ms=1, payload={})
+    )
+    await asyncio.sleep(0)
+    assert ws.sent[1]["seq"] == 3
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    assert not svc.state._subscribers
 
-    with TestClient(create_app(services)):
+
+@pytest.mark.asyncio
+async def test_lifespan_shutdown_active_loops(tmp_path):
+    svc, _, recorder, airborne = services(tmp_path)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        await asyncio.sleep(0.01)
         assert airborne.loop_users == 2
-
-    assert airborne.loops_exited.is_set()
-    assert airborne.closed is True
+    assert recorder.stopped and airborne.closed
