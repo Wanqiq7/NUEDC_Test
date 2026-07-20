@@ -29,7 +29,11 @@ const successfulPlan = {
   ],
 };
 
-const mountPanel = () => mount(PlanningPanel, { global: { plugins: [Quasar] } });
+const mountPanel = () => {
+  const store = useGroundStore();
+  store.$patch({ commandLink: 'online', airborneMissionRunning: false });
+  return mount(PlanningPanel, { global: { plugins: [Quasar] } });
+};
 
 describe('PlanningPanel', () => {
   beforeEach(() => {
@@ -62,6 +66,7 @@ describe('PlanningPanel', () => {
       .spyOn(gatewayApi, 'planMission')
       .mockResolvedValue({ ok: true, plan: successfulPlan });
     const wrapper = mountPanel();
+    await wrapper.get('[data-testid="case-path"]').setValue('shared/cases/field_case.json');
     await wrapper.get('[data-testid="edit-no-fly"]').trigger('click');
     for (const cell of ['A2B2', 'A2B3', 'A2B4']) {
       await wrapper.get(`[data-cell="${cell}"]`).trigger('click');
@@ -71,11 +76,22 @@ describe('PlanningPanel', () => {
     await flushPromises();
 
     expect(planMission).toHaveBeenCalledWith({
-      case_path: 'shared/cases/sample_case.json',
+      case_path: 'shared/cases/field_case.json',
       no_fly_cells: ['A2B2', 'A2B3', 'A2B4'],
     });
     expect(useGroundStore().plan).toEqual(successfulPlan);
     expect(wrapper.get('[data-testid="planning-status"]').text()).toContain('航线已生成');
+  });
+
+  it('disables editing and planning while the command link is offline or mission runs', async () => {
+    const wrapper = mountPanel();
+    const store = useGroundStore();
+    store.$patch({ commandLink: 'offline' });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('[data-testid="edit-no-fly"]').attributes('disabled')).toBeDefined();
+    store.$patch({ commandLink: 'online', airborneMissionRunning: true });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('[data-testid="case-path"]').attributes('disabled')).toBeDefined();
   });
 
   it('keeps candidate cells visible when the gateway rejects planning', async () => {

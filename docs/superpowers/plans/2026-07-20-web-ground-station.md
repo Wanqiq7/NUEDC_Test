@@ -620,7 +620,8 @@ remain in an invalid state. Seed sequence as `(time.time_ns() // 1_000_000) << 2
 
 Implement exact builders for `mission_load` and `control_command`; convert canonical plan dicts
 into Protobuf without changing JSON strings. Parse ACK fields into `AckSnapshot`. SUB loop parses
-TaskPlan/TaskEvent/TaskSummary, uses `Envelope.sequence` as `WebEvent.seq`, preserves the waypoint
+TaskPlan/TaskEvent/TaskSummary, uses `Envelope.sequence` only for source deduplication and assigns a
+Gateway-owned monotonic safe-integer `WebEvent.seq`, preserves the waypoint
 progress index inside payload, decodes `payload_json` as an object, normalizes to `WebEvent`, then
 applies state and recorder before broadcasting.
 

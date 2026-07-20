@@ -20,6 +20,16 @@
       />
 
       <aside class="planning-controls" aria-label="禁飞区规划控制">
+        <label class="case-input">
+          <span class="section-label">案例文件</span>
+          <input
+            v-model.trim="casePath"
+            data-testid="case-path"
+            type="text"
+            :disabled="planning || !store.canPlan"
+            aria-label="H 题案例文件路径"
+          />
+        </label>
         <div class="control-section">
           <span class="section-label">禁飞区</span>
           <strong>{{ editing ? `${selectedCells.length} / 3` : `${officialNoFlyCells.length} 格` }}</strong>
@@ -48,7 +58,7 @@
             data-testid="edit-no-fly"
             class="secondary-action"
             type="button"
-            :disabled="planning"
+            :disabled="planning || !store.canPlan"
             @click="toggleEditing"
           >
             <q-icon :name="editing ? 'close' : 'edit_location_alt'" size="20px" aria-hidden="true" />
@@ -58,7 +68,7 @@
             data-testid="generate-plan"
             class="primary-action"
             type="button"
-            :disabled="!editing || !isContiguous || planning"
+            :disabled="!editing || !isContiguous || planning || !store.canPlan || !casePath"
             @click="generatePlan"
           >
             <q-icon name="route" size="20px" aria-hidden="true" />
@@ -78,8 +88,8 @@ import { ApiError } from '../api/gateway';
 import HMissionMap from '../components/HMissionMap.vue';
 import { useGroundStore } from '../stores/ground';
 
-const CASE_PATH = 'shared/cases/sample_case.json';
 const store = useGroundStore();
+const casePath = ref('shared/cases/sample_case.json');
 const editing = ref(false);
 const selectedCells = ref<string[]>([]);
 const planning = ref(false);
@@ -118,6 +128,7 @@ const selectionStatus = computed(() => {
 });
 
 function toggleEditing(): void {
+  if (!store.canPlan) return;
   editing.value = !editing.value;
   selectedCells.value = [];
   planningError.value = '';
@@ -137,13 +148,13 @@ function toggleCell(cell: string): void {
 }
 
 async function generatePlan(): Promise<void> {
-  if (!isContiguous.value || planning.value) return;
+  if (!isContiguous.value || planning.value || !store.canPlan || !casePath.value) return;
   planning.value = true;
   planningError.value = '';
   planningStatus.value = '';
   try {
     await store.planMission({
-      case_path: CASE_PATH,
+      case_path: casePath.value,
       no_fly_cells: [...selectedCells.value],
     });
     planningStatus.value = '航线已生成';
@@ -236,6 +247,25 @@ h2 {
   gap: 4px;
   padding-bottom: 14px;
   border-bottom: 1px solid #2b383f;
+}
+
+.case-input {
+  display: grid;
+  gap: 4px;
+}
+
+.case-input input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid #52636c;
+  border-radius: 4px;
+  color: #e7ecef;
+  background: #0b1216;
+}
+
+.case-input input:disabled {
+  opacity: 0.55;
 }
 
 .control-section strong {

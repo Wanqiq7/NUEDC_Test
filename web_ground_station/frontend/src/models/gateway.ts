@@ -19,6 +19,10 @@ export interface GroundSnapshot {
   telemetry_link: string;
   pid_link: string;
   ack: AckSnapshot | null;
+  task_sync_state: 'unconfirmed' | 'matched' | 'mismatch';
+  airborne_task_id: string | null;
+  airborne_mission_loaded: boolean;
+  airborne_mission_running: boolean;
   mission_loaded: boolean;
   mission_running: boolean;
   vision_armed: boolean;

@@ -203,7 +203,8 @@ Python Protobuf 文件必须在构建或环境同步阶段从仓库唯一的
 Gateway 不复制完整机载任务状态机，但必须保留以下最小机制：
 
 - 一个 `asyncio.Lock` 串行化所有 ZeroMQ REQ/REP 命令。
-- 单调 command sequence。
+- Qt 与 Web 发送端统一使用 `(Unix epoch ms << 20) + 进程内计数` 的单调 command
+  sequence 契约；切换发送端前必须完全停止旧发送端，禁止并行发送。
 - 有界超时、有限重试和 `last_accepted_sequence` 幂等确认。
 - task_id 和当前任务隔离。
 - 命令、遥测两条链路分别计算 TTL。
@@ -255,7 +256,8 @@ Gateway 把 Protobuf 转成 Web 专用 JSON 信封，不向浏览器暴露 oneof
 
 高频 telemetry、PID、姿态和电机状态使用 latest-value/有限环形缓冲，允许丢弃中间
 帧。Gateway 必须把关键离散事件、Summary、ACK 和错误应用到状态镜像并写入 JSONL，
-且按 sequence 去重。浏览器断线期间可以错过增量广播，但重连后的 snapshot 必须包含
+且按机载 `Envelope.sequence` 去重。Web `seq` 由 Gateway 在独立、安全整数范围内单调
+生成，不能混入 command 或机载序列域。浏览器断线期间可以错过增量广播，但重连后的 snapshot 必须包含
 这些事件产生的当前状态；WebSocket 不承担无限事件回放。JSONL 记录 Gateway 实际收到
 的完整消息，不受浏览器刷新频率影响。
 

@@ -45,6 +45,10 @@ class GroundSnapshot(BaseModel):
     telemetry_link: str = "unknown"
     pid_link: str = "unknown"
     ack: AckSnapshot | None = None
+    task_sync_state: Literal["unconfirmed", "matched", "mismatch"] = "unconfirmed"
+    airborne_task_id: str | None = None
+    airborne_mission_loaded: bool = False
+    airborne_mission_running: bool = False
     mission_loaded: bool = False
     mission_running: bool = False
     vision_armed: bool = False

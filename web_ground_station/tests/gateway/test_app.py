@@ -135,6 +135,14 @@ async def request(app, method, path, **kwargs):
         return await client.request(method, path, **kwargs)
 
 
+async def wait_command_online(state):
+    for _ in range(20):
+        if state.snapshot(1).command_link == "online":
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("command link did not become online")
+
+
 def test_app_factory_uses_exported_runtime_environment(monkeypatch, tmp_path):
     planner_path = tmp_path / "planner"
     captured = {}
@@ -208,6 +216,7 @@ async def test_plan_success_persists(tmp_path):
     svc, planner, _, _ = services(tmp_path)
     app = create_app(svc)
     async with app.router.lifespan_context(app):
+        await wait_command_online(svc.state)
         response = await request(
             app,
             "POST",
@@ -239,6 +248,7 @@ async def test_plan_failure_keeps_file(tmp_path, code, status):
     planner.error = PlannerError(code, "failed")
     app = create_app(svc)
     async with app.router.lifespan_context(app):
+        await wait_command_online(svc.state)
         response = await request(
             app,
             "POST",
@@ -265,6 +275,7 @@ async def test_load_and_start_use_ack(tmp_path):
     airborne.next_ack = ack_for("case-1", loaded=True, running=True, seq=2)
     app = create_app(svc)
     async with app.router.lifespan_context(app):
+        await wait_command_online(svc.state)
         airborne.next_ack = ack_for("case-1", loaded=True, running=False, seq=2)
         load = await request(app, "POST", "/api/mission/load")
         airborne.next_ack = ack_for("case-1", loaded=True, running=True, seq=3)
@@ -313,6 +324,41 @@ async def test_probe_applies_ack(tmp_path):
     async with app.router.lifespan_context(app):
         response = await request(app, "POST", "/api/link/probe")
     assert response.status_code == 200 and response.json()["ack"]["mission_loaded"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/mission/plan", "/api/mission/load"])
+async def test_plan_and_load_rejected_while_airborne_mission_runs(tmp_path, path):
+    svc, planner, _, airborne = services(tmp_path)
+    svc.state.apply_plan(plan_for("display-plan"), 1)
+    airborne.probe_ack = ack_for("airborne-task", loaded=True, running=True)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        await wait_command_online(svc.state)
+        kwargs = (
+            {"json": {"case_path": "shared/cases/case.json", "no_fly_cells": []}}
+            if path.endswith("plan")
+            else {}
+        )
+        response = await request(app, "POST", path, **kwargs)
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "mission_running"
+    assert not planner.requests
+    assert not airborne.loads
+
+
+@pytest.mark.asyncio
+async def test_mismatched_running_task_can_still_be_stopped(tmp_path):
+    svc, _, _, airborne = services(tmp_path)
+    svc.state.apply_plan(plan_for("display-plan"), 1)
+    airborne.probe_ack = ack_for("airborne-task", loaded=True, running=True)
+    airborne.next_ack = ack_for("airborne-task", loaded=True, running=False, seq=2)
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        await wait_command_online(svc.state)
+        response = await request(app, "POST", "/api/mission/stop")
+    assert response.status_code == 200
+    assert airborne.commands == [(GroundControlCommand.STOP, "airborne-task")]
 
 
 def test_restart_plan_resyncing(tmp_path):

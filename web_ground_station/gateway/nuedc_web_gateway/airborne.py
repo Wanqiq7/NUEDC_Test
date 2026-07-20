@@ -22,7 +22,12 @@ messages = load_messages_module()
 _DEFAULT_TIMEOUT_MS = 1500
 _DEFAULT_ATTEMPTS = 3
 _DEFAULT_RETRY_DELAY_MS = 120
-_SEQUENCE_COUNTER_BITS = 20
+SEQUENCE_COUNTER_BITS = 20
+
+
+def initial_command_sequence(timestamp_ms: int) -> int:
+    """Return the sender-independent command epoch shared with the Qt client."""
+    return max(0, timestamp_ms) << SEQUENCE_COUNTER_BITS
 
 
 class GroundControlCommand(str, Enum):
@@ -95,7 +100,7 @@ class AirborneClient:
         self._max_attempts = max_attempts
         self._retry_delay_s = retry_delay_ms / 1000
         self._command_lock = asyncio.Lock()
-        self._sequence = (time.time_ns() // 1_000_000) << _SEQUENCE_COUNTER_BITS
+        self._sequence = initial_command_sequence(time.time_ns() // 1_000_000)
         self._transport: CommandTransport = _ZmqRequestTransport(
             self._context, config.command_endpoint, timeout_ms
         )

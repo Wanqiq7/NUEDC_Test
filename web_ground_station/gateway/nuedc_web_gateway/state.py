@@ -3,6 +3,7 @@ from collections import deque
 from copy import deepcopy
 import logging
 import threading
+import time
 from typing import Any, Mapping
 
 from .models import AckSnapshot, GroundSnapshot, WebEvent
@@ -16,6 +17,7 @@ _HIGH_FREQUENCY_EVENTS = frozenset(
     {"telemetry", "pid_debug", "attitude", "motor_status"}
 )
 _RECENT_DETECTION_LIMIT = 100
+_WEB_SEQUENCE_COUNTER_BITS = 10
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,12 @@ class GroundState:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._subscribers: list[asyncio.Queue[WebEvent]] = []
-        self._snapshot_seq = 0
+        # A time-based boot epoch keeps Web sequence numbers increasing across
+        # normal Gateway restarts. Airborne sequence numbers remain a separate
+        # deduplication domain and are never exposed as Web event sequence IDs.
+        self._snapshot_seq = (
+            time.time_ns() // 1_000_000
+        ) << _WEB_SEQUENCE_COUNTER_BITS
         self._active_task_id: str | None = None
         self._plan: dict[str, Any] | None = None
         self._ack: AckSnapshot | None = None
@@ -100,10 +107,10 @@ class GroundState:
             self._plan = plan_copy
             if switched:
                 self._reset_task_state()
-            snapshot_seq = self._advance_snapshot(seq)
+            snapshot_seq = self._advance_snapshot()
             event = WebEvent(
                 type="task_plan",
-                seq=seq if seq is not None else snapshot_seq,
+                seq=snapshot_seq,
                 timestamp_ms=timestamp_ms,
                 task_id=task_id,
                 payload=plan_copy,
@@ -114,9 +121,6 @@ class GroundState:
 
     def apply_ack(self, ack: AckSnapshot, timestamp_ms: int) -> None:
         with self._lock:
-            if self._active_task_id is not None and ack.task_id != self._active_task_id:
-                logger.debug("ignoring ACK for inactive task %s", ack.task_id)
-                return
             if ack.last_accepted_sequence <= self._highest_ack_sequence:
                 logger.debug(
                     "ignoring stale ACK sequence %d (highest %d)",
@@ -133,7 +137,7 @@ class GroundState:
             else:
                 self._command_failures += 1
                 self._recent_error = {"message": ack.message}
-            seq = self._advance_snapshot(ack.last_accepted_sequence)
+            seq = self._advance_snapshot()
             self._publish(
                 WebEvent(
                     type="ack",
@@ -169,10 +173,10 @@ class GroundState:
                 self._target_update = payload_copy
             elif event == "error":
                 self._recent_error = payload_copy
-            self._advance_snapshot(seq)
+            web_seq = self._advance_snapshot()
             web_event = WebEvent(
                 type="task_event",
-                seq=seq,
+                seq=web_seq,
                 timestamp_ms=timestamp_ms,
                 task_id=task_id,
                 event=event,
@@ -202,10 +206,10 @@ class GroundState:
                 self._ack = self._ack.model_copy(update={"mission_running": False})
             if not success:
                 self._recent_error = payload_copy
-            self._advance_snapshot(seq)
+            web_seq = self._advance_snapshot()
             event = WebEvent(
                 type="task_summary",
-                seq=seq,
+                seq=web_seq,
                 timestamp_ms=timestamp_ms,
                 task_id=task_id,
                 event="summary",
@@ -221,6 +225,18 @@ class GroundState:
 
     def snapshot(self, now_ms: int) -> GroundSnapshot:
         with self._lock:
+            task_matches = (
+                self._ack is not None
+                and self._active_task_id is not None
+                and self._ack.task_id == self._active_task_id
+            )
+            sync_state = (
+                "unconfirmed"
+                if self._ack is None
+                else "matched"
+                if task_matches
+                else "mismatch"
+            )
             return GroundSnapshot(
                 snapshot_seq=self._snapshot_seq,
                 timestamp_ms=now_ms,
@@ -232,9 +248,13 @@ class GroundState:
                 ),
                 pid_link=self._ttl_link(self._last_pid_ms, now_ms, PID_TTL_MS),
                 ack=self._ack.model_copy(deep=True) if self._ack else None,
-                mission_loaded=self._ack.mission_loaded if self._ack else False,
-                mission_running=self._ack.mission_running if self._ack else False,
-                vision_armed=self._ack.vision_armed if self._ack else False,
+                task_sync_state=sync_state,
+                airborne_task_id=self._ack.task_id or None if self._ack else None,
+                airborne_mission_loaded=self._ack.mission_loaded if self._ack else False,
+                airborne_mission_running=self._ack.mission_running if self._ack else False,
+                mission_loaded=self._ack.mission_loaded if task_matches else False,
+                mission_running=self._ack.mission_running if task_matches else False,
+                vision_armed=self._ack.vision_armed if task_matches else False,
                 current_cell=self._current_cell,
                 visited_count=self._visited_count,
                 detection_totals=dict(self._detection_totals),
@@ -246,12 +266,8 @@ class GroundState:
             )
 
     def _reset_task_state(self) -> None:
-        self._ack = None
-        self._command_failures = 0
-        self._last_command_success_ms = None
         self._last_telemetry_ms = None
         self._last_pid_ms = None
-        self._highest_ack_sequence = -1
         self._highest_event_seq = -1
         self._current_cell = None
         self._visited_count = 0
@@ -305,9 +321,8 @@ class GroundState:
                 animal_name, 0
             ) + max(0, valid_count)
 
-    def _advance_snapshot(self, seq: int | None = None) -> int:
-        next_seq = self._snapshot_seq + 1
-        self._snapshot_seq = max(next_seq, seq if seq is not None else next_seq)
+    def _advance_snapshot(self) -> int:
+        self._snapshot_seq += 1
         return self._snapshot_seq
 
     def _command_link(self, now_ms: int) -> str:

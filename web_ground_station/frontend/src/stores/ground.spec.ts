@@ -14,6 +14,10 @@ const snapshot = (overrides: Partial<GroundSnapshot> = {}): GroundSnapshot => ({
   telemetry_link: 'unknown',
   pid_link: 'unknown',
   ack: null,
+  task_sync_state: 'unconfirmed',
+  airborne_task_id: null,
+  airborne_mission_loaded: false,
+  airborne_mission_running: false,
   mission_loaded: false,
   mission_running: false,
   vision_armed: false,
@@ -182,5 +186,26 @@ describe('ground store', () => {
     store.markResyncing();
 
     expect(store.commandLink).toBe('resyncing');
+  });
+
+  it('keeps mismatched airborne running state separate and STOP available', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({
+      active_task_id: 'display-plan',
+      task_sync_state: 'mismatch',
+      airborne_task_id: 'airborne-task',
+      airborne_mission_loaded: true,
+      airborne_mission_running: true,
+    }));
+
+    expect(store.missionLoaded).toBe(false);
+    expect(store.missionRunning).toBe(false);
+    expect(store.canPlan).toBe(false);
+    expect(store.canLoad).toBe(false);
+    expect(store.canStart).toBe(false);
+    expect(store.canStop).toBe(false);
+
+    store.commandLink = 'online';
+    expect(store.canStop).toBe(true);
   });
 });

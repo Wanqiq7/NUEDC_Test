@@ -144,6 +144,11 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
 
     @app.post("/api/mission/plan")
     async def plan(request: PlanRequest):
+        before = services.state.snapshot(_now_ms())
+        if before.command_link != "online":
+            return _error(409, "command_link_unavailable", "command link is not online")
+        if before.airborne_mission_running:
+            return _error(409, "mission_running", "cannot replace a running mission")
         repo_root = Path(__file__).resolve().parents[3]
         cases_root = (repo_root / "shared" / "cases").resolve()
         candidate = Path(request.case_path)
@@ -158,6 +163,13 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
             result = await services.planner.plan(
                 PlanningRequest(str(resolved), request.no_fly_cells)
             )
+            after = services.state.snapshot(_now_ms())
+            if after.command_link != "online" or after.airborne_mission_running:
+                return _error(
+                    409,
+                    "mission_state_changed",
+                    "mission state changed while planning; plan was not applied",
+                )
             store_plan_atomic(
                 result, services.config.runtime_dir / "active_mission_plan.json"
             )
@@ -193,6 +205,10 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
     @app.post("/api/mission/load")
     async def load():
         current = services.state.snapshot(_now_ms())
+        if current.command_link != "online":
+            return _error(409, "command_link_unavailable", "command link is not online")
+        if current.airborne_mission_running:
+            return _error(409, "mission_running", "cannot load while a mission is running")
         if not current.plan or not current.active_task_id:
             return _error(409, "mission_not_ready", "no active mission plan")
         ack = await services.airborne.send_mission_load(current.plan)
@@ -236,12 +252,12 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
         current = services.state.snapshot(_now_ms())
         if (
             current.command_link != "online"
-            or not current.mission_running
-            or not current.active_task_id
+            or not current.airborne_mission_running
+            or not current.airborne_task_id
         ):
             return _error(409, "mission_not_running", "mission is not running")
         ack = await services.airborne.send_control(
-            GroundControlCommand.STOP, current.active_task_id
+            GroundControlCommand.STOP, current.airborne_task_id
         )
         services.state.apply_ack(ack, _now_ms())
         return (

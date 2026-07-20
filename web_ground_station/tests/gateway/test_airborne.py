@@ -8,7 +8,11 @@ import pytest
 import zmq
 import zmq.asyncio
 
-from nuedc_web_gateway.airborne import AirborneClient, GroundControlCommand
+from nuedc_web_gateway.airborne import (
+    AirborneClient,
+    GroundControlCommand,
+    initial_command_sequence,
+)
 from nuedc_web_gateway.config import GatewayConfig
 from nuedc_web_gateway.models import AckSnapshot
 from nuedc_web_gateway.proto_runtime import load_messages_module
@@ -498,7 +502,7 @@ async def test_summary_updates_running_false(transport_fixture):
 
 
 @pytest.mark.asyncio
-async def test_event_uses_envelope_sequence_and_preserves_progress_in_payload(
+async def test_event_uses_gateway_sequence_and_preserves_progress_in_payload(
     transport_fixture,
 ):
     client, ground_state, recorder, _, pub_server = transport_fixture
@@ -519,7 +523,8 @@ async def test_event_uses_envelope_sequence_and_preserves_progress_in_payload(
     await publish
 
     event = recorder.events[-1]
-    assert event.seq == 44
+    assert event.seq == ground_state.snapshot(now_ms()).snapshot_seq
+    assert event.seq != 44
     assert event.payload == {
         "current_cell": "A8B1",
         "visited_cells": 3,
@@ -534,7 +539,7 @@ async def test_event_uses_envelope_sequence_and_preserves_progress_in_payload(
 
 
 @pytest.mark.asyncio
-async def test_task_plan_records_then_publishes_exact_envelope_sequence(
+async def test_task_plan_records_then_publishes_gateway_sequence(
     transport_fixture,
 ):
     client, ground_state, recorder, _, pub_server = transport_fixture
@@ -555,11 +560,12 @@ async def test_task_plan_records_then_publishes_exact_envelope_sequence(
     await publish
 
     assert event is recorder.events[-1]
-    assert event.seq == 73
+    assert event.seq == ground_state.snapshot(now_ms()).snapshot_seq
+    assert event.seq != 73
     assert recorder.subscriber_empty_at_record == [True]
     published = subscriber.get_nowait()
     assert published is event
-    assert published.seq == 73
+    assert published.seq == event.seq
 
 
 @pytest.mark.asyncio
@@ -630,3 +636,9 @@ def test_ground_control_command_is_a_string_enum():
         "arm_targeting",
         "disarm_targeting",
     }
+
+
+def test_command_epoch_matches_qt_sender_independent_contract():
+    assert initial_command_sequence(1_720_000_000_123) == (
+        1_720_000_000_123 << 20
+    )

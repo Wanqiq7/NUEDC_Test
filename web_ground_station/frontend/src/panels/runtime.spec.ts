@@ -35,7 +35,7 @@ describe('runtime command console', () => {
     [{ command: 'online', loaded: true, running: true }, false, true],
   ])('gates START and STOP from server state', async (state, canStart, canStop) => {
     const { store, wrapper } = mountCommandBar();
-    store.$patch({ activeTaskId: 'case-1', commandLink: state.command, missionLoaded: state.loaded, missionRunning: state.running, ack: { ok: true, message: 'ready', task_id: 'case-1', mission_loaded: state.loaded, mission_running: state.running, last_accepted_sequence: 1, vision_armed: false } });
+    store.$patch({ activeTaskId: 'case-1', airborneTaskId: 'case-1', commandLink: state.command, missionLoaded: state.loaded, missionRunning: state.running, airborneMissionRunning: state.running, ack: { ok: true, message: 'ready', task_id: 'case-1', mission_loaded: state.loaded, mission_running: state.running, last_accepted_sequence: 1, vision_armed: false } });
     await flushPromises();
     expect(wrapper.get('[data-testid="start-command"]').attributes('disabled') === undefined).toBe(canStart);
     expect(wrapper.get('[data-testid="stop-command"]').attributes('disabled') === undefined).toBe(canStop);
@@ -57,7 +57,7 @@ describe('runtime command console', () => {
 
   it('keeps STOP enabled for authoritative running state without an active task', async () => {
     const { store, wrapper } = mountCommandBar();
-    store.$patch({ activeTaskId: null, commandLink: 'online', missionRunning: true });
+    store.$patch({ activeTaskId: null, airborneTaskId: 'airborne-case', commandLink: 'online', airborneMissionRunning: true });
     await wrapper.vm.$nextTick();
     expect(wrapper.get('[data-testid="stop-command"]').attributes('disabled')).toBeUndefined();
   });
@@ -95,7 +95,7 @@ describe('runtime command console', () => {
       },
     });
     const { store, wrapper } = mountCommandBar();
-    store.$patch({ activeTaskId: 'case-1', commandLink: 'online', missionRunning: true });
+    store.$patch({ activeTaskId: 'case-1', airborneTaskId: 'case-1', commandLink: 'online', missionRunning: true, airborneMissionRunning: true });
     await wrapper.vm.$nextTick();
     await wrapper.get('[data-testid="stop-command"]').trigger('click');
     expect(stopMission).not.toHaveBeenCalled();
@@ -150,6 +150,22 @@ describe('runtime command console', () => {
 });
 
 describe('responsive operator shell', () => {
+  it('lets the operator explicitly refresh the command link', async () => {
+    const probe = vi.spyOn(gatewayApi, 'probeLink').mockResolvedValue({
+      ok: true,
+      ack: { ok: true, message: 'pong', task_id: '', mission_loaded: false, mission_running: false, last_accepted_sequence: 1, vision_armed: false },
+    });
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const wrapper = mount(App, { global: { plugins: [pinia, Quasar] } });
+
+    await wrapper.get('[data-testid="refresh-link"]').trigger('click');
+    await flushPromises();
+
+    expect(probe).toHaveBeenCalledOnce();
+    expect(useGroundStore().commandLink).toBe('online');
+  });
+
   it('provides compact detection details without replacing or mutating the map DOM', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 });

@@ -20,6 +20,10 @@ export const useGroundStore = defineStore('ground', () => {
   const telemetryLink = ref('unknown');
   const pidLink = ref('unknown');
   const ack = ref<AckSnapshot | null>(null);
+  const taskSyncState = ref<'unconfirmed' | 'matched' | 'mismatch'>('unconfirmed');
+  const airborneTaskId = ref<string | null>(null);
+  const airborneMissionLoaded = ref(false);
+  const airborneMissionRunning = ref(false);
   const missionLoaded = ref(false);
   const missionRunning = ref(false);
   const visionArmed = ref(false);
@@ -42,6 +46,10 @@ export const useGroundStore = defineStore('ground', () => {
     telemetryLink: telemetryLink.value,
     pidLink: pidLink.value,
     ack: ack.value,
+    taskSyncState: taskSyncState.value,
+    airborneTaskId: airborneTaskId.value,
+    airborneMissionLoaded: airborneMissionLoaded.value,
+    airborneMissionRunning: airborneMissionRunning.value,
     missionLoaded: missionLoaded.value,
     missionRunning: missionRunning.value,
     visionArmed: visionArmed.value,
@@ -54,7 +62,16 @@ export const useGroundStore = defineStore('ground', () => {
     recentError: recentError.value,
     recordingError: recordingError.value,
   }));
-  const canLoad = computed(() => plan.value !== null && activeTaskId.value !== null);
+  const canPlan = computed(
+    () => commandLink.value === 'online' && !airborneMissionRunning.value,
+  );
+  const canLoad = computed(
+    () =>
+      commandLink.value === 'online' &&
+      !airborneMissionRunning.value &&
+      plan.value !== null &&
+      activeTaskId.value !== null,
+  );
   const canStart = computed(
     () =>
       commandLink.value === 'online' &&
@@ -67,7 +84,8 @@ export const useGroundStore = defineStore('ground', () => {
   const canStop = computed(
     () =>
       commandLink.value === 'online' &&
-      missionRunning.value,
+      airborneMissionRunning.value &&
+      airborneTaskId.value !== null,
   );
 
   function applySnapshot(snapshot: GroundSnapshot): boolean {
@@ -83,6 +101,10 @@ export const useGroundStore = defineStore('ground', () => {
     telemetryLink.value = snapshot.telemetry_link;
     pidLink.value = snapshot.pid_link;
     ack.value = snapshot.ack;
+    taskSyncState.value = snapshot.task_sync_state;
+    airborneTaskId.value = snapshot.airborne_task_id;
+    airborneMissionLoaded.value = snapshot.airborne_mission_loaded;
+    airborneMissionRunning.value = snapshot.airborne_mission_running;
     missionLoaded.value = snapshot.mission_loaded;
     missionRunning.value = snapshot.mission_running;
     visionArmed.value = snapshot.vision_armed;
@@ -156,9 +178,15 @@ export const useGroundStore = defineStore('ground', () => {
   function applyAck(response: CommandResponse): CommandResponse {
     if (response.ack) {
       ack.value = response.ack;
-      missionLoaded.value = response.ack.mission_loaded;
-      missionRunning.value = response.ack.mission_running;
-      visionArmed.value = response.ack.vision_armed;
+      airborneTaskId.value = response.ack.task_id || null;
+      airborneMissionLoaded.value = response.ack.mission_loaded;
+      airborneMissionRunning.value = response.ack.mission_running;
+      const matches = response.ack.task_id === activeTaskId.value;
+      taskSyncState.value = matches ? 'matched' : 'mismatch';
+      missionLoaded.value = matches && response.ack.mission_loaded;
+      missionRunning.value = matches && response.ack.mission_running;
+      visionArmed.value = matches && response.ack.vision_armed;
+      if (response.ack.ok) commandLink.value = 'online';
     }
     return response;
   }
@@ -183,6 +211,11 @@ export const useGroundStore = defineStore('ground', () => {
     state,
     activeTaskId,
     ack,
+    airborneMissionLoaded,
+    airborneMissionRunning,
+    airborneTaskId,
+    taskSyncState,
+    canPlan,
     canLoad,
     canStart,
     canStop,

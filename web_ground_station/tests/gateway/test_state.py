@@ -169,7 +169,7 @@ def test_old_ack_cannot_restore_running_after_newer_summary():
     assert state.snapshot(107).mission_running is True
 
 
-def test_plan_switch_resets_ack_sequence_watermark():
+def test_plan_switch_preserves_global_ack_sequence_watermark():
     state = active_state("first")
     state.apply_ack(
         AckSnapshot(
@@ -202,11 +202,13 @@ def test_plan_switch_resets_ack_sequence_watermark():
     )
 
     assert state.snapshot(104).ack is not None
-    assert state.snapshot(104).ack.message == "second"
+    assert state.snapshot(104).ack.message == "first"
+    assert state.snapshot(104).task_sync_state == "mismatch"
 
 
 def test_command_ack_and_telemetry_use_independent_sequence_domains():
     state = active_state()
+    subscriber = state.subscribe()
     state.apply_ack(
         AckSnapshot(
             ok=True,
@@ -220,9 +222,39 @@ def test_command_ack_and_telemetry_use_independent_sequence_domains():
         101,
     )
 
-    state.apply_task_event("active", "telemetry", 1, 102, {"current_cell": "A7B1"})
+    ack_event = subscriber.get_nowait()
+    telemetry_event = state.apply_task_event(
+        "active", "telemetry", 1, 102, {"current_cell": "A7B1"}
+    )
 
     assert state.snapshot(103).current_cell == "A7B1"
+    assert telemetry_event is not None
+    assert telemetry_event.seq > ack_event.seq
+    assert telemetry_event.seq == state.snapshot(103).snapshot_seq
+
+
+def test_mismatched_airborne_ack_is_explicit_without_claiming_display_plan_state():
+    state = active_state("display-plan")
+    state.apply_ack(
+        AckSnapshot(
+            ok=True,
+            message="airborne running another task",
+            task_id="airborne-task",
+            mission_loaded=True,
+            mission_running=True,
+            last_accepted_sequence=10,
+            vision_armed=True,
+        ),
+        101,
+    )
+
+    snapshot = state.snapshot(102)
+    assert snapshot.task_sync_state == "mismatch"
+    assert snapshot.airborne_task_id == "airborne-task"
+    assert snapshot.airborne_mission_running is True
+    assert snapshot.mission_loaded is False
+    assert snapshot.mission_running is False
+    assert snapshot.vision_armed is False
 
 
 def test_ack_mirror_and_command_link_failure_threshold():
@@ -305,14 +337,15 @@ def test_full_subscriber_evicts_telemetry_to_retain_critical_event():
     assert state.snapshot(104).detection_totals == {"wolf": 1}
 
 
-def test_snapshot_sequence_tracks_applied_envelope_sequence():
+def test_snapshot_sequence_is_gateway_owned_not_airborne_sequence():
     state = active_state()
+    before = state.snapshot(100).snapshot_seq
     state.apply_task_event("active", "telemetry", 41, 101, {})
     first = state.snapshot(102)
     second = state.snapshot(103)
 
-    assert first.snapshot_seq >= 41
-    assert second.snapshot_seq >= first.snapshot_seq
+    assert first.snapshot_seq == before + 1
+    assert second.snapshot_seq == first.snapshot_seq
     assert PID_TTL_MS == 500
     assert isinstance(state.subscribe(), asyncio.Queue)
 
