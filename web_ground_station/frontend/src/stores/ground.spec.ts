@@ -146,7 +146,26 @@ describe('ground store', () => {
 
   it('applies detection and summary increments without a browser refresh', () => {
     const store = useGroundStore();
-    store.applySnapshot(snapshot({ active_task_id: 'case-1', mission_running: true }));
+    store.applySnapshot(snapshot({
+      active_task_id: 'case-1',
+      plan: { task_id: 'case-1' },
+      command_link: 'online',
+      ack: {
+        ok: true,
+        message: 'started',
+        task_id: 'case-1',
+        mission_loaded: true,
+        mission_running: true,
+        last_accepted_sequence: 5,
+        vision_armed: false,
+      },
+      task_sync_state: 'matched',
+      airborne_task_id: 'case-1',
+      airborne_mission_loaded: true,
+      airborne_mission_running: true,
+      mission_loaded: true,
+      mission_running: true,
+    }));
 
     store.applyEvent(event({
       seq: 1,
@@ -164,6 +183,71 @@ describe('ground store', () => {
     expect(store.recentDetections).toHaveLength(1);
     expect(store.recentSummary).toMatchObject({ success: true });
     expect(store.missionRunning).toBe(false);
+    expect(store.airborneMissionRunning).toBe(false);
+    expect(store.airborneTaskId).toBe('case-1');
+    expect(store.canPlan).toBe(true);
+    expect(store.canLoad).toBe(true);
+    expect(store.canStop).toBe(false);
+  });
+
+  it('applies a matching authoritative ACK event to command gates', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({ active_task_id: 'case-1', plan: { task_id: 'case-1' } }));
+
+    store.applyEvent(event({
+      seq: 1,
+      type: 'ack',
+      event: null,
+      payload: {
+        ok: true,
+        message: 'loaded',
+        task_id: 'case-1',
+        mission_loaded: true,
+        mission_running: false,
+        last_accepted_sequence: 9,
+        vision_armed: false,
+      },
+    }));
+
+    expect(store.airborneTaskId).toBe('case-1');
+    expect(store.taskSyncState).toBe('matched');
+    expect(store.missionLoaded).toBe(true);
+    expect(store.canStart).toBe(true);
+  });
+
+  it('accepts a mismatched authoritative ACK event and preserves task isolation', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({
+      active_task_id: 'display-plan',
+      plan: { task_id: 'display-plan' },
+      command_link: 'online',
+    }));
+
+    store.applyEvent(event({
+      seq: 1,
+      task_id: 'airborne-task',
+      type: 'ack',
+      event: null,
+      payload: {
+        ok: true,
+        message: 'running',
+        task_id: 'airborne-task',
+        mission_loaded: true,
+        mission_running: true,
+        last_accepted_sequence: 10,
+        vision_armed: true,
+      },
+    }));
+
+    expect(store.airborneTaskId).toBe('airborne-task');
+    expect(store.airborneMissionRunning).toBe(true);
+    expect(store.taskSyncState).toBe('mismatch');
+    expect(store.missionLoaded).toBe(false);
+    expect(store.missionRunning).toBe(false);
+    expect(store.canPlan).toBe(false);
+    expect(store.canLoad).toBe(false);
+    expect(store.canStart).toBe(false);
+    expect(store.canStop).toBe(true);
   });
 
   it('normalizes mock telemetry progress without a browser refresh', () => {

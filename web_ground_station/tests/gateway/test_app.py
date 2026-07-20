@@ -38,9 +38,14 @@ class FakePlanner:
     def __init__(self):
         self.result, self.error = plan_for(), None
         self.requests = []
+        self.gate = None
+        self.started = asyncio.Event()
 
     async def plan(self, request):
         self.requests.append(request)
+        self.started.set()
+        if self.gate is not None:
+            await self.gate.wait()
         if self.error:
             raise self.error
         return self.result
@@ -66,6 +71,7 @@ class FakeAirborne:
         self.probe_count, self.commands, self.loads = 0, [], []
         self.loop_users, self.closed = 0, False
         self.probe_gate = None
+        self.control_gate = None
         self.heartbeat_started = False
 
     async def probe_once(self):
@@ -97,6 +103,8 @@ class FakeAirborne:
 
     async def send_control(self, command, task_id):
         self.commands.append((command, task_id))
+        if self.control_gate is not None:
+            await self.control_gate.wait()
         return self.next_ack
 
     def close(self):
@@ -285,6 +293,62 @@ async def test_load_and_start_use_ack(tmp_path):
         and start.json()["ack"]["mission_running"]
         and airborne.commands == [(GroundControlCommand.START, "case-1")]
     )
+
+
+@pytest.mark.asyncio
+async def test_concurrent_starts_recheck_state_after_first_ack(tmp_path):
+    svc, _, _, airborne = services(tmp_path)
+    svc.state.apply_plan(plan_for(), 1)
+    airborne.probe_ack = ack_for("case-1", loaded=True)
+    airborne.next_ack = ack_for("case-1", loaded=True, running=True, seq=2)
+    airborne.control_gate = asyncio.Event()
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        await wait_command_online(svc.state)
+        first = asyncio.create_task(request(app, "POST", "/api/mission/start"))
+        for _ in range(20):
+            if airborne.commands:
+                break
+            await asyncio.sleep(0)
+        second = asyncio.create_task(request(app, "POST", "/api/mission/start"))
+        await asyncio.sleep(0)
+        assert len(airborne.commands) == 1
+        airborne.control_gate.set()
+        first_response, second_response = await asyncio.gather(first, second)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 409
+    assert second_response.json()["error_code"] == "mission_not_ready"
+    assert airborne.commands == [(GroundControlCommand.START, "case-1")]
+
+
+@pytest.mark.asyncio
+async def test_planner_wait_does_not_block_start_and_rechecks_before_apply(tmp_path):
+    svc, planner, _, airborne = services(tmp_path)
+    svc.state.apply_plan(plan_for(), 1)
+    airborne.probe_ack = ack_for("case-1", loaded=True)
+    airborne.next_ack = ack_for("case-1", loaded=True, running=True, seq=2)
+    planner.gate = asyncio.Event()
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        await wait_command_online(svc.state)
+        planning = asyncio.create_task(
+            request(
+                app,
+                "POST",
+                "/api/mission/plan",
+                json={"case_path": "shared/cases/case.json", "no_fly_cells": []},
+            )
+        )
+        await planner.started.wait()
+        started = await request(app, "POST", "/api/mission/start")
+        planner.gate.set()
+        planned = await planning
+
+    assert started.status_code == 200
+    assert planned.status_code == 409
+    assert planned.json()["error_code"] == "mission_state_changed"
+    assert not (tmp_path / "active_mission_plan.json").exists()
 
 
 @pytest.mark.asyncio

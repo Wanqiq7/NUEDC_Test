@@ -39,6 +39,7 @@ class GatewayServices:
     stop: asyncio.Event = field(default_factory=asyncio.Event)
     tasks: list[asyncio.Task[Any]] = field(default_factory=list)
     initial_probe_task: asyncio.Task[Any] | None = None
+    mission_operation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def __post_init__(self) -> None:
         path = self.config.runtime_dir / "active_mission_plan.json"
@@ -163,26 +164,29 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
             result = await services.planner.plan(
                 PlanningRequest(str(resolved), request.no_fly_cells)
             )
-            after = services.state.snapshot(_now_ms())
-            if after.command_link != "online" or after.airborne_mission_running:
-                return _error(
-                    409,
-                    "mission_state_changed",
-                    "mission state changed while planning; plan was not applied",
+            # Planning may take seconds, so only serialize the final recheck and
+            # state transition with LOAD/START operations.
+            async with services.mission_operation_lock:
+                after = services.state.snapshot(_now_ms())
+                if after.command_link != "online" or after.airborne_mission_running:
+                    return _error(
+                        409,
+                        "mission_state_changed",
+                        "mission state changed while planning; plan was not applied",
+                    )
+                store_plan_atomic(
+                    result, services.config.runtime_dir / "active_mission_plan.json"
                 )
-            store_plan_atomic(
-                result, services.config.runtime_dir / "active_mission_plan.json"
-            )
-            services.state.apply_plan(result, _now_ms())
-            services.recorder.record(
-                WebEvent(
-                    type="task_plan",
-                    seq=services.state.snapshot(_now_ms()).snapshot_seq,
-                    timestamp_ms=_now_ms(),
-                    task_id=result["task_id"],
-                    payload=result,
+                services.state.apply_plan(result, _now_ms())
+                services.recorder.record(
+                    WebEvent(
+                        type="task_plan",
+                        seq=services.state.snapshot(_now_ms()).snapshot_seq,
+                        timestamp_ms=_now_ms(),
+                        task_id=result["task_id"],
+                        payload=result,
+                    )
                 )
-            )
             return {"ok": True, "plan": result}
         except PlannerError as error:
             status = (
@@ -204,20 +208,25 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
 
     @app.post("/api/mission/load")
     async def load():
-        current = services.state.snapshot(_now_ms())
-        if current.command_link != "online":
-            return _error(409, "command_link_unavailable", "command link is not online")
-        if current.airborne_mission_running:
-            return _error(409, "mission_running", "cannot load while a mission is running")
-        if not current.plan or not current.active_task_id:
-            return _error(409, "mission_not_ready", "no active mission plan")
-        ack = await services.airborne.send_mission_load(current.plan)
-        services.state.apply_ack(ack, _now_ms())
-        return (
-            _ack_response(ack)
-            if ack.ok
-            else _error(409, "mission_load_failed", ack.message)
-        )
+        async with services.mission_operation_lock:
+            current = services.state.snapshot(_now_ms())
+            if current.command_link != "online":
+                return _error(
+                    409, "command_link_unavailable", "command link is not online"
+                )
+            if current.airborne_mission_running:
+                return _error(
+                    409, "mission_running", "cannot load while a mission is running"
+                )
+            if not current.plan or not current.active_task_id:
+                return _error(409, "mission_not_ready", "no active mission plan")
+            ack = await services.airborne.send_mission_load(current.plan)
+            services.state.apply_ack(ack, _now_ms())
+            return (
+                _ack_response(ack)
+                if ack.ok
+                else _error(409, "mission_load_failed", ack.message)
+            )
 
     def _current_ready() -> tuple[Any, JSONResponse | None]:
         current = services.state.snapshot(_now_ms())
@@ -234,18 +243,19 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
 
     @app.post("/api/mission/start")
     async def start():
-        current, failure = _current_ready()
-        if failure is not None:
-            return failure
-        ack = await services.airborne.send_control(
-            GroundControlCommand.START, current.active_task_id
-        )
-        services.state.apply_ack(ack, _now_ms())
-        return (
-            _ack_response(ack)
-            if ack.ok
-            else _error(409, "mission_start_failed", ack.message)
-        )
+        async with services.mission_operation_lock:
+            current, failure = _current_ready()
+            if failure is not None:
+                return failure
+            ack = await services.airborne.send_control(
+                GroundControlCommand.START, current.active_task_id
+            )
+            services.state.apply_ack(ack, _now_ms())
+            return (
+                _ack_response(ack)
+                if ack.ok
+                else _error(409, "mission_start_failed", ack.message)
+            )
 
     @app.post("/api/mission/stop")
     async def stop():

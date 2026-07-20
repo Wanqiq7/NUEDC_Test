@@ -11,6 +11,19 @@ import type {
   WebEvent,
 } from '../models/gateway';
 
+function isAckSnapshot(payload: DynamicPayload): payload is DynamicPayload & AckSnapshot {
+  return (
+    typeof payload.ok === 'boolean' &&
+    typeof payload.message === 'string' &&
+    typeof payload.task_id === 'string' &&
+    typeof payload.mission_loaded === 'boolean' &&
+    typeof payload.mission_running === 'boolean' &&
+    typeof payload.last_accepted_sequence === 'number' &&
+    Number.isInteger(payload.last_accepted_sequence) &&
+    typeof payload.vision_armed === 'boolean'
+  );
+}
+
 export const useGroundStore = defineStore('ground', () => {
   const snapshotSeq = ref(0);
   const timestampMs = ref(0);
@@ -121,10 +134,11 @@ export const useGroundStore = defineStore('ground', () => {
   }
 
   function applyEvent(webEvent: WebEvent): void {
+    const isAck = webEvent.type === 'ack';
     if (
       !hasSnapshot.value ||
       webEvent.seq <= snapshotSeq.value ||
-      (webEvent.task_id !== null && webEvent.task_id !== activeTaskId.value)
+      (!isAck && webEvent.task_id !== null && webEvent.task_id !== activeTaskId.value)
     ) {
       return;
     }
@@ -132,6 +146,13 @@ export const useGroundStore = defineStore('ground', () => {
     snapshotSeq.value = webEvent.seq;
     timestampMs.value = webEvent.timestamp_ms;
     const payload = webEvent.payload;
+
+    if (isAck) {
+      if (isAckSnapshot(payload)) {
+        applyAuthoritativeAck(payload);
+      }
+      return;
+    }
 
     if (typeof payload.current_cell === 'string' || payload.current_cell === null) {
       currentCell.value = payload.current_cell;
@@ -168,6 +189,10 @@ export const useGroundStore = defineStore('ground', () => {
     if (webEvent.type === 'task_summary' || webEvent.event === 'summary') {
       recentSummary.value = payload;
       missionRunning.value = false;
+      airborneMissionRunning.value = false;
+      if (ack.value !== null) {
+        ack.value = { ...ack.value, mission_running: false };
+      }
     }
   }
 
@@ -175,18 +200,22 @@ export const useGroundStore = defineStore('ground', () => {
     commandLink.value = 'resyncing';
   }
 
+  function applyAuthoritativeAck(nextAck: AckSnapshot): void {
+    ack.value = nextAck;
+    airborneTaskId.value = nextAck.task_id || null;
+    airborneMissionLoaded.value = nextAck.mission_loaded;
+    airborneMissionRunning.value = nextAck.mission_running;
+    const matches = nextAck.task_id === activeTaskId.value;
+    taskSyncState.value = matches ? 'matched' : 'mismatch';
+    missionLoaded.value = matches && nextAck.mission_loaded;
+    missionRunning.value = matches && nextAck.mission_running;
+    visionArmed.value = matches && nextAck.vision_armed;
+    if (nextAck.ok) commandLink.value = 'online';
+  }
+
   function applyAck(response: CommandResponse): CommandResponse {
     if (response.ack) {
-      ack.value = response.ack;
-      airborneTaskId.value = response.ack.task_id || null;
-      airborneMissionLoaded.value = response.ack.mission_loaded;
-      airborneMissionRunning.value = response.ack.mission_running;
-      const matches = response.ack.task_id === activeTaskId.value;
-      taskSyncState.value = matches ? 'matched' : 'mismatch';
-      missionLoaded.value = matches && response.ack.mission_loaded;
-      missionRunning.value = matches && response.ack.mission_running;
-      visionArmed.value = matches && response.ack.vision_armed;
-      if (response.ack.ok) commandLink.value = 'online';
+      applyAuthoritativeAck(response.ack);
     }
     return response;
   }
