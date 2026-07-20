@@ -232,6 +232,7 @@ _is_canonical_plan = is_canonical_plan
 def store_plan_atomic(plan: Mapping[str, Any], output_path: Path) -> None:
     temporary_path: Path | None = None
     try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",

@@ -114,6 +114,21 @@ def test_stores_plan_by_replacing_from_sibling_temp_file(tmp_path, monkeypatch):
     assert json.loads(output.read_text())["task_id"] == "case-1"
 
 
+def test_stores_plan_when_runtime_parent_does_not_exist(tmp_path):
+    output = tmp_path / "runtime" / "active.json"
+
+    store_plan_atomic(
+        {
+            "message_type": "task_plan",
+            "task_id": "case-1",
+            "waypoints": [{"id": "A9B1"}],
+        },
+        output,
+    )
+
+    assert json.loads(output.read_text())["task_id"] == "case-1"
+
+
 @pytest.mark.asyncio
 async def test_rejects_stdin_above_64_kib_before_spawning(tmp_path):
     spawn_marker = tmp_path / "spawned"
