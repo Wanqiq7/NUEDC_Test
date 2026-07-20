@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import signal
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Mapping
@@ -45,40 +47,12 @@ class PlannerClient:
                 "planner input exceeds 64 KiB",
             )
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                str(self._executable), stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )
-        except OSError as error:
-            raise PlannerError(
-                "planner_process_failed",
-                f"planner process could not start: {error}",
-            ) from error
-
-        try:
-            stdout, _ = await asyncio.wait_for(
-                process.communicate(input=request_bytes),
-                timeout=self._timeout_s,
-            )
-        except asyncio.TimeoutError as error:
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
-            await process.wait()
-            raise PlannerError("planner_timeout", "planner timeout") from error
-
-        if process.returncode != 0:
-            raise PlannerError(
-                "planner_process_failed",
-                f"planner process failed with exit code {process.returncode}",
-            )
-        if len(stdout) > self._max_output_bytes:
-            raise PlannerError(
-                "planner_output_too_large",
-                "planner output exceeds configured limit",
-            )
+        planner_task = asyncio.create_task(
+            asyncio.to_thread(self._run_planner, request_bytes)
+        )
+        while not planner_task.done():
+            await asyncio.sleep(0.005)
+        stdout = planner_task.result()
 
         try:
             response = json.loads(stdout)
@@ -101,6 +75,54 @@ class PlannerClient:
                 "planner response does not contain a canonical task plan",
             )
         return plan
+
+    def _run_planner(self, request_bytes: bytes) -> bytes:
+        try:
+            process = subprocess.Popen(
+                [str(self._executable)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=os.name == "posix",
+            )
+        except OSError as error:
+            raise PlannerError(
+                "planner_process_failed",
+                f"planner process could not start: {error}",
+            ) from error
+
+        try:
+            stdout, _ = process.communicate(
+                input=request_bytes,
+                timeout=self._timeout_s,
+            )
+        except subprocess.TimeoutExpired as error:
+            _kill_process_group(process)
+            process.communicate()
+            raise PlannerError("planner_timeout", "planner timeout") from error
+
+        if process.returncode != 0:
+            raise PlannerError(
+                "planner_process_failed",
+                f"planner process failed with exit code {process.returncode}",
+            )
+        if len(stdout) > self._max_output_bytes:
+            raise PlannerError(
+                "planner_output_too_large",
+                "planner output exceeds configured limit",
+            )
+        return stdout
+
+
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is None:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except ProcessLookupError:
+            pass
 
 
 def _is_canonical_plan(plan: object) -> bool:
