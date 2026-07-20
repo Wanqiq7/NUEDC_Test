@@ -378,6 +378,47 @@ class AlwaysTimeoutTransport:
         raise TimeoutError("command ack timed out")
 
 
+class NonemptyTaskAckTransport:
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    async def send(self, payload: bytes) -> bytes:
+        self.attempts += 1
+        request = MESSAGES.Envelope.FromString(payload)
+        reply = MESSAGES.Envelope()
+        reply.ack.success = False
+        reply.ack.message = "stale command"
+        reply.ack.task_id = "case-1"
+        reply.ack.mission_loaded = True
+        reply.ack.mission_running = True
+        reply.ack.last_accepted_sequence = request.sequence
+        reply.ack.vision_armed = True
+        return reply.SerializeToString()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "command",
+    [
+        GroundControlCommand.START,
+        GroundControlCommand.STOP,
+        GroundControlCommand.ARM_TARGETING,
+        GroundControlCommand.DISARM_TARGETING,
+    ],
+)
+async def test_stateful_command_rejects_empty_task_before_transport(
+    transport_fixture, command
+):
+    client, _, _, _, _ = transport_fixture
+    transport = NonemptyTaskAckTransport()
+    client.replace_transport(transport)
+
+    with pytest.raises(ValueError, match="task_id is required"):
+        await client.send_control(command, "")
+
+    assert transport.attempts == 0
+
+
 @pytest.mark.asyncio
 async def test_three_ping_failures_mark_command_offline(transport_fixture):
     client, ground_state, _, _, _ = transport_fixture

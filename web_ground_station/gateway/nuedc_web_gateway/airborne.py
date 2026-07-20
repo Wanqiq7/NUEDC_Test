@@ -124,6 +124,8 @@ class AirborneClient:
     async def send_control(
         self, command: GroundControlCommand, task_id: str
     ) -> AckSnapshot:
+        if command is not GroundControlCommand.PING and not task_id.strip():
+            raise ValueError("task_id is required for stateful commands")
         envelope = self._new_envelope()
         envelope.control_command.type = _PROTO_COMMAND_TYPES[command]
         envelope.control_command.task_id = task_id
