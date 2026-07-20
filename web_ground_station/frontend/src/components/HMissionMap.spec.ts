@@ -79,4 +79,45 @@ describe('HMissionMap', () => {
     expect(wrapper.get('svg').attributes('viewBox')).toBe(originalViewBox);
     expect(wrapper.get('[data-testid="route"]').attributes('points')).toBe(originalRoute);
   });
+
+  it.each([
+    { touchdown_x_cm: 450, touchdown_y_cm: 350 },
+    { touchdown_x_cm: 444, touchdown_y_cm: 344 },
+  ])(
+    'offsets a colliding touchdown symbol while preserving its real anchor (%o)',
+    (touchdown) => {
+      const collisionPlan = {
+        ...plan,
+        metadata_json: JSON.stringify({
+          terminal_cell: 'A9B1',
+          ...touchdown,
+        }),
+      };
+      const wrapper = mountMap({
+        plan: collisionPlan,
+        selectedNoFlyCells: [],
+        editable: false,
+      });
+      const start = wrapper.get('[data-marker="start"]');
+      const descent = wrapper.get('[data-marker="descent-start"]');
+      const touchdownMarker = wrapper.get('[data-marker="touchdown"]');
+      const leader = wrapper.get('[data-testid="touchdown-leader"]');
+
+      const positions = [start, descent, touchdownMarker].map(
+        (marker) => `${marker.attributes('data-display-x')},${marker.attributes('data-display-y')}`,
+      );
+      expect(new Set(positions).size).toBe(3);
+      expect(leader.attributes('x1')).toBe(String(touchdown.touchdown_x_cm));
+      expect(leader.attributes('y1')).toBe(String(400 - touchdown.touchdown_y_cm));
+      expect(leader.attributes('x2')).toBe(touchdownMarker.attributes('data-display-x'));
+      expect(leader.attributes('y2')).toBe(touchdownMarker.attributes('data-display-y'));
+      expect(Number(touchdownMarker.attributes('data-display-x'))).toBeGreaterThanOrEqual(12);
+      expect(Number(touchdownMarker.attributes('data-display-x'))).toBeLessThanOrEqual(488);
+      expect(Number(touchdownMarker.attributes('data-display-y'))).toBeGreaterThanOrEqual(12);
+      expect(Number(touchdownMarker.attributes('data-display-y'))).toBeLessThanOrEqual(398);
+      expect(wrapper.get('[data-testid="route"]').attributes('points')).toBe(
+        '450,50 400,50 400,200',
+      );
+    },
+  );
 });

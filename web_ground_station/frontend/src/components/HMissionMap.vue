@@ -66,29 +66,61 @@
         vector-effect="non-scaling-stroke"
       />
 
-      <g v-if="startPoint" data-marker="start" class="marker start-marker" aria-label="起点">
+      <line
+        v-if="descentMarkerOffset && descentStartPoint && descentDisplayPoint"
+        data-testid="descent-marker-leader"
+        class="marker-leader"
+        :x1="descentStartPoint.x"
+        :y1="descentStartPoint.y"
+        :x2="descentDisplayPoint.x"
+        :y2="descentDisplayPoint.y"
+        vector-effect="non-scaling-stroke"
+      />
+      <line
+        v-if="touchdownMarkerOffset && touchdownPoint && touchdownDisplayPoint"
+        data-testid="touchdown-leader"
+        class="marker-leader touchdown-leader"
+        :x1="touchdownPoint.x"
+        :y1="touchdownPoint.y"
+        :x2="touchdownDisplayPoint.x"
+        :y2="touchdownDisplayPoint.y"
+        vector-effect="non-scaling-stroke"
+      />
+
+      <g
+        v-if="startPoint"
+        data-marker="start"
+        class="marker start-marker"
+        aria-label="起点"
+        :data-display-x="startPoint.x"
+        :data-display-y="startPoint.y"
+      >
         <circle :cx="startPoint.x" :cy="startPoint.y" r="9" />
         <path :d="`M ${startPoint.x - 4} ${startPoint.y} h 8 M ${startPoint.x} ${startPoint.y - 4} v 8`" />
       </g>
       <g
-        v-if="descentStartPoint"
+        v-if="descentDisplayPoint"
         data-marker="descent-start"
         class="marker descent-marker"
         aria-label="下降起点"
+        :data-display-x="descentDisplayPoint.x"
+        :data-display-y="descentDisplayPoint.y"
       >
         <path
-          :d="`M ${descentStartPoint.x} ${descentStartPoint.y - 10} L ${descentStartPoint.x + 10} ${descentStartPoint.y + 8} L ${descentStartPoint.x - 10} ${descentStartPoint.y + 8} Z`"
+          :d="`M ${descentDisplayPoint.x} ${descentDisplayPoint.y - 10} L ${descentDisplayPoint.x + 10} ${descentDisplayPoint.y + 8} L ${descentDisplayPoint.x - 10} ${descentDisplayPoint.y + 8} Z`"
         />
       </g>
       <g
-        v-if="touchdownPoint"
+        v-if="touchdownDisplayPoint"
         data-marker="touchdown"
         class="marker touchdown-marker"
         aria-label="真实触地点"
+        :data-display-x="touchdownDisplayPoint.x"
+        :data-display-y="touchdownDisplayPoint.y"
       >
-        <circle :cx="touchdownPoint.x" :cy="touchdownPoint.y" r="10" />
+        <circle :cx="touchdownDisplayPoint.x" :cy="touchdownDisplayPoint.y" r="10" />
         <path
-          :d="`M ${touchdownPoint.x - 6} ${touchdownPoint.y - 6} L ${touchdownPoint.x + 6} ${touchdownPoint.y + 6} M ${touchdownPoint.x + 6} ${touchdownPoint.y - 6} L ${touchdownPoint.x - 6} ${touchdownPoint.y + 6}`"
+          :d="`M ${touchdownDisplayPoint.x - 6} ${touchdownDisplayPoint.y - 6} L ${touchdownDisplayPoint.x + 6} ${touchdownDisplayPoint.y + 6} M ${touchdownDisplayPoint.x + 6} ${touchdownDisplayPoint.y - 6} L ${touchdownDisplayPoint.x - 6} ${touchdownDisplayPoint.y + 6}`"
         />
       </g>
     </svg>
@@ -136,6 +168,22 @@ const emit = defineEmits<{
 const columns = Array.from({ length: 9 }, (_, index) => index + 1);
 const rows = Array.from({ length: 7 }, (_, index) => index + 1);
 const fullViewBox = { x: 0, y: 0, width: 500, height: 410 };
+const markerClearance = 25;
+const markerMargin = 12;
+const markerOffsets: Point[] = [
+  { x: -30, y: 0 },
+  { x: 0, y: 30 },
+  { x: 0, y: -30 },
+  { x: 30, y: 0 },
+  { x: -30, y: 30 },
+  { x: -30, y: -30 },
+  { x: 30, y: 30 },
+  { x: 30, y: -30 },
+  { x: -60, y: 0 },
+  { x: 0, y: 60 },
+  { x: 0, y: -60 },
+  { x: 60, y: 0 },
+];
 const currentViewBox = ref({ ...fullViewBox });
 const lastTouchAt = ref(0);
 
@@ -192,6 +240,29 @@ const touchdownPoint = computed(() => {
     ? { x, y: 400 - y }
     : null;
 });
+const descentDisplayPoint = computed(() => {
+  if (!descentStartPoint.value) return null;
+  return placeMarker(descentStartPoint.value, startPoint.value ? [startPoint.value] : []);
+});
+const touchdownDisplayPoint = computed(() => {
+  if (!touchdownPoint.value) return null;
+  return placeMarker(
+    touchdownPoint.value,
+    [startPoint.value, descentDisplayPoint.value].filter((point): point is Point => point !== null),
+  );
+});
+const descentMarkerOffset = computed(
+  () =>
+    descentStartPoint.value !== null &&
+    descentDisplayPoint.value !== null &&
+    !samePoint(descentStartPoint.value, descentDisplayPoint.value),
+);
+const touchdownMarkerOffset = computed(
+  () =>
+    touchdownPoint.value !== null &&
+    touchdownDisplayPoint.value !== null &&
+    !samePoint(touchdownPoint.value, touchdownDisplayPoint.value),
+);
 const descentLine = computed(() => {
   if (!descentStartPoint.value || !touchdownPoint.value) return '';
   return `${descentStartPoint.value.x},${descentStartPoint.value.y} ${touchdownPoint.value.x},${touchdownPoint.value.y}`;
@@ -215,6 +286,41 @@ function decodeCell(code: string): Point | null {
   const match = /^A([1-9])B([1-7])$/.exec(code);
   if (!match) return null;
   return cellCenter(Number(match[1]), Number(match[2]));
+}
+
+function placeMarker(anchor: Point, occupied: Point[]): Point {
+  const candidates = [{ x: 0, y: 0 }, ...markerOffsets].map((offset) =>
+    boundMarker({ x: anchor.x + offset.x, y: anchor.y + offset.y }),
+  );
+  const clear = candidates.find((candidate) =>
+    occupied.every((point) => pointDistance(candidate, point) >= markerClearance),
+  );
+  if (clear) return clear;
+
+  return candidates.reduce((best, candidate) =>
+    minimumDistance(candidate, occupied) > minimumDistance(best, occupied) ? candidate : best,
+  );
+}
+
+function boundMarker(point: Point): Point {
+  return {
+    x: Math.min(fullViewBox.width - markerMargin, Math.max(markerMargin, point.x)),
+    y: Math.min(fullViewBox.height - markerMargin, Math.max(markerMargin, point.y)),
+  };
+}
+
+function minimumDistance(point: Point, occupied: Point[]): number {
+  return occupied.length === 0
+    ? Number.POSITIVE_INFINITY
+    : Math.min(...occupied.map((other) => pointDistance(point, other)));
+}
+
+function pointDistance(left: Point, right: Point): number {
+  return Math.hypot(left.x - right.x, left.y - right.y);
+}
+
+function samePoint(left: Point, right: Point): boolean {
+  return left.x === right.x && left.y === right.y;
 }
 
 function activateCell(code: string): void {
@@ -327,6 +433,16 @@ function fit(): void {
   stroke-dasharray: 7 5;
   stroke-width: 3;
   pointer-events: none;
+}
+
+.marker-leader {
+  stroke: #f4c95d;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.touchdown-leader {
+  stroke: #ef6a59;
 }
 
 .marker {
