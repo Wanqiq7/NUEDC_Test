@@ -2,8 +2,7 @@
   <section class="planning-panel" aria-labelledby="planning-title">
     <header class="panel-header">
       <div>
-        <p class="eyebrow">H 题 / 航线规划</p>
-        <h2 id="planning-title">任务区域 <small>MISSION FIELD</small></h2>
+        <h2 id="planning-title">任务区域</h2>
       </div>
       <div class="plan-identity" aria-label="当前任务">
         <span>ACTIVE TASK</span>
@@ -24,16 +23,6 @@
           <span class="section-label">规划输入</span>
           <span class="control-index">INPUT</span>
         </div>
-        <label class="case-input">
-          <span class="section-label">案例文件</span>
-          <input
-            v-model.trim="casePath"
-            data-testid="case-path"
-            type="text"
-            :disabled="planning || !store.canPlan"
-            aria-label="H 题案例文件路径"
-          />
-        </label>
         <div class="control-section">
           <span class="section-label">禁飞区选择</span>
           <strong>{{ editing ? `${selectedCells.length} / 3` : `${officialNoFlyCells.length} 格` }}</strong>
@@ -207,7 +196,6 @@ function contiguousLine(cells: string[]): boolean {
   border-bottom: 1px solid #41535b;
 }
 
-.eyebrow,
 .section-label {
   margin: 0 0 4px;
   color: #9bafb6;
@@ -217,8 +205,6 @@ function contiguousLine(cells: string[]): boolean {
   text-transform: uppercase;
 }
 
-.eyebrow { display: flex; align-items: center; gap: 9px; color: #f5c451; }
-.eyebrow-mark { display: inline-grid; width: 24px; height: 18px; place-items: center; color: #10181c; background: #f5c451; font-size: 10px; }
 
 h2 {
   margin: 0;
@@ -276,31 +262,6 @@ h2 small { margin-left: 8px; color: #73878f; font: 700 10px "JetBrains Mono", ui
   gap: 4px;
   padding: 12px 12px 14px 0;
   border-bottom: 1px solid #2b383f;
-}
-
-.case-input {
-  display: grid;
-  gap: 6px;
-  padding-right: 12px;
-}
-
-.case-input input {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 10px;
-  border: 1px solid #526b75;
-  border-radius: 4px;
-  color: #e7ecef;
-  background: #0b1216;
-  font: 12px "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
-  outline: none;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-
-.case-input input:focus { border-color: #f5c451; box-shadow: 0 0 0 2px rgb(245 196 81 / 18%); }
-
-.case-input input:disabled {
-  opacity: 0.55;
 }
 
 .control-section strong {
