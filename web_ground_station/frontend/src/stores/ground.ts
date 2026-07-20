@@ -54,6 +54,22 @@ export const useGroundStore = defineStore('ground', () => {
     recentError: recentError.value,
     recordingError: recordingError.value,
   }));
+  const canLoad = computed(() => plan.value !== null && activeTaskId.value !== null);
+  const canStart = computed(
+    () =>
+      commandLink.value === 'online' &&
+      activeTaskId.value !== null &&
+      missionLoaded.value &&
+      !missionRunning.value &&
+      ack.value !== null &&
+      ack.value.task_id === activeTaskId.value,
+  );
+  const canStop = computed(
+    () =>
+      commandLink.value === 'online' &&
+      missionRunning.value &&
+      activeTaskId.value !== null,
+  );
 
   function applySnapshot(snapshot: GroundSnapshot): boolean {
     if (hasSnapshot.value && snapshot.snapshot_seq <= snapshotSeq.value) {
@@ -142,8 +158,20 @@ export const useGroundStore = defineStore('ground', () => {
   return {
     state,
     activeTaskId,
+    ack,
+    canLoad,
+    canStart,
+    canStop,
     commandLink,
     currentCell,
+    detectionTotals,
+    recentDetections,
+    recentError,
+    recentSummary,
+    recordingError,
+    telemetryLink,
+    visitedCount,
+    visionArmed,
     plan,
     missionLoaded,
     missionRunning,
