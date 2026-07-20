@@ -31,9 +31,9 @@ async def test_returns_canonical_plan_from_versioned_request(tmp_path):
         tmp_path,
         "import pathlib, sys\n"
         f"pathlib.Path({str(request_capture)!r}).write_bytes(sys.stdin.buffer.read())\n"
-        "sys.stdout.write('{\"ok\":true,\"plan\":{\"message_type\":\"task_plan\","
-        "\"task_id\":\"case-1\",\"waypoints\":[{\"id\":\"A9B1\"}]},"
-        "\"metrics\":{}}')\n",
+        'sys.stdout.write(\'{"ok":true,"plan":{"message_type":"task_plan",'
+        '"task_id":"case-1","waypoints":[{"id":"A9B1"}]},'
+        '"metrics":{}}\')\n',
     )
     client = PlannerClient(executable, timeout_s=1.0, max_output_bytes=4096)
 
@@ -58,8 +58,8 @@ async def test_runs_sync_popen_in_worker_thread_without_shell(tmp_path, monkeypa
         tmp_path,
         "import sys\n"
         "sys.stdin.buffer.read()\n"
-        "sys.stdout.write('{\"ok\":true,\"plan\":{\"message_type\":\"task_plan\","
-        "\"task_id\":\"case-1\",\"waypoints\":[{}]}}')\n",
+        'sys.stdout.write(\'{"ok":true,"plan":{"message_type":"task_plan",'
+        '"task_id":"case-1","waypoints":[{}]}}\')\n',
     )
     main_thread_id = threading.get_ident()
     popen_calls = []
@@ -119,15 +119,12 @@ async def test_rejects_stdin_above_64_kib_before_spawning(tmp_path):
     spawn_marker = tmp_path / "spawned"
     executable = make_python_executable(
         tmp_path,
-        "import pathlib\n"
-        f"pathlib.Path({str(spawn_marker)!r}).touch()\n",
+        f"import pathlib\npathlib.Path({str(spawn_marker)!r}).touch()\n",
     )
     client = PlannerClient(executable, timeout_s=1.0, max_output_bytes=4096)
 
     with pytest.raises(PlannerError) as caught:
-        await client.plan(
-            PlanningRequest(case_path="x" * (64 * 1024), no_fly_cells=[])
-        )
+        await client.plan(PlanningRequest(case_path="x" * (64 * 1024), no_fly_cells=[]))
 
     assert caught.value.error_code == "planner_input_too_large"
     assert not spawn_marker.exists()
@@ -226,9 +223,7 @@ async def test_rejects_output_limit_before_process_timeout(tmp_path):
         ("import sys\nsys.stdout.write('0' * 5000)\n", "planner_output_too_large"),
     ],
 )
-async def test_rejects_failed_or_invalid_planner_output(
-    tmp_path, script, error_code
-):
+async def test_rejects_failed_or_invalid_planner_output(tmp_path, script, error_code):
     executable = make_python_executable(tmp_path, script)
     client = PlannerClient(executable, timeout_s=1.0, max_output_bytes=4096)
 
@@ -236,6 +231,23 @@ async def test_rejects_failed_or_invalid_planner_output(
         await client.plan(PlanningRequest(case_path="case.json", no_fly_cells=[]))
 
     assert caught.value.error_code == error_code
+
+
+@pytest.mark.asyncio
+async def test_preserves_structured_planner_error_from_nonzero_exit(tmp_path):
+    executable = make_python_executable(
+        tmp_path,
+        "import sys\n"
+        'sys.stdout.write(\'{"ok":false,"error_code":"case_load_failed",'
+        '"message":"case missing"}\')\n'
+        "sys.exit(3)\n",
+    )
+    client = PlannerClient(executable, timeout_s=1.0, max_output_bytes=4096)
+
+    with pytest.raises(PlannerError, match="case missing") as caught:
+        await client.plan(PlanningRequest(case_path="case.json", no_fly_cells=[]))
+
+    assert caught.value.error_code == "case_load_failed"
 
 
 @pytest.mark.asyncio
@@ -263,8 +275,7 @@ async def test_rejects_noncanonical_planner_response(tmp_path, response):
     encoded_response = json.dumps(response, separators=(",", ":"))
     executable = make_python_executable(
         tmp_path,
-        "import sys\n"
-        f"sys.stdout.write({encoded_response!r})\n",
+        f"import sys\nsys.stdout.write({encoded_response!r})\n",
     )
     client = PlannerClient(executable, timeout_s=1.0, max_output_bytes=4096)
 

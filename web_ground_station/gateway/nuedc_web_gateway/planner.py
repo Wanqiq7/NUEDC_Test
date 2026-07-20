@@ -56,16 +56,31 @@ class PlannerClient:
         # event loop progressing without running subprocess work on this thread.
         while not planner_task.done():
             await asyncio.sleep(0.005)
-        stdout = planner_task.result()
+        stdout, returncode = planner_task.result()
 
         try:
             response = json.loads(stdout)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            if returncode != 0:
+                raise PlannerError(
+                    "planner_process_failed",
+                    f"planner process failed with exit code {returncode}",
+                ) from error
             raise PlannerError(
                 "planner_invalid_response",
                 "planner returned invalid JSON",
             ) from error
 
+        if isinstance(response, dict) and response.get("ok") is False:
+            code = response.get("error_code")
+            message = response.get("message")
+            if isinstance(code, str) and isinstance(message, str):
+                raise PlannerError(code, message)
+        if returncode != 0:
+            raise PlannerError(
+                "planner_process_failed",
+                f"planner process failed with exit code {returncode}",
+            )
         if not isinstance(response, dict) or response.get("ok") is not True:
             raise PlannerError(
                 "planner_invalid_response",
@@ -115,12 +130,7 @@ class PlannerClient:
             _drain_and_wait(process)
             raise
 
-        if process.returncode != 0:
-            raise PlannerError(
-                "planner_process_failed",
-                f"planner process failed with exit code {process.returncode}",
-            )
-        return stdout
+        return stdout, process.returncode
 
 
 def _exchange_bounded(
@@ -205,7 +215,7 @@ def _drain_and_wait(process: subprocess.Popen[bytes]) -> None:
     process.wait()
 
 
-def _is_canonical_plan(plan: object) -> bool:
+def is_canonical_plan(plan: object) -> bool:
     return (
         isinstance(plan, dict)
         and plan.get("message_type") == "task_plan"
@@ -214,6 +224,9 @@ def _is_canonical_plan(plan: object) -> bool:
         and isinstance(plan.get("waypoints"), list)
         and bool(plan["waypoints"])
     )
+
+
+_is_canonical_plan = is_canonical_plan
 
 
 def store_plan_atomic(plan: Mapping[str, Any], output_path: Path) -> None:

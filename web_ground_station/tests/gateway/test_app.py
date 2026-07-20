@@ -135,6 +135,7 @@ async def test_health_snapshot_probe_and_lifespan(tmp_path):
     app = create_app(svc)
     async with app.router.lifespan_context(app):
         response = await request(app, "GET", "/api/health")
+        await asyncio.sleep(0)
         assert response.json() == {"ok": True}
         assert recorder.started
         assert airborne.probe_count == 1
@@ -263,12 +264,16 @@ def test_restart_plan_resyncing(tmp_path):
 class FakeWebSocket:
     def __init__(self):
         self.sent, self.accepted = [], False
+        self.received = asyncio.Queue()
 
     async def accept(self):
         self.accepted = True
 
     async def send_json(self, value):
         self.sent.append(value)
+
+    async def receive(self):
+        return await self.received.get()
 
 
 @pytest.mark.asyncio
@@ -285,10 +290,10 @@ async def test_websocket_snapshot_and_incremental_unsubscribe(tmp_path):
     svc.state.publish_event(
         WebEvent(type="task_event", seq=3, timestamp_ms=1, payload={})
     )
-    await asyncio.sleep(0)
+    await asyncio.sleep(0.01)
     assert ws.sent[1]["seq"] == 3
-    task.cancel()
-    await asyncio.gather(task, return_exceptions=True)
+    ws.received.put_nowait({"type": "websocket.disconnect"})
+    await task
     assert not svc.state._subscribers
 
 

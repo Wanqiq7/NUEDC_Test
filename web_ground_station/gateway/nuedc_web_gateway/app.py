@@ -37,6 +37,7 @@ class GatewayServices:
     airborne: AirborneClient
     stop: asyncio.Event = field(default_factory=asyncio.Event)
     tasks: list[asyncio.Task[Any]] = field(default_factory=list)
+    initial_probe_task: asyncio.Task[Any] | None = None
 
     def __post_init__(self) -> None:
         path = self.config.runtime_dir / "active_mission_plan.json"
@@ -56,31 +57,44 @@ async def _run_background(coro, stop: asyncio.Event) -> None:
         raise
 
 
-@asynccontextmanager
-async def _lifespan(app: FastAPI):
-    services: GatewayServices = app.state.services
-    await services.recorder.start()
+async def _initial_probe(services: GatewayServices) -> None:
     try:
         ack = await services.airborne.probe_once()
         if ack.ok:
             services.state.apply_ack(ack, _now_ms())
+    except asyncio.CancelledError:
+        raise
     except Exception as error:
         services.state.set_recording_error(f"airborne probe failed: {error}")
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    services: GatewayServices = app.state.services
+    await services.recorder.start()
     services.stop.clear()
+    services.initial_probe_task = asyncio.create_task(_initial_probe(services))
     services.tasks = [
-        asyncio.create_task(_run_background(services.airborne.heartbeat_loop, services.stop)),
-        asyncio.create_task(_run_background(services.airborne.telemetry_loop, services.stop)),
+        asyncio.create_task(
+            _run_background(services.airborne.heartbeat_loop, services.stop)
+        ),
+        asyncio.create_task(
+            _run_background(services.airborne.telemetry_loop, services.stop)
+        ),
     ]
     try:
         yield
     finally:
         services.stop.set()
         tasks = list(services.tasks)
+        if services.initial_probe_task is not None:
+            tasks.append(services.initial_probe_task)
         for task in tasks:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         services.tasks.clear()
+        services.initial_probe_task = None
         await services.recorder.stop()
         services.airborne.close()
 
@@ -93,7 +107,9 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
 
 
 def _ack_response(ack: AckSnapshot) -> JSONResponse:
-    return JSONResponse(content={"ok": ack.ok, "message": ack.message, "ack": ack.model_dump()})
+    return JSONResponse(
+        content={"ok": ack.ok, "message": ack.message, "ack": ack.model_dump()}
+    )
 
 
 def create_app(services: GatewayServices | None = None) -> FastAPI:
@@ -101,7 +117,9 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
         config = GatewayConfig.from_env({})
         state = GroundState()
         recorder = JsonlRecorder(config.runtime_dir / "sessions", state)
-        planner = PlannerClient(config.planner_cli, timeout_s=10.0, max_output_bytes=4 * 1024 * 1024)
+        planner = PlannerClient(
+            config.planner_cli, timeout_s=10.0, max_output_bytes=4 * 1024 * 1024
+        )
         airborne = AirborneClient(config, state, recorder)
         services = GatewayServices(config, planner, state, recorder, airborne)
 
@@ -118,16 +136,51 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
 
     @app.post("/api/mission/plan")
     async def plan(request: PlanRequest):
+        cases_root = (
+            Path(__file__).resolve().parents[4] / "shared" / "cases"
+        ).resolve()
+        candidate = Path(request.case_path)
+        if candidate.is_absolute():
+            return _error(422, "invalid_request", "case_path must be relative")
+        try:
+            resolved = (cases_root / candidate).resolve()
+            resolved.relative_to(cases_root)
+        except ValueError:
+            return _error(422, "invalid_request", "case_path escapes cases root")
         try:
             result = await services.planner.plan(
                 PlanningRequest(request.case_path, request.no_fly_cells)
             )
-            store_plan_atomic(result, services.config.runtime_dir / "active_mission_plan.json")
+            store_plan_atomic(
+                result, services.config.runtime_dir / "active_mission_plan.json"
+            )
             services.state.apply_plan(result, _now_ms())
-            services.recorder.record(WebEvent(type="task_plan", seq=services.state.snapshot(_now_ms()).snapshot_seq, timestamp_ms=_now_ms(), task_id=result["task_id"], payload=result))
+            services.recorder.record(
+                WebEvent(
+                    type="task_plan",
+                    seq=services.state.snapshot(_now_ms()).snapshot_seq,
+                    timestamp_ms=_now_ms(),
+                    task_id=result["task_id"],
+                    payload=result,
+                )
+            )
             return {"ok": True, "plan": result}
         except PlannerError as error:
-            status = 409 if error.error_code in {"invalid_no_fly_zone", "planner_rejected"} else 504 if error.error_code == "planner_timeout" else 502
+            status = (
+                422
+                if error.error_code in {"invalid_request", "unsafe_path"}
+                else 409
+                if error.error_code
+                in {
+                    "invalid_no_fly_zone",
+                    "planner_rejected",
+                    "case_load_failed",
+                    "planning_failed",
+                }
+                else 504
+                if error.error_code == "planner_timeout"
+                else 502
+            )
             return _error(status, error.error_code, str(error))
 
     @app.post("/api/mission/load")
@@ -137,7 +190,11 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
             return _error(409, "mission_not_ready", "no active mission plan")
         ack = await services.airborne.send_mission_load(current.plan)
         services.state.apply_ack(ack, _now_ms())
-        return _ack_response(ack) if ack.ok else _error(409, "mission_load_failed", ack.message)
+        return (
+            _ack_response(ack)
+            if ack.ok
+            else _error(409, "mission_load_failed", ack.message)
+        )
 
     def _current_ready() -> tuple[Any, JSONResponse | None]:
         current = services.state.snapshot(_now_ms())
@@ -157,18 +214,34 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
         current, failure = _current_ready()
         if failure is not None:
             return failure
-        ack = await services.airborne.send_control(GroundControlCommand.START, current.active_task_id)
+        ack = await services.airborne.send_control(
+            GroundControlCommand.START, current.active_task_id
+        )
         services.state.apply_ack(ack, _now_ms())
-        return _ack_response(ack) if ack.ok else _error(409, "mission_start_failed", ack.message)
+        return (
+            _ack_response(ack)
+            if ack.ok
+            else _error(409, "mission_start_failed", ack.message)
+        )
 
     @app.post("/api/mission/stop")
     async def stop():
         current = services.state.snapshot(_now_ms())
-        if current.command_link != "online" or not current.mission_running or not current.active_task_id:
+        if (
+            current.command_link != "online"
+            or not current.mission_running
+            or not current.active_task_id
+        ):
             return _error(409, "mission_not_running", "mission is not running")
-        ack = await services.airborne.send_control(GroundControlCommand.STOP, current.active_task_id)
+        ack = await services.airborne.send_control(
+            GroundControlCommand.STOP, current.active_task_id
+        )
         services.state.apply_ack(ack, _now_ms())
-        return _ack_response(ack) if ack.ok else _error(409, "mission_stop_failed", ack.message)
+        return (
+            _ack_response(ack)
+            if ack.ok
+            else _error(409, "mission_stop_failed", ack.message)
+        )
 
     @app.post("/api/link/probe")
     async def probe():
@@ -177,7 +250,11 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
         except Exception as error:
             return _error(504, "command_timeout", str(error))
         services.state.apply_ack(ack, _now_ms())
-        return _ack_response(ack) if ack.ok else _error(504, "command_timeout", ack.message)
+        return (
+            _ack_response(ack)
+            if ack.ok
+            else _error(504, "command_timeout", ack.message)
+        )
 
     @app.websocket("/ws/telemetry")
     async def telemetry(websocket: WebSocket):
@@ -187,11 +264,22 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
             snapshot = services.state.snapshot(_now_ms()).model_dump(mode="json")
             await websocket.send_json({"type": "snapshot", "snapshot": snapshot})
             while True:
-                event = await queue.get()
-                try:
-                    await websocket.send_json(event.model_dump(mode="json"))
-                finally:
-                    queue.task_done()
+                event_task = asyncio.create_task(queue.get())
+                receive_task = asyncio.create_task(websocket.receive())
+                done, pending = await asyncio.wait(
+                    {event_task, receive_task}, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                if receive_task in done:
+                    message = receive_task.result()
+                    if message.get("type") == "websocket.disconnect":
+                        break
+                    continue
+                event = event_task.result()
+                queue.task_done()
+                await websocket.send_json(event.model_dump(mode="json"))
         except (WebSocketDisconnect, asyncio.CancelledError):
             pass
         finally:
