@@ -1,5 +1,5 @@
 <template>
-  <section class="mission-map" aria-label="H题任务地图">
+  <section data-testid="mission-map" class="mission-map" aria-label="H题任务地图">
     <div class="map-toolbar" aria-label="地图视图控制">
       <button
         v-for="control in controls"
@@ -36,6 +36,7 @@
         <g
           v-for="cell in cells"
           :key="cell.code"
+          :data-testid="`cell-${cell.code}`"
           :data-cell="cell.code"
           :class="['cell', { 'no-fly': selectedNoFlySet.has(cell.code), editable }]"
           role="button"

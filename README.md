@@ -2,7 +2,7 @@
 
 # NUEDC GROUND STATION
 
-**面向无人机竞赛任务规划与执行监控的 Qt 6 地面站**
+**面向无人机竞赛任务规划与执行监控的 Web 地面站，保留 Qt 6 回退实现**
 
 <p>
   <img src="https://img.shields.io/badge/Qt-6-41CD52.svg?style=for-the-badge&logo=qt">
@@ -17,9 +17,12 @@
 
 # 项目简介
 
-NUEDC Ground Station 是面向无人机竞赛任务的 Qt 6 地面站。工作站集成任务规划、
-操作员交互、航线预览、任务下发、状态监控和检测结果汇总，当前内置 2025 年电赛
-H 题野生动物巡查 Adapter。
+NUEDC Ground Station 是面向无人机竞赛任务的地面站。比赛主入口已迁移为 FastAPI、
+Vue 3 和 Quasar 实现的 Web 主控台；Qt 6 地面站作为迁移期回退保留。两者都复用同一
+C++ H 题规划核心和 ZeroMQ/Protobuf 机载协议。
+
+标准比赛入口是 `http://10.42.0.1:8000`。Qt 与 Web 地面站不得同时运行控制链路，
+否则两个 REQ 客户端会竞争向机载端发送任务和控制命令。
 
 地面站负责案例加载、禁飞区编辑、航线生成与校验、任务下发和结果展示，但不负责机载
 飞行决策。任务下发后，机载 `mission_coordinator` 根据 LIO 定位运行速度闭环；STM32
@@ -81,6 +84,7 @@ Adapter，而不是修改通用 Shell。
 
 | 模块 | 主要目录 | 说明 |
 | :--- | :--- | :--- |
+| Web 主控台 | `web_ground_station/` | FastAPI Gateway、Vue/Quasar 单页主控、离线启动和浏览器测试。 |
 | Qt 应用 Shell | `ground_station_computer/src/framework` | 管理页面、通信组件、任务 Adapter 和应用生命周期。 |
 | H 题 Adapter | `ground_station_computer/src/h_problem` | 连接 H 题规划、协议校验、地图 UI 和检测数据库。 |
 | 通用任务核心 | `shared/cpp/include/competition_core`、`shared/cpp/src` | 定义 `TaskPlan`、任务存储、命令与 Protobuf codec。 |
@@ -128,6 +132,23 @@ cmake --build build --parallel 2
 不要直接编辑或提交生成文件。
 
 ## 启动地面站
+
+比赛默认启动 Web 地面站。先构建 C++ 规划器和静态前端，再执行离线预检：
+
+```bash
+cd web_ground_station/frontend
+corepack pnpm install --offline --frozen-lockfile
+corepack pnpm build
+cd ../..
+source runtime/web_ground_station.env
+web_ground_station/scripts/check_web_ground_station.sh
+web_ground_station/scripts/start_competition.sh
+```
+
+在 Chromium 打开 `http://10.42.0.1:8000`。完整开发、应急 STOP、PlotJuggler PID 诊断和
+离线验收命令见 [Web 地面站操作手册](web_ground_station/README.md)。
+
+Qt 仅作为迁移回退，启动前必须确认 Web Gateway 和浏览器外 STOP CLI 均未发送命令：
 
 ```bash
 ./build/ground_station_computer/ground_station_app
@@ -298,6 +319,7 @@ NUEDC_Test
 |   |   |-- framework         # Qt Shell 与通信框架
 |   |   `-- h_problem         # H 题 Adapter、页面与存储
 |   `-- tests                 # Qt Test
+|-- web_ground_station       # Web Gateway、SPA、启动脚本和 E2E
 |-- runtime                   # 当前运行时计划
 |-- scripts                   # mock 与开发工具
 `-- docs                      # 架构、部署与扩展文档
@@ -332,6 +354,7 @@ python3 scripts/mock_airborne.py --self-test \
 # 相关文档
 
 - [双 NUC 部署与网络](docs/dual_nuc_setup_guide.md)
+- [Web 地面站操作手册](web_ground_station/README.md)
 - [地面站框架架构](docs/framework_architecture.md)
 - [新增任务 Adapter](docs/adding_task_adapter.md)
 - [地面站架构规格](docs/ground_station_architecture_spec.md)

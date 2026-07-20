@@ -6,14 +6,14 @@
     </div>
 
     <div class="link-status" aria-label="链路状态">
-      <span><i :class="['status-dot', store.commandLink]" />命令 {{ linkLabel(store.commandLink) }}</span>
+      <span data-testid="command-link"><i :class="['status-dot', store.commandLink]" />命令 {{ linkLabel(store.commandLink) }}</span>
       <span><i :class="['status-dot', store.telemetryLink]" />遥测 {{ linkLabel(store.telemetryLink) }}</span>
     </div>
 
     <div class="live-status">
       <span>当前格 <strong>{{ store.currentCell ?? '--' }}</strong></span>
       <span>已巡检 <strong>{{ store.visitedCount }}</strong></span>
-      <span>检测 <strong>{{ detectionCount }}</strong></span>
+      <span>检测 <strong data-testid="detection-total">{{ detectionCount }}</strong></span>
       <span :class="['run-state', { running: store.missionRunning }]">
         {{ store.missionRunning ? '运行中' : '待命' }}
       </span>

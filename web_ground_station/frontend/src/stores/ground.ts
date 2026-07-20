@@ -126,6 +126,28 @@ export const useGroundStore = defineStore('ground', () => {
     if (typeof payload.vision_armed === 'boolean') {
       visionArmed.value = payload.vision_armed;
     }
+    if (webEvent.event === 'detection') {
+      const animal = payload.animal_name;
+      const count = payload.count;
+      if (typeof animal === 'string' && animal) {
+        const increment = typeof count === 'number' && Number.isInteger(count)
+          ? Math.max(0, count)
+          : 1;
+        detectionTotals.value = {
+          ...detectionTotals.value,
+          [animal]: (detectionTotals.value[animal] ?? 0) + increment,
+        };
+      }
+      recentDetections.value = [...recentDetections.value, payload].slice(-100);
+    }
+    if (webEvent.type === 'task_summary' || webEvent.event === 'summary') {
+      recentSummary.value = payload;
+      missionRunning.value = false;
+    }
+  }
+
+  function markResyncing(): void {
+    commandLink.value = 'resyncing';
   }
 
   function applyAck(response: CommandResponse): CommandResponse {
@@ -177,6 +199,7 @@ export const useGroundStore = defineStore('ground', () => {
     snapshotSeq,
     applySnapshot,
     applyEvent,
+    markResyncing,
     planMission,
     loadMission: () => runCommand(api.loadMission),
     startMission: () => runCommand(api.startMission),

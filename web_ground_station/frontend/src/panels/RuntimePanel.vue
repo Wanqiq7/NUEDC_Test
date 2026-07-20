@@ -8,13 +8,19 @@
       <div><dt>视觉检测</dt><dd>{{ store.visionArmed ? '已启用' : '未启用' }}</dd></div>
     </dl>
     <div class="text-block"><span>最近错误</span><p class="error-copy">{{ readable(store.recentError) }}</p></div>
-    <div class="text-block"><span>任务摘要</span><p>{{ readable(store.recentSummary) }}</p></div>
+    <div class="text-block"><span>任务摘要</span><p data-testid="mission-summary">{{ summaryLabel }}</p></div>
   </section>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useGroundStore } from '../stores/ground';
 const store = useGroundStore();
+const summaryLabel = computed(() => {
+  if (store.recentSummary?.success === true) return '任务完成';
+  if (store.recentSummary?.success === false) return '任务失败';
+  return readable(store.recentSummary);
+});
 function readable(value: Record<string, unknown> | null): string {
   if (!value) return '无';
   for (const key of ['message', 'summary', 'error', 'detail']) if (typeof value[key] === 'string') return value[key] as string;

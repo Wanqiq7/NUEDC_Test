@@ -70,6 +70,7 @@ export function useTelemetry() {
 
     thisSocket.onclose = () => {
       if (!isCurrentConnection()) return;
+      store.markResyncing();
       reconnectTimer = window.setTimeout(connect, reconnectDelayMs);
       reconnectDelayMs = Math.min(reconnectDelayMs * 2, 5_000);
     };

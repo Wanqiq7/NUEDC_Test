@@ -139,4 +139,35 @@ describe('ground store', () => {
     expect(store.activeTaskId).toBe('case-2');
     expect(store.snapshotSeq).toBe(21);
   });
+
+  it('applies detection and summary increments without a browser refresh', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({ active_task_id: 'case-1', mission_running: true }));
+
+    store.applyEvent(event({
+      seq: 1,
+      event: 'detection',
+      payload: { animal_name: 'hare', cell_code: 'A9B1', count: 2 },
+    }));
+    store.applyEvent(event({
+      seq: 2,
+      type: 'task_summary',
+      event: 'summary',
+      payload: { success: true, visited_waypoints: 60 },
+    }));
+
+    expect(store.detectionTotals).toEqual({ hare: 2 });
+    expect(store.recentDetections).toHaveLength(1);
+    expect(store.recentSummary).toMatchObject({ success: true });
+    expect(store.missionRunning).toBe(false);
+  });
+
+  it('shows a resynchronizing command state while reconnecting', () => {
+    const store = useGroundStore();
+    store.applySnapshot(snapshot({ command_link: 'online' }));
+
+    store.markResyncing();
+
+    expect(store.commandLink).toBe('resyncing');
+  });
 });

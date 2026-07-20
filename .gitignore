@@ -58,4 +58,5 @@ Thumbs.db
 /web_ground_station/.venv/
 /web_ground_station/frontend/node_modules/
 /web_ground_station/frontend/dist/
+/web_ground_station/tests/e2e/output/
 /runtime/sessions/
