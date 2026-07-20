@@ -1,9 +1,11 @@
 import asyncio
 import json
 import os
+import selectors
 import signal
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -50,6 +52,8 @@ class PlannerClient:
         planner_task = asyncio.create_task(
             asyncio.to_thread(self._run_planner, request_bytes)
         )
+        # Some runtimes miss the executor wakeup after Popen; the timer keeps the
+        # event loop progressing without running subprocess work on this thread.
         while not planner_task.done():
             await asyncio.sleep(0.005)
         stdout = planner_task.result()
@@ -82,7 +86,7 @@ class PlannerClient:
                 [str(self._executable)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 start_new_session=os.name == "posix",
             )
         except OSError as error:
@@ -91,38 +95,114 @@ class PlannerClient:
                 f"planner process could not start: {error}",
             ) from error
 
+        deadline = time.monotonic() + self._timeout_s
         try:
-            stdout, _ = process.communicate(
-                input=request_bytes,
-                timeout=self._timeout_s,
+            stdout = _exchange_bounded(
+                process,
+                request_bytes,
+                self._max_output_bytes,
+                deadline,
             )
-        except subprocess.TimeoutExpired as error:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise PlannerError("planner_timeout", "planner timeout")
+            try:
+                process.wait(timeout=remaining)
+            except subprocess.TimeoutExpired as error:
+                raise PlannerError("planner_timeout", "planner timeout") from error
+        except BaseException:
             _kill_process_group(process)
-            process.communicate()
-            raise PlannerError("planner_timeout", "planner timeout") from error
+            _drain_and_wait(process)
+            raise
 
         if process.returncode != 0:
             raise PlannerError(
                 "planner_process_failed",
                 f"planner process failed with exit code {process.returncode}",
             )
-        if len(stdout) > self._max_output_bytes:
-            raise PlannerError(
-                "planner_output_too_large",
-                "planner output exceeds configured limit",
-            )
         return stdout
 
 
+def _exchange_bounded(
+    process: subprocess.Popen[bytes],
+    request_bytes: bytes,
+    max_output_bytes: int,
+    deadline: float,
+) -> bytes:
+    assert process.stdin is not None
+    assert process.stdout is not None
+    selector = selectors.DefaultSelector()
+    stdout = bytearray()
+    input_offset = 0
+    try:
+        os.set_blocking(process.stdin.fileno(), False)
+        os.set_blocking(process.stdout.fileno(), False)
+        selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise PlannerError("planner_timeout", "planner timeout")
+            events = selector.select(remaining)
+            if not events:
+                raise PlannerError("planner_timeout", "planner timeout")
+
+            for key, _ in events:
+                pipe = key.fileobj
+                if key.data == "stdin":
+                    try:
+                        written = os.write(
+                            pipe.fileno(),
+                            request_bytes[input_offset : input_offset + 16 * 1024],
+                        )
+                    except BrokenPipeError:
+                        written = len(request_bytes) - input_offset
+                    input_offset += written
+                    if input_offset == len(request_bytes):
+                        selector.unregister(pipe)
+                        pipe.close()
+                    continue
+
+                try:
+                    chunk = os.read(pipe.fileno(), 16 * 1024)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    selector.unregister(pipe)
+                    pipe.close()
+                    continue
+                if len(stdout) + len(chunk) > max_output_bytes:
+                    raise PlannerError(
+                        "planner_output_too_large",
+                        "planner output exceeds configured limit",
+                    )
+                stdout.extend(chunk)
+    finally:
+        selector.close()
+    return bytes(stdout)
+
+
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is None:
+    if os.name == "posix":
         try:
-            if os.name == "posix":
-                os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
+            os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+    elif process.poll() is None:
+        process.kill()
+
+
+def _drain_and_wait(process: subprocess.Popen[bytes]) -> None:
+    if process.stdin is not None and not process.stdin.closed:
+        process.stdin.close()
+    if process.stdout is not None and not process.stdout.closed:
+        if os.name == "posix":
+            os.set_blocking(process.stdout.fileno(), True)
+            while process.stdout.read(64 * 1024):
+                pass
+        process.stdout.close()
+    process.wait()
 
 
 def _is_canonical_plan(plan: object) -> bool:

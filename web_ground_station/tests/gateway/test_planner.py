@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+import time
 
 import pytest
 
@@ -81,7 +82,7 @@ async def test_runs_sync_popen_in_worker_thread_without_shell(tmp_path, monkeypa
     assert args[0] == [str(executable)]
     assert kwargs["stdin"] is subprocess.PIPE
     assert kwargs["stdout"] is subprocess.PIPE
-    assert kwargs["stderr"] is subprocess.PIPE
+    assert kwargs["stderr"] is subprocess.DEVNULL
     assert kwargs.get("shell", False) is False
 
 
@@ -166,6 +167,54 @@ async def test_timeout_kills_planner_process_group(tmp_path):
 
     assert caught.value.error_code == "planner_timeout"
     assert not child_marker.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group cleanup")
+async def test_timeout_kills_descendants_after_leader_exits(tmp_path):
+    survivor_marker = tmp_path / "survivor"
+    child_code = (
+        "import pathlib, time; "
+        "time.sleep(0.2); "
+        f"pathlib.Path({str(survivor_marker)!r}).touch()"
+    )
+    executable = make_python_executable(
+        tmp_path,
+        "import subprocess, sys\n"
+        f"subprocess.Popen([sys.executable, '-c', {child_code!r}])\n",
+    )
+    client = PlannerClient(executable, timeout_s=0.05, max_output_bytes=4096)
+
+    started_at = time.monotonic()
+    with pytest.raises(PlannerError) as caught:
+        await client.plan(PlanningRequest(case_path="case.json", no_fly_cells=[]))
+    elapsed = time.monotonic() - started_at
+    await asyncio.sleep(0.3)
+
+    assert caught.value.error_code == "planner_timeout"
+    assert elapsed < 0.15
+    assert not survivor_marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_rejects_output_limit_before_process_timeout(tmp_path):
+    executable = make_python_executable(
+        tmp_path,
+        "import sys, time\n"
+        "sys.stdin.buffer.read()\n"
+        "sys.stdout.buffer.write(b'x' * 4097)\n"
+        "sys.stdout.buffer.flush()\n"
+        "time.sleep(1)\n",
+    )
+    client = PlannerClient(executable, timeout_s=0.5, max_output_bytes=4096)
+
+    started_at = time.monotonic()
+    with pytest.raises(PlannerError) as caught:
+        await client.plan(PlanningRequest(case_path="case.json", no_fly_cells=[]))
+    elapsed = time.monotonic() - started_at
+
+    assert caught.value.error_code == "planner_output_too_large"
+    assert elapsed < 0.3
 
 
 @pytest.mark.asyncio
