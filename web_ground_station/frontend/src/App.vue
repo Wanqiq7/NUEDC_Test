@@ -1,0 +1,1 @@
+<template><main><h1>NUEDC Ground Station</h1><p>Link: {{ store.state?.command_link ?? 'unknown' }}</p><p>Mission: {{ store.missionRunning ? 'RUNNING' : 'IDLE' }}</p></main></template><script setup lang="ts">import { useGroundStore } from './stores/ground'; import { useTelemetry } from './composables/useTelemetry'; const store=useGroundStore(); useTelemetry();</script>
