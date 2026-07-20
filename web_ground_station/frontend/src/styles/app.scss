@@ -86,7 +86,7 @@ button, input { font: inherit; }
 .dialog-detection-totals { display: flex; min-height: 58px; gap: 18px; align-items: center; overflow-x: auto; border-bottom: 1px solid #35434a; }
 .dialog-detection-totals span { display: grid; flex: 0 0 auto; color: #a6b3b9; font-size: 12px; }
 .dialog-detection-totals strong { color: #f2c94c; font-size: 22px; }
-.dialog-detection-list { max-height: 240px; margin: 10px 0 0; padding: 0; overflow-y: auto; list-style: none; }
+.dialog-detection-list { max-height: 240px; margin: 10px 0 0; padding: 0 18px 0 0; overflow-y: auto; scrollbar-gutter: stable; list-style: none; }
 .dialog-detection-list li { display: flex; min-height: 36px; justify-content: space-between; align-items: center; color: #b9c4c9; font-size: 13px; border-bottom: 1px solid #2e3b41; }
 .dialog-detection-list strong { color: #eef2f4; font-family: ui-monospace, Consolas, monospace; }
 .confirm-dialog h2 { margin: 0 0 8px; font-size: 18px; }
