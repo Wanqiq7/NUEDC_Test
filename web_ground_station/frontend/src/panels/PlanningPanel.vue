@@ -187,7 +187,7 @@ function contiguousLine(cells: string[]): boolean {
   min-height: 0;
   padding: 18px 22px;
   color: #e7ecef;
-  background: #11191e;
+  background: #111a1f;
 }
 
 .panel-header {
@@ -195,14 +195,15 @@ function contiguousLine(cells: string[]): boolean {
   min-height: 58px;
   justify-content: space-between;
   align-items: flex-start;
-  border-bottom: 1px solid #35434b;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #3b4d55;
 }
 
 .eyebrow,
 .section-label {
   margin: 0 0 4px;
-  color: #8fa1ab;
-  font-size: 11px;
+  color: #9bafb6;
+  font: 700 10px "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   font-weight: 700;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -221,6 +222,11 @@ h2 {
   text-align: right;
 }
 
+.plan-identity strong {
+  color: #f5c451;
+  font: 700 13px "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+}
+
 .plan-identity span {
   color: #8fa1ab;
   font-size: 11px;
@@ -237,9 +243,9 @@ h2 {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   padding-left: 18px;
-  border-left: 1px solid #35434b;
+  border-left: 1px solid #3b4d55;
 }
 
 .control-section {
@@ -258,11 +264,16 @@ h2 {
   width: 100%;
   min-height: 44px;
   padding: 0 10px;
-  border: 1px solid #52636c;
+  border: 1px solid #526b75;
   border-radius: 4px;
   color: #e7ecef;
   background: #0b1216;
+  font: 12px "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
+
+.case-input input:focus { border-color: #f5c451; box-shadow: 0 0 0 2px rgb(245 196 81 / 18%); }
 
 .case-input input:disabled {
   opacity: 0.55;
@@ -270,7 +281,7 @@ h2 {
 
 .control-section strong {
   color: #f4c95d;
-  font-size: 24px;
+  font: 700 24px "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   letter-spacing: 0;
 }
 
@@ -322,7 +333,11 @@ h2 {
   font-weight: 700;
   letter-spacing: 0;
   cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease;
 }
+
+.actions button:not(:disabled):hover { filter: brightness(1.08); transform: translateY(-1px); }
+.actions button:focus-visible { outline: 2px solid #f5c451; outline-offset: 2px; }
 
 .secondary-action {
   color: #e3eaed;
