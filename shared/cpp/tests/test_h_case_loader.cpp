@@ -3,9 +3,54 @@
 
 #include <filesystem>
 #include <fstream>
+#include <atomic>
+#include <chrono>
+#include <limits>
+#include <stdexcept>
+#include <system_error>
+#include <unistd.h>
 
 #include "h_problem_core/mission/case_loader.h"
 #include "h_problem_core/mission/mission_planning.h"
+
+namespace {
+
+class UniqueTempDirectory {
+public:
+    UniqueTempDirectory() {
+        static std::atomic<unsigned int> sequence{0};
+        const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        for (;;) {
+            path_ = std::filesystem::temp_directory_path()
+                / ("h_case_loader_" + std::to_string(::getpid()) + "_"
+                    + std::to_string(timestamp) + "_"
+                    + std::to_string(sequence.fetch_add(1)));
+            std::error_code error;
+            if (std::filesystem::create_directory(path_, error)) {
+                break;
+            }
+            if (error != std::errc::file_exists) {
+                throw std::system_error(error, "create temporary test directory");
+            }
+        }
+    }
+
+    ~UniqueTempDirectory() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path_, ignored);
+    }
+
+    const std::filesystem::path &path() const { return path_; }
+
+private:
+    std::filesystem::path path_;
+};
+
+nlohmann::json minimalCase() {
+    return {{"case_id", "minimal"}, {"start_cell", "A1B1"}};
+}
+
+} // namespace
 
 TEST(HCaseLoader, ParsesSampleCase) {
     std::string error;
@@ -28,13 +73,62 @@ TEST(HCaseLoader, ParsesSampleCase) {
 }
 
 TEST(HCaseLoader, RejectsDeprecatedReturnToStartConfiguration) {
-    const auto path = std::filesystem::temp_directory_path() / "h_closed_route_case.json";
+    const UniqueTempDirectory temporary_directory;
+    const auto path = temporary_directory.path() / "closed_route_case.json";
     { std::ofstream file(path); file << R"({"case_id":"closed-route","start_cell":"A1B1","return_to_start":true})"; }
     std::string error;
     const auto loaded = hcore::loadCase(path, &error);
-    std::filesystem::remove(path);
     EXPECT_FALSE(loaded.has_value());
     EXPECT_NE(error.find("return_to_start"), std::string::npos);
+}
+
+TEST(HCaseLoader, DefaultsTickIntervalWhenJsonIntegerIsOutsideIntRange) {
+    for (const nlohmann::json value : {
+             nlohmann::json(std::numeric_limits<std::uint64_t>::max()),
+             nlohmann::json(static_cast<std::int64_t>(std::numeric_limits<int>::min()) - 1),
+             nlohmann::json(static_cast<std::uint64_t>(std::numeric_limits<int>::max()) + 1),
+         }) {
+        auto object = minimalCase();
+        object["tick_interval_ms"] = value;
+        std::string error;
+        const auto loaded = hcore::caseFromJsonObject(object, &error);
+        ASSERT_TRUE(loaded.has_value()) << error;
+        EXPECT_EQ(loaded->tick_interval_ms, 100);
+    }
+}
+
+TEST(HCaseLoader, LoadsRepresentableSignedAndUnsignedTickIntervals) {
+    for (const nlohmann::json value : {nlohmann::json(-12), nlohmann::json(250U)}) {
+        auto object = minimalCase();
+        object["tick_interval_ms"] = value;
+        std::string error;
+        const auto loaded = hcore::caseFromJsonObject(object, &error);
+        ASSERT_TRUE(loaded.has_value()) << error;
+        EXPECT_EQ(loaded->tick_interval_ms, value.get<int>());
+    }
+}
+
+TEST(HCaseLoader, ReportsDistinctMissingAndDirectoryOpenErrors) {
+    const UniqueTempDirectory temporary_directory;
+    std::string missing_error;
+    EXPECT_FALSE(hcore::loadCase(temporary_directory.path() / "missing.json", &missing_error).has_value());
+    EXPECT_NE(missing_error.find("No such file or directory"), std::string::npos);
+
+    std::string directory_error;
+    EXPECT_FALSE(hcore::loadCase(temporary_directory.path(), &directory_error).has_value());
+    EXPECT_NE(directory_error.find("Is a directory"), std::string::npos);
+    EXPECT_NE(directory_error, missing_error);
+}
+
+TEST(HCaseLoader, ReportsPermissionDeniedOpenError) {
+    const UniqueTempDirectory temporary_directory;
+    const auto path = temporary_directory.path() / "unreadable.json";
+    { std::ofstream file(path); file << minimalCase().dump(); }
+    std::filesystem::permissions(path, std::filesystem::perms::none);
+
+    std::string error;
+    EXPECT_FALSE(hcore::loadCase(path, &error).has_value());
+    EXPECT_NE(error.find("Permission denied"), std::string::npos);
 }
 
 TEST(HCaseLoader, BuildTaskPlanRejectsMissingLandingProfile) {
@@ -82,8 +176,18 @@ TEST(HCaseLoader, BuildTaskPlanProducesCanonicalPlanWithLandingMetadata) {
     EXPECT_DOUBLE_EQ(plan->waypoints.front().z, 1.2);
     EXPECT_EQ(plan->waypoints.back().id, "touchdown");
     EXPECT_EQ(plan->waypoints.back().action, "land");
+    EXPECT_DOUBLE_EQ(plan->waypoints.back().x, 0.1707629936490912);
+    EXPECT_DOUBLE_EQ(plan->waypoints.back().y, 0.05692099788303039);
     EXPECT_DOUBLE_EQ(plan->waypoints.back().z, 0.0);
-    EXPECT_NE(plan->waypoints[plan->waypoints.size() - 2].id, plan->waypoints.back().id);
+    EXPECT_EQ(plan->waypoints.back().payload_json, R"({"touchdown":true})");
+
+    const auto &descent_start = plan->waypoints[plan->waypoints.size() - 2];
+    EXPECT_EQ(descent_start.id, "A8B4");
+    EXPECT_EQ(descent_start.action, "navigate");
+    EXPECT_DOUBLE_EQ(descent_start.x, 1.5);
+    EXPECT_DOUBLE_EQ(descent_start.y, 0.5);
+    EXPECT_DOUBLE_EQ(descent_start.z, 1.2);
+    EXPECT_EQ(descent_start.payload_json, R"({"cell":"A8B4"})");
 
     const auto metadata = nlohmann::json::parse(plan->metadata_json);
     EXPECT_EQ(metadata.at("execution_contract"), "h_field_m_v1");

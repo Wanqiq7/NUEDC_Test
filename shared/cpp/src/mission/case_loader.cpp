@@ -1,9 +1,11 @@
 #include "h_problem_core/mission/case_loader.h"
 
+#include <cerrno>
 #include <cmath>
 #include <fstream>
 #include <limits>
 #include <nlohmann/json.hpp>
+#include <system_error>
 
 namespace hcore {
 namespace {
@@ -67,6 +69,36 @@ bool optionalFiniteNumber(const nlohmann::json &object, const char *key, double 
     return true;
 }
 
+int jsonIntOrDefault(const nlohmann::json &value, int default_value) {
+    if (value.is_number_unsigned()) {
+        const std::uint64_t number = value.get<std::uint64_t>();
+        return number <= static_cast<std::uint64_t>(std::numeric_limits<int>::max())
+            ? static_cast<int>(number)
+            : default_value;
+    }
+    if (value.is_number_integer()) {
+        const std::int64_t number = value.get<std::int64_t>();
+        return number >= std::numeric_limits<int>::min()
+                && number <= std::numeric_limits<int>::max()
+            ? static_cast<int>(number)
+            : default_value;
+    }
+    if (value.is_number_float()) {
+        const double number = value.get<double>();
+        if (std::isfinite(number)
+            && number >= std::numeric_limits<int>::min()
+            && number <= std::numeric_limits<int>::max()
+            && std::trunc(number) == number) {
+            return static_cast<int>(number);
+        }
+    }
+    return default_value;
+}
+
+std::string filesystemErrorMessage(const std::error_code &error_code) {
+    return error_code ? error_code.message() : std::make_error_code(std::errc::io_error).message();
+}
+
 } // namespace
 
 std::optional<CaseConfig> caseFromJsonObject(const nlohmann::json &object, std::string *error) {
@@ -76,13 +108,7 @@ std::optional<CaseConfig> caseFromJsonObject(const nlohmann::json &object, std::
         || !requireString(object, "start_cell", &config.start_cell, error)
         || !optionalStringList(object, "no_fly_cells", &config.no_fly_cells, error)) return std::nullopt;
     if (const auto it = object.find("tick_interval_ms"); it != object.end()) {
-        if (!it->is_number_integer()) { if (error) *error = "invalid tick_interval_ms"; return std::nullopt; }
-        const auto value = it->get<std::int64_t>();
-        if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
-            if (error) *error = "invalid tick_interval_ms";
-            return std::nullopt;
-        }
-        config.tick_interval_ms = static_cast<int>(value);
+        config.tick_interval_ms = jsonIntOrDefault(*it, config.tick_interval_ms);
     }
     const auto return_to_start = object.find("return_to_start");
     if (return_to_start != object.end() && return_to_start->is_boolean()
@@ -156,8 +182,27 @@ std::optional<CaseConfig> caseFromJsonObject(const nlohmann::json &object, std::
 }
 
 std::optional<CaseConfig> loadCase(const std::filesystem::path &path, std::string *error) {
+    std::error_code status_error;
+    const std::filesystem::file_status status = std::filesystem::status(path, status_error);
+    if (status_error) {
+        if (error) *error = filesystemErrorMessage(status_error);
+        return std::nullopt;
+    }
+    if (!std::filesystem::exists(status)) {
+        if (error) *error = std::make_error_code(std::errc::no_such_file_or_directory).message();
+        return std::nullopt;
+    }
+    if (std::filesystem::is_directory(status)) {
+        if (error) *error = std::make_error_code(std::errc::is_a_directory).message();
+        return std::nullopt;
+    }
+
+    errno = 0;
     std::ifstream file(path);
-    if (!file) { if (error) *error = "No such file or directory"; return std::nullopt; }
+    if (!file) {
+        if (error) *error = filesystemErrorMessage({errno, std::generic_category()});
+        return std::nullopt;
+    }
     try {
         nlohmann::json document;
         file >> document;
@@ -165,6 +210,9 @@ std::optional<CaseConfig> loadCase(const std::filesystem::path &path, std::strin
         return caseFromJsonObject(document, error);
     } catch (const nlohmann::json::exception &exception) {
         if (error) *error = std::string("failed to parse case JSON (") + exception.what() + ")";
+        return std::nullopt;
+    } catch (const std::ios_base::failure &exception) {
+        if (error) *error = filesystemErrorMessage(exception.code());
         return std::nullopt;
     }
 }

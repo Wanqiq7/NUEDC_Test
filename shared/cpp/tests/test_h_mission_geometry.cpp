@@ -28,3 +28,24 @@ TEST(HMissionGeometry, MapsA9B1ToMissionOrigin) {
     EXPECT_DOUBLE_EQ(point.x_m, 0.0);
     EXPECT_DOUBLE_EQ(point.y_m, 0.0);
 }
+
+TEST(HMissionGeometry, DecodesCellNumbersLikeQStringToInt) {
+    const std::vector<std::string> compatible_codes{
+        "A+1B1",
+        "A 1B1",
+        "A1B1 ",
+        "A\t1B\n1 ",
+    };
+    for (const std::string &cell_code : compatible_codes) {
+        SCOPED_TRACE(cell_code);
+        const auto decoded = hcore::decodeCell(cell_code);
+        ASSERT_TRUE(decoded.has_value());
+        EXPECT_EQ(decoded->x, 0);
+        EXPECT_EQ(decoded->y, 0);
+    }
+
+    for (const std::string &cell_code : {"A1 2B1", "A+ 1B1", "A1B1x"}) {
+        SCOPED_TRACE(cell_code);
+        EXPECT_FALSE(hcore::decodeCell(cell_code).has_value());
+    }
+}

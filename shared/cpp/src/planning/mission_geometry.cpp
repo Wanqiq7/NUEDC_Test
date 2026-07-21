@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -11,7 +12,31 @@
 
 namespace hcore {
 
-namespace { constexpr double Pi = 3.141592653589793238462643383279502884; }
+namespace {
+
+constexpr double Pi = 3.141592653589793238462643383279502884;
+
+bool parseQStringCompatibleInt(const char *begin, const char *end, int *value) {
+    while (begin != end && std::isspace(static_cast<unsigned char>(*begin))) {
+        ++begin;
+    }
+    while (begin != end && std::isspace(static_cast<unsigned char>(*(end - 1)))) {
+        --end;
+    }
+    if (begin == end) {
+        return false;
+    }
+    if (*begin == '+') {
+        ++begin;
+        if (begin == end) {
+            return false;
+        }
+    }
+    const auto result = std::from_chars(begin, end, *value);
+    return result.ec == std::errc{} && result.ptr == end;
+}
+
+}
 
 std::string encodeCell(int x_index, int y_index) {
     return "A" + std::to_string(x_index + 1) + "B" + std::to_string(y_index + 1);
@@ -33,13 +58,11 @@ std::optional<GridPoint> decodeCell(const std::string &cell_code, std::string *e
     const char *x_end = cell_code.data() + b_index;
     const char *y_begin = x_end + 1;
     const char *y_end = cell_code.data() + cell_code.size();
-    const auto x_result = std::from_chars(x_begin, x_end, x_value);
-    const auto y_result = std::from_chars(y_begin, y_end, y_value);
+    const bool x_ok = parseQStringCompatibleInt(x_begin, x_end, &x_value);
+    const bool y_ok = parseQStringCompatibleInt(y_begin, y_end, &y_value);
     const int x_index = x_value - 1;
     const int y_index = y_value - 1;
-    if (x_result.ec != std::errc{} || x_result.ptr != x_end
-        || y_result.ec != std::errc{} || y_result.ptr != y_end
-        || x_index < 0 || y_index < 0) {
+    if (!x_ok || !y_ok || x_index < 0 || y_index < 0) {
         if (error_message != nullptr) {
             *error_message = "invalid cell code";
         }
