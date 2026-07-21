@@ -37,11 +37,13 @@ chmod +x "${TMP_DIR}/bin/uv" "${TMP_DIR}/bin/protoc" "${TMP_DIR}/bin/uvicorn"
 
 cat > "${TMP_DIR}/bin/network-check" <<'EOF'
 #!/usr/bin/env bash
+printf 'network\n' >> "${ORDER_LOG}"
 printf '%s\n' "$*" >> "${NETWORK_LOG}"
 exit "${NETWORK_EXIT:-0}"
 EOF
 cat > "${TMP_DIR}/bin/preflight-check" <<'EOF'
 #!/usr/bin/env bash
+printf 'preflight\n' >> "${ORDER_LOG}"
 printf 'called\n' >> "${PREFLIGHT_LOG}"
 exit "${PREFLIGHT_EXIT:-0}"
 EOF
@@ -51,6 +53,7 @@ run_competition() {
   UVICORN_LOG="${TMP_DIR}/uvicorn.log" FAKE_ENV_LOG="${TMP_DIR}/uvicorn.env.log" \
     FORBIDDEN_LOG="${TMP_DIR}/forbidden.log" \
     NETWORK_LOG="${TMP_DIR}/network.log" PREFLIGHT_LOG="${TMP_DIR}/preflight.log" \
+    ORDER_LOG="${TMP_DIR}/order.log" \
     PATH="${TMP_DIR}/bin:${PATH}" \
     NUEDC_NETWORK_CHECK="${TMP_DIR}/bin/network-check" \
     NUEDC_WEB_PREFLIGHT_CHECK="${TMP_DIR}/bin/preflight-check" \
@@ -74,8 +77,10 @@ run_competition_with_real_preflight() {
 }
 
 rm -f "${TMP_DIR}/uvicorn.log" "${TMP_DIR}/forbidden.log" \
-  "${TMP_DIR}/network.log" "${TMP_DIR}/preflight.log"
+  "${TMP_DIR}/network.log" "${TMP_DIR}/preflight.log" "${TMP_DIR}/order.log"
 run_competition env
+[[ "$(sed -n '1p' "${TMP_DIR}/order.log")" == "preflight" ]]
+[[ "$(sed -n '2p' "${TMP_DIR}/order.log")" == "network" ]]
 [[ "$(cat "${TMP_DIR}/network.log")" == \
   "--host 10.42.0.2 --telemetry-port 5557 --command-port 5558" ]]
 [[ "$(cat "${TMP_DIR}/preflight.log")" == "called" ]]
@@ -87,23 +92,22 @@ grep -q -- '--host 0.0.0.0 --port 8000' "${TMP_DIR}/uvicorn.log"
 [[ ! -e "${TMP_DIR}/forbidden.log" ]]
 
 rm -f "${TMP_DIR}/uvicorn.log" "${TMP_DIR}/forbidden.log" \
-  "${TMP_DIR}/network.log" "${TMP_DIR}/preflight.log"
+  "${TMP_DIR}/network.log" "${TMP_DIR}/preflight.log" "${TMP_DIR}/order.log"
 if run_competition env NETWORK_EXIT=1; then
   echo "competition startup unexpectedly ignored a network-check failure" >&2
   exit 1
 fi
-[[ ! -e "${TMP_DIR}/preflight.log" ]]
+[[ "$(cat "${TMP_DIR}/preflight.log")" == "called" ]]
 [[ ! -e "${TMP_DIR}/uvicorn.log" ]]
 [[ ! -e "${TMP_DIR}/forbidden.log" ]]
 
 rm -f "${TMP_DIR}/uvicorn.log" "${TMP_DIR}/forbidden.log" \
-  "${TMP_DIR}/network.log" "${TMP_DIR}/preflight.log"
+  "${TMP_DIR}/network.log" "${TMP_DIR}/preflight.log" "${TMP_DIR}/order.log"
 if run_competition env PREFLIGHT_EXIT=1; then
   echo "competition startup unexpectedly ignored a preflight failure" >&2
   exit 1
 fi
-[[ "$(cat "${TMP_DIR}/network.log")" == \
-  "--host 10.42.0.2 --telemetry-port 5557 --command-port 5558" ]]
+[[ ! -e "${TMP_DIR}/network.log" ]]
 [[ "$(cat "${TMP_DIR}/preflight.log")" == "called" ]]
 [[ ! -e "${TMP_DIR}/uvicorn.log" ]]
 [[ ! -e "${TMP_DIR}/forbidden.log" ]]
@@ -125,8 +129,7 @@ fi
 grep -q '规划器不可执行' "${TMP_DIR}/missing-planner.out"
 [[ ! -e "${TMP_DIR}/uvicorn.log" ]]
 [[ ! -e "${TMP_DIR}/forbidden.log" ]]
-[[ "$(cat "${TMP_DIR}/network.log")" == \
-  "--host 10.42.0.2 --telemetry-port 5557 --command-port 5558" ]]
+[[ ! -e "${TMP_DIR}/network.log" ]]
 
 rm -f "${TMP_DIR}/uvicorn.log" "${TMP_DIR}/forbidden.log" "${TMP_DIR}/network.log"
 if run_competition_with_real_preflight \
@@ -138,8 +141,7 @@ fi
 grep -q '缺少 frontend/dist' "${TMP_DIR}/missing-dist.out"
 [[ ! -e "${TMP_DIR}/uvicorn.log" ]]
 [[ ! -e "${TMP_DIR}/forbidden.log" ]]
-[[ "$(cat "${TMP_DIR}/network.log")" == \
-  "--host 10.42.0.2 --telemetry-port 5557 --command-port 5558" ]]
+[[ ! -e "${TMP_DIR}/network.log" ]]
 
 cp "${TMP_DIR}/web_ground_station.env" "${TMP_DIR}/protocol-mismatch.env"
 printf 'NUEDC_DEPLOYMENT_MANIFEST=%s\n' "${TMP_DIR}/protocol-mismatch.json" \
@@ -157,6 +159,5 @@ fi
 grep -q 'local protocol' "${TMP_DIR}/protocol-mismatch.out"
 [[ ! -e "${TMP_DIR}/uvicorn.log" ]]
 [[ ! -e "${TMP_DIR}/forbidden.log" ]]
-[[ "$(cat "${TMP_DIR}/network.log")" == \
-  "--host 10.42.0.2 --telemetry-port 5557 --command-port 5558" ]]
+[[ ! -e "${TMP_DIR}/network.log" ]]
 echo "web ground station scripts: PASS"

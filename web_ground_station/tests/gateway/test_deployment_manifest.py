@@ -20,6 +20,7 @@ def load_module():
 def make_repo(path: Path, proto: bytes, commit_time: str) -> str:
     (path / "shared/proto").mkdir(parents=True)
     (path / "shared/proto/messages.proto").write_bytes(proto)
+    (path / ".gitignore").write_text("runtime/deployment_manifest.json\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(path)], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.name", "Test"], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.email", "test@example.com"], check=True)
@@ -75,6 +76,28 @@ def test_create_rejects_protocol_mismatch(tmp_path):
 
     with pytest.raises(ValueError, match="protocol"):
         load_module().create_manifest(ground, airborne, model, tmp_path / "out.json")
+
+
+def test_create_can_regenerate_ignored_runtime_manifest(tmp_path):
+    proto = b"same"
+    ground = tmp_path / "ground"
+    airborne = tmp_path / "airborne"
+    make_repo(ground, proto, "2026-07-20T00:00:00Z")
+    make_repo(airborne, proto, "2026-07-20T00:00:01Z")
+    model = tmp_path / "model.rknn"
+    model.write_bytes(b"model")
+    output = ground / "runtime/deployment_manifest.json"
+
+    first = load_module().create_manifest(ground, airborne, model, output)
+    second = load_module().create_manifest(ground, airborne, model, output)
+
+    assert second == first
+    assert subprocess.check_output(
+        ["git", "-C", str(ground), "status", "--porcelain"], text=True
+    ) == ""
+    (ground / "unexpected.txt").write_text("dirty", encoding="utf-8")
+    with pytest.raises(ValueError, match="dirty"):
+        load_module().create_manifest(ground, airborne, model, output)
 
 
 @pytest.mark.parametrize("dirty_role", ["ground", "airborne"])

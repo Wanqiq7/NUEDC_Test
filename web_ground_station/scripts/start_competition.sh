@@ -13,10 +13,10 @@ source "${ENV_FILE}"
 set +a
 [[ "${NUEDC_RUNTIME_DIR}" = /* ]] || NUEDC_RUNTIME_DIR="${ROOT_DIR}/${NUEDC_RUNTIME_DIR}"
 [[ "${NUEDC_PLANNER_CLI}" = /* ]] || NUEDC_PLANNER_CLI="${ROOT_DIR}/${NUEDC_PLANNER_CLI}"
+"${NUEDC_WEB_PREFLIGHT_CHECK:-${ROOT_DIR}/web_ground_station/scripts/check_web_ground_station.sh}"
 "${NUEDC_NETWORK_CHECK:-${ROOT_DIR}/scripts/check_ground_control_network.sh}" \
   --host "${NUEDC_AIRBORNE_HOST}" --telemetry-port "${NUEDC_TELEMETRY_PORT}" \
   --command-port "${NUEDC_COMMAND_PORT}"
-"${NUEDC_WEB_PREFLIGHT_CHECK:-${ROOT_DIR}/web_ground_station/scripts/check_web_ground_station.sh}"
 cd "${ROOT_DIR}/web_ground_station"
 UVICORN_BIN="${NUEDC_UVICORN_BIN:-${ROOT_DIR}/web_ground_station/.venv/bin/uvicorn}"
 exec "${UVICORN_BIN}" nuedc_web_gateway.app:create_app --factory \
