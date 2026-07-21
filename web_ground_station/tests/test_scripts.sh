@@ -5,11 +5,18 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 mkdir -p "${TMP_DIR}/bin" "${TMP_DIR}/dist" "${TMP_DIR}/runtime"
 printf '<!doctype html>\n' > "${TMP_DIR}/dist/index.html"
+GROUND_COMMIT="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+PROTOCOL_SHA256="$(sha256sum "${ROOT_DIR}/shared/proto/messages.proto" | cut -d ' ' -f 1)"
+cat > "${TMP_DIR}/deployment.json" <<EOF
+{"schema":"nuedc.deployment.v1","ground_commit":"${GROUND_COMMIT}","airborne_commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","protocol_sha256":"${PROTOCOL_SHA256}","model_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","created_at_utc":"2026-07-21T00:00:00Z"}
+EOF
 printf '#!/usr/bin/env bash\nexit 0\n' > "${TMP_DIR}/planner"
 chmod +x "${TMP_DIR}/planner"
 cp "${ROOT_DIR}/runtime/web_ground_station.env" "${TMP_DIR}/web_ground_station.env"
 printf 'NUEDC_RUNTIME_DIR=%s\nNUEDC_PLANNER_CLI=%s\n' \
   "${TMP_DIR}/runtime" "${TMP_DIR}/planner" >> "${TMP_DIR}/web_ground_station.env"
+printf 'NUEDC_DEPLOYMENT_MANIFEST=%s\n' "${TMP_DIR}/deployment.json" \
+  >> "${TMP_DIR}/web_ground_station.env"
 cat > "${TMP_DIR}/bin/uv" <<'EOF'
 #!/usr/bin/env bash
 printf 'uv %s\n' "$*" >> "${FORBIDDEN_LOG}"
@@ -129,6 +136,25 @@ if run_competition_with_real_preflight \
   exit 1
 fi
 grep -q '缺少 frontend/dist' "${TMP_DIR}/missing-dist.out"
+[[ ! -e "${TMP_DIR}/uvicorn.log" ]]
+[[ ! -e "${TMP_DIR}/forbidden.log" ]]
+[[ "$(cat "${TMP_DIR}/network.log")" == \
+  "--host 10.42.0.2 --telemetry-port 5557 --command-port 5558" ]]
+
+cp "${TMP_DIR}/web_ground_station.env" "${TMP_DIR}/protocol-mismatch.env"
+printf 'NUEDC_DEPLOYMENT_MANIFEST=%s\n' "${TMP_DIR}/protocol-mismatch.json" \
+  >> "${TMP_DIR}/protocol-mismatch.env"
+cat > "${TMP_DIR}/protocol-mismatch.json" <<EOF
+{"schema":"nuedc.deployment.v1","ground_commit":"${GROUND_COMMIT}","airborne_commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","protocol_sha256":"0000000000000000000000000000000000000000000000000000000000000000","model_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","created_at_utc":"2026-07-21T00:00:00Z"}
+EOF
+rm -f "${TMP_DIR}/uvicorn.log" "${TMP_DIR}/forbidden.log" "${TMP_DIR}/network.log"
+if run_competition_with_real_preflight \
+  "${TMP_DIR}/protocol-mismatch.env" "${TMP_DIR}/dist" \
+  >"${TMP_DIR}/protocol-mismatch.out" 2>&1; then
+  echo "competition startup unexpectedly accepted a protocol mismatch" >&2
+  exit 1
+fi
+grep -q 'local protocol' "${TMP_DIR}/protocol-mismatch.out"
 [[ ! -e "${TMP_DIR}/uvicorn.log" ]]
 [[ ! -e "${TMP_DIR}/forbidden.log" ]]
 [[ "$(cat "${TMP_DIR}/network.log")" == \

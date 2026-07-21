@@ -9,6 +9,14 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+: "${NUEDC_DEPLOYMENT_MANIFEST:?NUEDC_DEPLOYMENT_MANIFEST is required}"
+[[ "${NUEDC_DEPLOYMENT_MANIFEST}" = /* ]] || \
+  NUEDC_DEPLOYMENT_MANIFEST="${ROOT_DIR}/${NUEDC_DEPLOYMENT_MANIFEST}"
+python3 "${ROOT_DIR}/web_ground_station/scripts/deployment_manifest.py" verify \
+  --manifest "${NUEDC_DEPLOYMENT_MANIFEST}" \
+  --repo "${ROOT_DIR}" --role ground \
+  --proto "${ROOT_DIR}/shared/proto/messages.proto"
+
 [[ "${NUEDC_AIRBORNE_HOST:-}" == "10.42.0.2" ]] || { echo "机载端必须为 10.42.0.2" >&2; exit 1; }
 [[ "${NUEDC_WEB_HOST:-}" == "0.0.0.0" || "${NUEDC_WEB_HOST:-}" == "10.42.0.1" ]] || {
   echo "Web 主机必须兼容 10.42.0.1 热点入口" >&2; exit 1;
