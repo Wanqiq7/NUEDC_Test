@@ -1,17 +1,13 @@
 #include "h_problem_core/tools/planner_cli.h"
 
-#include <QFile>
+#include <iostream>
+#include <iterator>
+#include <string>
 
 int main() {
-    QFile input;
-    QFile output;
-    QFile error;
-    input.open(stdin, QIODevice::ReadOnly, QFileDevice::DontCloseHandle);
-    output.open(stdout, QIODevice::WriteOnly, QFileDevice::DontCloseHandle);
-    error.open(stderr, QIODevice::WriteOnly, QFileDevice::DontCloseHandle);
-
-    const hcore::PlannerCliResult result = hcore::runPlannerCliRequest(input.readAll());
-    output.write(result.stdout_bytes);
-    error.write(result.stderr_bytes);
+    const std::string input{std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>()};
+    const auto result = hcore::runPlannerCliRequest(input);
+    std::cout.write(result.stdout_bytes.data(), result.stdout_bytes.size());
+    std::cerr.write(result.stderr_bytes.data(), result.stderr_bytes.size());
     return result.exit_code;
 }

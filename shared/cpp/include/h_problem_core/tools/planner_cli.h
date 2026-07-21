@@ -1,15 +1,16 @@
 #pragma once
 
-#include <QByteArray>
+#include <string>
+#include <string_view>
 
 namespace hcore {
 
 struct PlannerCliResult {
     int exit_code = 4;
-    QByteArray stdout_bytes;
-    QByteArray stderr_bytes;
+    std::string stdout_bytes;
+    std::string stderr_bytes;
 };
 
-PlannerCliResult runPlannerCliRequest(const QByteArray &request_bytes);
+PlannerCliResult runPlannerCliRequest(std::string_view request_bytes);
 
 } // namespace hcore

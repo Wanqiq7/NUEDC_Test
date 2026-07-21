@@ -3,82 +3,89 @@
 #include "h_problem_core/planning/mission_geometry.h"
 #include "h_problem_core/planning/route_cost.h"
 
-#include <QHash>
-#include <QQueue>
+#include <cstdint>
+#include <functional>
+#include <queue>
+#include <unordered_map>
+#include <vector>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <map>
+#include <set>
+#include <sstream>
+#include <iomanip>
 #include <tuple>
 
 namespace hcore {
 
 namespace {
 
-QStringList gridNeighbors(const QString &cell, int width, int height, const QSet<QString> &no_fly_cells) {
+CellList gridNeighbors(const std::string &cell, int width, int height, const CellSet &no_fly_cells) {
     const auto decoded = decodeCell(cell);
     if (!decoded.has_value()) {
         return {};
     }
-    const int x_index = decoded->x();
-    const int y_index = decoded->y();
-    const QVector<QPoint> candidates{
+    const int x_index = decoded->x;
+    const int y_index = decoded->y;
+    const std::vector<GridPoint> candidates{
         {x_index + 1, y_index},
         {x_index - 1, y_index},
         {x_index, y_index + 1},
         {x_index, y_index - 1},
     };
 
-    QStringList neighbors;
-    for (const QPoint &candidate : candidates) {
-        if (candidate.x() < 0 || candidate.x() >= width || candidate.y() < 0 || candidate.y() >= height) {
+    CellList neighbors;
+    for (const GridPoint &candidate : candidates) {
+        if (candidate.x < 0 || candidate.x >= width || candidate.y < 0 || candidate.y >= height) {
             continue;
         }
-        const QString next_cell = encodeCell(candidate.x(), candidate.y());
-        if (!no_fly_cells.contains(next_cell)) {
-            neighbors.append(next_cell);
+        const std::string next_cell = encodeCell(candidate.x, candidate.y);
+        if (no_fly_cells.count(next_cell) == 0) {
+            neighbors.push_back(next_cell);
         }
     }
     return neighbors;
 }
 
-QStringList shortestPath(int width, int height, const QString &start_cell, const QString &end_cell, const QSet<QString> &no_fly_cells) {
-    QQueue<QString> queue;
-    queue.enqueue(start_cell);
-    QMap<QString, QString> parent;
-    QSet<QString> has_parent{start_cell};
+CellList shortestPath(int width, int height, const std::string &start_cell, const std::string &end_cell, const CellSet &no_fly_cells) {
+    std::queue<std::string> queue;
+    queue.push(start_cell);
+    std::map<std::string, std::string> parent;
+    CellSet has_parent{start_cell};
 
-    while (!queue.isEmpty()) {
-        const QString cell = queue.dequeue();
+    while (!queue.empty()) {
+        const std::string cell = queue.front();
+        queue.pop();
         if (cell == end_cell) {
             break;
         }
-        for (const QString &neighbor : gridNeighbors(cell, width, height, no_fly_cells)) {
-            if (has_parent.contains(neighbor)) {
+        for (const std::string &neighbor : gridNeighbors(cell, width, height, no_fly_cells)) {
+            if (has_parent.count(neighbor) != 0) {
                 continue;
             }
             has_parent.insert(neighbor);
-            parent.insert(neighbor, cell);
-            queue.enqueue(neighbor);
+            parent.emplace(neighbor, cell);
+            queue.push(neighbor);
         }
     }
 
-    if (!has_parent.contains(end_cell)) {
+    if (has_parent.count(end_cell) == 0) {
         return {};
     }
 
-    QStringList path;
-    QString current = end_cell;
+    CellList path;
+    std::string current = end_cell;
     while (current != start_cell) {
-        path.prepend(current);
-        current = parent.value(current);
+        path.insert(path.begin(), current);
+        current = parent.at(current);
     }
-    path.prepend(start_cell);
+    path.insert(path.begin(), start_cell);
     return path;
 }
 
-int countBits(quint64 value) {
+int countBits(std::uint64_t value) {
     int count = 0;
     while (value != 0) {
         value &= value - 1;
@@ -105,14 +112,14 @@ int minimumRepeatCountForEndpoint(
 }
 
 bool isBetterMissionRoute(
-    const QStringList &candidate,
-    const QStringList &current_best,
+    const CellList &candidate,
+    const CellList &current_best,
     int width,
     int height,
-    const QSet<QString> &no_fly_cells,
+    const CellSet &no_fly_cells,
     const LandingProfile &landing_profile,
     const MissionTiming &mission_timing) {
-    if (current_best.isEmpty()) {
+    if (current_best.empty()) {
         return true;
     }
 
@@ -130,7 +137,7 @@ bool isBetterMissionRoute(
 }
 
 struct CoverageSearchResult {
-    QStringList route;
+    CellList route;
     int expansions = 0;
     bool proven_optimal = false;
     bool search_limit_reached = false;
@@ -140,32 +147,32 @@ struct CoverageSearchResult {
 CoverageSearchResult planBoundedCoverageRoute(
     int width,
     int height,
-    const QString &start_cell,
-    const QSet<QString> &no_fly_cells,
-    const QStringList &terminal_cells,
-    const QStringList &incumbent_route,
+    const std::string &start_cell,
+    const CellSet &no_fly_cells,
+    const CellList &terminal_cells,
+    const CellList &incumbent_route,
     const LandingProfile &landing_profile,
     const MissionTiming &mission_timing,
     int expansion_limit) {
     struct Grid {
-        QVector<QString> cells;
-        QMap<QString, int> index_by_cell;
-        QVector<QVector<int>> neighbors;
-        QVector<QVector<int>> distances;
-        quint64 full_mask = 0;
+        std::vector<std::string> cells;
+        std::map<std::string, int> index_by_cell;
+        std::vector<std::vector<int>> neighbors;
+        std::vector<std::vector<int>> distances;
+        std::uint64_t full_mask = 0;
         int even_cells = 0;
         int odd_cells = 0;
     } grid;
 
     for (int y_index = 0; y_index < height; ++y_index) {
         for (int x_index = 0; x_index < width; ++x_index) {
-            const QString cell = encodeCell(x_index, y_index);
-            if (no_fly_cells.contains(cell)) {
+            const std::string cell = encodeCell(x_index, y_index);
+            if (no_fly_cells.count(cell) != 0) {
                 continue;
             }
             const int index = grid.cells.size();
-            grid.cells.append(cell);
-            grid.index_by_cell.insert(cell, index);
+            grid.cells.push_back(cell);
+            grid.index_by_cell.emplace(cell, index);
             if ((x_index + y_index) % 2 == 0) {
                 ++grid.even_cells;
             } else {
@@ -175,48 +182,49 @@ CoverageSearchResult planBoundedCoverageRoute(
     }
 
     const int total_cells = grid.cells.size();
-    if (total_cells == 0 || total_cells > 63 || !grid.index_by_cell.contains(start_cell)) {
+    if (total_cells == 0 || total_cells > 63 || grid.index_by_cell.count(start_cell) == 0) {
         return {};
     }
-    grid.full_mask = (quint64{1} << total_cells) - 1;
+    grid.full_mask = (std::uint64_t{1} << total_cells) - 1;
 
     grid.neighbors.resize(total_cells);
     for (int index = 0; index < total_cells; ++index) {
-        const QPoint point = decodeCell(grid.cells.at(index)).value();
-        const QVector<QPoint> candidates{
-            {point.x() + 1, point.y()},
-            {point.x() - 1, point.y()},
-            {point.x(), point.y() + 1},
-            {point.x(), point.y() - 1},
+        const GridPoint point = decodeCell(grid.cells.at(index)).value();
+        const std::vector<GridPoint> candidates{
+            {point.x + 1, point.y},
+            {point.x - 1, point.y},
+            {point.x, point.y + 1},
+            {point.x, point.y - 1},
         };
-        for (const QPoint &candidate : candidates) {
-            const QString neighbor = encodeCell(candidate.x(), candidate.y());
-            if (grid.index_by_cell.contains(neighbor)) {
-                grid.neighbors[index].append(grid.index_by_cell.value(neighbor));
+        for (const GridPoint &candidate : candidates) {
+            const std::string neighbor = encodeCell(candidate.x, candidate.y);
+            if (grid.index_by_cell.count(neighbor) != 0) {
+                grid.neighbors[index].push_back(grid.index_by_cell.at(neighbor));
             }
         }
     }
 
     grid.distances.resize(total_cells);
     for (int source = 0; source < total_cells; ++source) {
-        QVector<int> &distances = grid.distances[source];
-        distances.fill(-1, total_cells);
-        QQueue<int> queue;
+        std::vector<int> &distances = grid.distances[source];
+        distances.assign(total_cells, -1);
+        std::queue<int> queue;
         distances[source] = 0;
-        queue.enqueue(source);
-        while (!queue.isEmpty()) {
-            const int cell = queue.dequeue();
+        queue.push(source);
+        while (!queue.empty()) {
+            const int cell = queue.front();
+            queue.pop();
             for (const int neighbor : grid.neighbors.at(cell)) {
                 if (distances.at(neighbor) >= 0) {
                     continue;
                 }
                 distances[neighbor] = distances.at(cell) + 1;
-                queue.enqueue(neighbor);
+                queue.push(neighbor);
             }
         }
     }
 
-    const int start_index = grid.index_by_cell.value(start_cell);
+    const int start_index = grid.index_by_cell.at(start_cell);
     const auto start_center = cellCodeCenterCm(start_cell, height);
     if (!start_center.has_value()
         || !descentCorridorIsClear(
@@ -230,18 +238,18 @@ CoverageSearchResult planBoundedCoverageRoute(
     const double takeoff_transit_time_s = euclideanDistanceCm(
         landing_profile.takeoff_anchor_cm,
         start_center.value()) / mission_timing.cruise_speed_cm_per_s;
-    const QPoint start_point = decodeCell(start_cell).value();
-    const bool start_is_even = (start_point.x() + start_point.y()) % 2 == 0;
-    QStringList ordered_terminals = terminal_cells;
-    std::sort(ordered_terminals.begin(), ordered_terminals.end(), [&](const QString &left, const QString &right) {
-        const QPoint left_point = decodeCell(left).value();
-        const QPoint right_point = decodeCell(right).value();
-        const bool left_matches_start = ((left_point.x() + left_point.y()) % 2 == 0) == start_is_even;
-        const bool right_matches_start = ((right_point.x() + right_point.y()) % 2 == 0) == start_is_even;
+    const GridPoint start_point = decodeCell(start_cell).value();
+    const bool start_is_even = (start_point.x + start_point.y) % 2 == 0;
+    CellList ordered_terminals = terminal_cells;
+    std::sort(ordered_terminals.begin(), ordered_terminals.end(), [&](const std::string &left, const std::string &right) {
+        const GridPoint left_point = decodeCell(left).value();
+        const GridPoint right_point = decodeCell(right).value();
+        const bool left_matches_start = ((left_point.x + left_point.y) % 2 == 0) == start_is_even;
+        const bool right_matches_start = ((right_point.x + right_point.y) % 2 == 0) == start_is_even;
         return std::make_tuple(!left_matches_start, left) < std::make_tuple(!right_matches_start, right);
     });
-    QStringList best_route = incumbent_route;
-    double best_time_s = best_route.isEmpty()
+    CellList best_route = incumbent_route;
+    double best_time_s = best_route.empty()
         ? std::numeric_limits<double>::infinity()
         : estimateMissionTimeSeconds(best_route, height, landing_profile, width, no_fly_cells, mission_timing);
     int expansions = 0;
@@ -250,16 +258,16 @@ CoverageSearchResult planBoundedCoverageRoute(
     const int terminal_count = std::max(1, static_cast<int>(ordered_terminals.size()));
     const int expansion_budget_per_terminal = std::max(1, expansion_limit / terminal_count);
 
-    for (const QString &terminal_cell : ordered_terminals) {
-        if (expansions >= expansion_limit || !grid.index_by_cell.contains(terminal_cell)) {
+    for (const std::string &terminal_cell : ordered_terminals) {
+        if (expansions >= expansion_limit || grid.index_by_cell.count(terminal_cell) == 0) {
             break;
         }
-        const int terminal_index = grid.index_by_cell.value(terminal_cell);
+        const int terminal_index = grid.index_by_cell.at(terminal_cell);
         if (grid.distances.at(start_index).at(terminal_index) < 0) {
             continue;
         }
-        const QPoint terminal_point = decodeCell(terminal_cell).value();
-        const bool terminal_is_even = (terminal_point.x() + terminal_point.y()) % 2 == 0;
+        const GridPoint terminal_point = decodeCell(terminal_cell).value();
+        const bool terminal_is_even = (terminal_point.x + terminal_point.y) % 2 == 0;
         const int minimum_repeats = minimumRepeatCountForEndpoint(
             grid.even_cells,
             grid.odd_cells,
@@ -297,7 +305,7 @@ CoverageSearchResult planBoundedCoverageRoute(
              repeat_cap <= maximumRepeatBudget() && expansions < terminal_expansion_limit;
              ++repeat_cap) {
             struct StateKey {
-                quint64 visited_mask = 0;
+                std::uint64_t visited_mask = 0;
                 int position = 0;
 
                 bool operator<(const StateKey &other) const {
@@ -315,11 +323,11 @@ CoverageSearchResult planBoundedCoverageRoute(
             };
 
             std::map<StateKey, int> best_repeat_counts;
-            QVector<int> path{start_index};
-            const quint64 start_mask = quint64{1} << start_index;
+            std::vector<int> path{start_index};
+            const std::uint64_t start_mask = std::uint64_t{1} << start_index;
             bool terminal_route_found = false;
-            std::function<void(int, quint64, int)> dfs =
-                [&](int position, quint64 visited_mask, int repeats) {
+            std::function<void(int, std::uint64_t, int)> dfs =
+                [&](int position, std::uint64_t visited_mask, int repeats) {
                     if (terminal_route_found) {
                         return;
                     }
@@ -343,9 +351,9 @@ CoverageSearchResult planBoundedCoverageRoute(
                         return;
                     }
                     if (visited_mask == grid.full_mask && position == terminal_index) {
-                        QStringList found_route;
+                        CellList found_route;
                         for (const int index : path) {
-                            found_route.append(grid.cells.at(index));
+                            found_route.push_back(grid.cells.at(index));
                         }
                         if (isBetterMissionRoute(
                                 found_route,
@@ -375,24 +383,24 @@ CoverageSearchResult planBoundedCoverageRoute(
                     }
                     best_repeat_counts[state] = repeats;
 
-                    QVector<Candidate> candidates;
+                    std::vector<Candidate> candidates;
                     for (const int neighbor : grid.neighbors.at(position)) {
-                        const bool is_repeat = (visited_mask & (quint64{1} << neighbor)) != 0;
+                        const bool is_repeat = (visited_mask & (std::uint64_t{1} << neighbor)) != 0;
                         if (is_repeat && repeats >= repeat_cap) {
                             continue;
                         }
                         int onward_unvisited_degree = 0;
                         for (const int next_neighbor : grid.neighbors.at(neighbor)) {
-                            if ((visited_mask & (quint64{1} << next_neighbor)) == 0) {
+                            if ((visited_mask & (std::uint64_t{1} << next_neighbor)) == 0) {
                                 ++onward_unvisited_degree;
                             }
                         }
-                        const QPoint neighbor_point = decodeCell(grid.cells.at(neighbor)).value();
-                        const int sweep_rank = (neighbor_point.y() * width)
-                            + (neighbor_point.y() % 2 == 0
-                                   ? neighbor_point.x()
-                                   : (width - 1 - neighbor_point.x()));
-                        candidates.append({
+                        const GridPoint neighbor_point = decodeCell(grid.cells.at(neighbor)).value();
+                        const int sweep_rank = (neighbor_point.y * width)
+                            + (neighbor_point.y % 2 == 0
+                                   ? neighbor_point.x
+                                   : (width - 1 - neighbor_point.x));
+                        candidates.push_back({
                             neighbor,
                             is_repeat,
                             neighbor == terminal_index && visited_mask != grid.full_mask ? 1 : 0,
@@ -427,10 +435,10 @@ CoverageSearchResult planBoundedCoverageRoute(
                     });
 
                     for (const Candidate &candidate : candidates) {
-                        const quint64 next_mask = visited_mask | (quint64{1} << candidate.index);
-                        path.append(candidate.index);
+                        const std::uint64_t next_mask = visited_mask | (std::uint64_t{1} << candidate.index);
+                        path.push_back(candidate.index);
                         dfs(candidate.index, next_mask, repeats + (candidate.is_repeat ? 1 : 0));
-                        path.removeLast();
+                        path.pop_back();
                     }
                 };
 
@@ -454,108 +462,109 @@ CoverageSearchResult planBoundedCoverageRoute(
 CoverageSearchResult planExactCoverageRoute(
     int width,
     int height,
-    const QString &start_cell,
-    const QSet<QString> &no_fly_cells,
-    const QStringList &terminal_cells,
+    const std::string &start_cell,
+    const CellSet &no_fly_cells,
+    const CellList &terminal_cells,
     const LandingProfile &landing_profile,
     const MissionTiming &mission_timing) {
     constexpr int ExactCoverageCellLimit = 16;
     constexpr int StatePositionBits = 6;
-    constexpr quint64 StatePositionMask = (quint64{1} << StatePositionBits) - 1;
+    constexpr std::uint64_t StatePositionMask = (std::uint64_t{1} << StatePositionBits) - 1;
 
-    QVector<QString> cells;
-    QMap<QString, int> index_by_cell;
+    std::vector<std::string> cells;
+    std::map<std::string, int> index_by_cell;
     for (int y_index = 0; y_index < height; ++y_index) {
         for (int x_index = 0; x_index < width; ++x_index) {
-            const QString cell = encodeCell(x_index, y_index);
-            if (no_fly_cells.contains(cell)) {
+            const std::string cell = encodeCell(x_index, y_index);
+            if (no_fly_cells.count(cell) != 0) {
                 continue;
             }
-            index_by_cell.insert(cell, cells.size());
-            cells.append(cell);
+            index_by_cell.emplace(cell, cells.size());
+            cells.push_back(cell);
         }
     }
-    if (cells.isEmpty()
+    if (cells.empty()
         || cells.size() > ExactCoverageCellLimit
-        || !index_by_cell.contains(start_cell)) {
+        || index_by_cell.count(start_cell) == 0) {
         return {};
     }
 
-    QVector<QVector<int>> neighbors(cells.size());
+    std::vector<std::vector<int>> neighbors(cells.size());
     for (int index = 0; index < cells.size(); ++index) {
-        const QPoint point = decodeCell(cells.at(index)).value();
-        for (const QPoint &candidate : QVector<QPoint>{
-                 {point.x() + 1, point.y()},
-                 {point.x() - 1, point.y()},
-                 {point.x(), point.y() + 1},
-                 {point.x(), point.y() - 1},
+        const GridPoint point = decodeCell(cells.at(index)).value();
+        for (const GridPoint &candidate : std::vector<GridPoint>{
+                 {point.x + 1, point.y},
+                 {point.x - 1, point.y},
+                 {point.x, point.y + 1},
+                 {point.x, point.y - 1},
              }) {
-            const QString neighbor = encodeCell(candidate.x(), candidate.y());
-            if (index_by_cell.contains(neighbor)) {
-                neighbors[index].append(index_by_cell.value(neighbor));
+            const std::string neighbor = encodeCell(candidate.x, candidate.y);
+            if (index_by_cell.count(neighbor) != 0) {
+                neighbors[index].push_back(index_by_cell.at(neighbor));
             }
         }
     }
 
-    QSet<int> unresolved_terminals;
-    for (const QString &terminal : terminal_cells) {
-        if (index_by_cell.contains(terminal)) {
-            unresolved_terminals.insert(index_by_cell.value(terminal));
+    std::set<int> unresolved_terminals;
+    for (const std::string &terminal : terminal_cells) {
+        if (index_by_cell.count(terminal) != 0) {
+            unresolved_terminals.insert(index_by_cell.at(terminal));
         }
     }
-    if (unresolved_terminals.isEmpty()) {
+    if (unresolved_terminals.empty()) {
         return {};
     }
 
-    const auto stateKey = [](quint64 visited_mask, int position) {
-        return (visited_mask << StatePositionBits) | static_cast<quint64>(position);
+    const auto stateKey = [](std::uint64_t visited_mask, int position) {
+        return (visited_mask << StatePositionBits) | static_cast<std::uint64_t>(position);
     };
-    const int start_index = index_by_cell.value(start_cell);
-    const quint64 start_mask = quint64{1} << start_index;
-    const quint64 full_mask = (quint64{1} << cells.size()) - 1;
-    const quint64 start_state = stateKey(start_mask, start_index);
-    QHash<quint64, quint64> parent_by_state;
-    parent_by_state.insert(start_state, start_state);
-    QQueue<quint64> queue;
-    queue.enqueue(start_state);
-    QMap<int, quint64> terminal_state_by_index;
+    const int start_index = index_by_cell.at(start_cell);
+    const std::uint64_t start_mask = std::uint64_t{1} << start_index;
+    const std::uint64_t full_mask = (std::uint64_t{1} << cells.size()) - 1;
+    const std::uint64_t start_state = stateKey(start_mask, start_index);
+    std::unordered_map<std::uint64_t, std::uint64_t> parent_by_state;
+    parent_by_state.emplace(start_state, start_state);
+    std::queue<std::uint64_t> queue;
+    queue.push(start_state);
+    std::map<int, std::uint64_t> terminal_state_by_index;
     int expansions = 0;
 
-    while (!queue.isEmpty()) {
-        const quint64 state = queue.dequeue();
+    while (!queue.empty()) {
+        const std::uint64_t state = queue.front();
+        queue.pop();
         ++expansions;
         const int position = static_cast<int>(state & StatePositionMask);
-        const quint64 visited_mask = state >> StatePositionBits;
-        if (visited_mask == full_mask && unresolved_terminals.contains(position)) {
-            terminal_state_by_index.insert(position, state);
-            unresolved_terminals.remove(position);
-            if (unresolved_terminals.isEmpty()) {
+        const std::uint64_t visited_mask = state >> StatePositionBits;
+        if (visited_mask == full_mask && unresolved_terminals.count(position) != 0) {
+            terminal_state_by_index.emplace(position, state);
+            unresolved_terminals.erase(position);
+            if (unresolved_terminals.empty()) {
                 break;
             }
         }
 
         for (const int neighbor : neighbors.at(position)) {
-            const quint64 next_state = stateKey(
-                visited_mask | (quint64{1} << neighbor),
+            const std::uint64_t next_state = stateKey(
+                visited_mask | (std::uint64_t{1} << neighbor),
                 neighbor);
-            if (parent_by_state.contains(next_state)) {
+            if (parent_by_state.count(next_state) != 0) {
                 continue;
             }
-            parent_by_state.insert(next_state, state);
-            queue.enqueue(next_state);
+            parent_by_state.emplace(next_state, state);
+            queue.push(next_state);
         }
     }
 
-    const auto routeForState = [&](quint64 terminal_state) {
-        QStringList route;
-        quint64 current_state = terminal_state;
+    const auto routeForState = [&](std::uint64_t terminal_state) {
+        CellList route;
+        std::uint64_t current_state = terminal_state;
         while (true) {
             const int position = static_cast<int>(current_state & StatePositionMask);
-            route.prepend(cells.at(position));
+            route.insert(route.begin(), cells.at(position));
             if (current_state == start_state) {
                 break;
             }
-            current_state = parent_by_state.value(current_state);
+            current_state = parent_by_state.at(current_state);
         }
         return route;
     };
@@ -564,7 +573,7 @@ CoverageSearchResult planExactCoverageRoute(
     result.expansions = expansions;
     result.proven_optimal = true;
     for (auto iterator = terminal_state_by_index.cbegin(); iterator != terminal_state_by_index.cend(); ++iterator) {
-        const QStringList candidate_route = routeForState(iterator.value());
+        const CellList candidate_route = routeForState(iterator->second);
         if (isBetterMissionRoute(
                 candidate_route,
                 result.route,
@@ -579,24 +588,24 @@ CoverageSearchResult planExactCoverageRoute(
     return result;
 }
 
-QStringList buildConnectedSweepRoute(
-    const QStringList &ordered_cells,
-    const QString &start_cell,
-    const QString &terminal_cell,
+CellList buildConnectedSweepRoute(
+    const CellList &ordered_cells,
+    const std::string &start_cell,
+    const std::string &terminal_cell,
     int width,
     int height,
-    const QSet<QString> &no_fly_cells) {
-    QStringList route{start_cell};
-    const auto appendPathTo = [&](const QString &target) -> bool {
-        const QStringList path = shortestPath(width, height, route.last(), target, no_fly_cells);
-        if (path.isEmpty()) {
+    const CellSet &no_fly_cells) {
+    CellList route{start_cell};
+    const auto appendPathTo = [&](const std::string &target) -> bool {
+        const CellList path = shortestPath(width, height, route.back(), target, no_fly_cells);
+        if (path.empty()) {
             return false;
         }
-        route.append(path.mid(1));
+        route.insert(route.end(), std::next(path.begin()), path.end());
         return true;
     };
 
-    for (const QString &cell : ordered_cells) {
+    for (const std::string &cell : ordered_cells) {
         if (!appendPathTo(cell)) {
             return {};
         }
@@ -607,36 +616,36 @@ QStringList buildConnectedSweepRoute(
     return route;
 }
 
-QStringList buildSweepCoverageSeed(
+CellList buildSweepCoverageSeed(
     int width,
     int height,
-    const QString &start_cell,
-    const QSet<QString> &no_fly_cells,
-    const QStringList &terminal_cells,
+    const std::string &start_cell,
+    const CellSet &no_fly_cells,
+    const CellList &terminal_cells,
     const LandingProfile &landing_profile,
     const MissionTiming &mission_timing) {
-    QStringList flyable_cells;
+    CellList flyable_cells;
     for (int y_index = 0; y_index < height; ++y_index) {
         for (int x_index = 0; x_index < width; ++x_index) {
-            const QString cell = encodeCell(x_index, y_index);
-            if (!no_fly_cells.contains(cell)) {
-                flyable_cells.append(cell);
+            const std::string cell = encodeCell(x_index, y_index);
+            if (no_fly_cells.count(cell) == 0) {
+                flyable_cells.push_back(cell);
             }
         }
     }
 
-    QStringList best_route;
+    CellList best_route;
     for (const bool sweep_rows : {true, false}) {
         for (const int primary_direction : {1, -1}) {
             for (const int first_secondary_direction : {1, -1}) {
-                QStringList ordered_cells = flyable_cells;
-                std::sort(ordered_cells.begin(), ordered_cells.end(), [&](const QString &left, const QString &right) {
-                    const QPoint left_point = decodeCell(left).value();
-                    const QPoint right_point = decodeCell(right).value();
-                    const int left_primary = sweep_rows ? left_point.y() : left_point.x();
-                    const int right_primary = sweep_rows ? right_point.y() : right_point.x();
-                    const int left_secondary = sweep_rows ? left_point.x() : left_point.y();
-                    const int right_secondary = sweep_rows ? right_point.x() : right_point.y();
+                CellList ordered_cells = flyable_cells;
+                std::sort(ordered_cells.begin(), ordered_cells.end(), [&](const std::string &left, const std::string &right) {
+                    const GridPoint left_point = decodeCell(left).value();
+                    const GridPoint right_point = decodeCell(right).value();
+                    const int left_primary = sweep_rows ? left_point.y : left_point.x;
+                    const int right_primary = sweep_rows ? right_point.y : right_point.x;
+                    const int left_secondary = sweep_rows ? left_point.x : left_point.y;
+                    const int right_secondary = sweep_rows ? right_point.x : right_point.y;
                     const int left_secondary_direction = ((left_primary % 2) == 0)
                         ? first_secondary_direction
                         : -first_secondary_direction;
@@ -653,8 +662,8 @@ QStringList buildSweepCoverageSeed(
                                right);
                 });
 
-                for (const QString &terminal_cell : terminal_cells) {
-                    const QStringList candidate = buildConnectedSweepRoute(
+                for (const std::string &terminal_cell : terminal_cells) {
+                    const CellList candidate = buildConnectedSweepRoute(
                         ordered_cells,
                         start_cell,
                         terminal_cell,
@@ -680,20 +689,20 @@ QStringList buildSweepCoverageSeed(
 
 struct TimeOptimalRouteResult {
     CoverageSearchResult search;
-    QString failure_reason;
+    std::string failure_reason;
 };
 
 TimeOptimalRouteResult planTimeOptimalOpenRoute(
     int width,
     int height,
-    const QString &start_cell,
-    const QSet<QString> &no_fly_cells,
+    const std::string &start_cell,
+    const CellSet &no_fly_cells,
     const LandingProfile &landing_profile,
     const MissionTiming &mission_timing) {
-    QStringList candidate_end_cells = terminalCellsForLanding(width, height, no_fly_cells, landing_profile).values();
-    candidate_end_cells.sort();
-    if (candidate_end_cells.isEmpty()) {
-        return {{}, QStringLiteral("no landing-compatible terminal has a clear descent corridor")};
+    const CellSet terminal_set = terminalCellsForLanding(width, height, no_fly_cells, landing_profile);
+    CellList candidate_end_cells(terminal_set.begin(), terminal_set.end());
+    if (candidate_end_cells.empty()) {
+        return {{}, "no landing-compatible terminal has a clear descent corridor"};
     }
 
     const int total_cells = (width * height) - no_fly_cells.size();
@@ -706,13 +715,13 @@ TimeOptimalRouteResult planTimeOptimalOpenRoute(
             candidate_end_cells,
             landing_profile,
             mission_timing);
-        if (exact_search.route.isEmpty()) {
-            return {exact_search, QStringLiteral("no coverage route reaches a landing-compatible terminal")};
+        if (exact_search.route.empty()) {
+            return {exact_search, "no coverage route reaches a landing-compatible terminal"};
         }
         return {exact_search, {}};
     }
 
-    const QStringList incumbent_route = buildSweepCoverageSeed(
+    const CellList incumbent_route = buildSweepCoverageSeed(
         width,
         height,
         start_cell,
@@ -730,21 +739,21 @@ TimeOptimalRouteResult planTimeOptimalOpenRoute(
         landing_profile,
         mission_timing,
         5000 * std::max(1, static_cast<int>(candidate_end_cells.size())));
-    if (bounded_search.route.isEmpty()) {
-        return {bounded_search, QStringLiteral("no coverage route reaches a landing-compatible terminal")};
+    if (bounded_search.route.empty()) {
+        return {bounded_search, "no coverage route reaches a landing-compatible terminal"};
     }
     return {bounded_search, {}};
 }
 
 }
 
-QStringList planRoute(
+CellList planRoute(
     int width,
     int height,
-    const QString &start_cell,
-    const QSet<QString> &no_fly_cells,
+    const std::string &start_cell,
+    const CellSet &no_fly_cells,
     const LandingProfile &landing_profile,
-    QString *error_message,
+    std::string *error_message,
     MissionTiming mission_timing) {
     RouteRequest request;
     request.width = width;
@@ -764,13 +773,13 @@ QStringList planRoute(
 
 RoutePlanResult planRoute(const RouteRequest &request) {
     RoutePlanResult result;
-    QString error_message;
+    std::string error_message;
 
     if (!request.landing_profile.has_value()) {
         result.failure_reason = "landing_profile is required for H mission planning";
         return result;
     }
-    if (request.no_fly_cells.contains(request.start_cell)) {
+    if (request.no_fly_cells.count(request.start_cell) != 0) {
         result.failure_reason = "start cell cannot be inside the no-fly zone";
         return result;
     }
@@ -817,23 +826,26 @@ RoutePlanResult planRoute(const RouteRequest &request) {
             : SearchOptimality::BestEffort;
     error_message = time_optimal_result.failure_reason;
 
-    if (result.route.isEmpty()) {
+    if (result.route.empty()) {
         result.ok = false;
-        result.failure_reason = error_message.isEmpty() ? QString("planner failed to produce a route") : error_message;
+        result.failure_reason = error_message.empty() ? std::string("planner failed to produce a route") : error_message;
         result.search_optimality = SearchOptimality::NoFeasibleRoute;
         return result;
     }
 
-    QSet<QString> covered_cells(result.route.begin(), result.route.end());
-    for (const QString &blocked_cell : request.no_fly_cells) {
-        covered_cells.remove(blocked_cell);
+    CellSet covered_cells(result.route.begin(), result.route.end());
+    for (const std::string &blocked_cell : request.no_fly_cells) {
+        covered_cells.erase(blocked_cell);
     }
     const int required_cells = (request.width * request.height) - request.no_fly_cells.size();
     result.coverage_rate = required_cells <= 0
         ? 0.0
         : static_cast<double>(covered_cells.size()) / static_cast<double>(required_cells);
     if (result.coverage_rate < 1.0) {
-        result.failure_reason = QString("route covers %1% of required cells").arg(result.coverage_rate * 100.0, 0, 'f', 1);
+        std::ostringstream message;
+        message << "route covers " << std::fixed << std::setprecision(1)
+                << result.coverage_rate * 100.0 << "% of required cells";
+        result.failure_reason = message.str();
         result.search_optimality = SearchOptimality::NoFeasibleRoute;
         return result;
     }
@@ -852,9 +864,9 @@ RoutePlanResult planRoute(const RouteRequest &request) {
     result.ok = true;
     result.cost = result.estimated_mission_time_s;
     if (result.search_optimality == SearchOptimality::SearchLimitReached) {
-        result.warnings.append("time-optimal search reached its expansion limit; reporting the best feasible route");
+        result.warnings.push_back("time-optimal search reached its expansion limit; reporting the best feasible route");
     } else if (result.search_optimality == SearchOptimality::BestEffort) {
-        result.warnings.append("time-optimal search reports the best deterministic heuristic route; optimality is not proven");
+        result.warnings.push_back("time-optimal search reports the best deterministic heuristic route; optimality is not proven");
     }
     return result;
 }

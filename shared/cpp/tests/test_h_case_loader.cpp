@@ -1,139 +1,99 @@
-#include <QtTest/QtTest>
+#include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
-#include <QFile>
-#include <QJsonDocument>
-#include <QTemporaryDir>
+#include <filesystem>
+#include <fstream>
 
 #include "h_problem_core/mission/case_loader.h"
 #include "h_problem_core/mission/mission_planning.h"
 
-class HCaseLoaderTests : public QObject {
-    Q_OBJECT
-
-private slots:
-    void parsesSampleCase();
-    void rejectsDeprecatedReturnToStartConfiguration();
-    void buildTaskPlanRejectsMissingLandingProfile();
-    void buildTaskPlanRejectsNonCanonicalStart();
-    void buildTaskPlanPropagatesMissionTiming();
-    void buildTaskPlanProducesCanonicalPlanWithLandingMetadata();
-};
-
-void HCaseLoaderTests::parsesSampleCase() {
-    QString error;
-    const auto maybe_case = hcore::loadCase("shared/cases/sample_case.json", &error);
-    QVERIFY2(maybe_case.has_value(), qPrintable(error));
-
-    const hcore::CaseConfig loaded = maybe_case.value();
-    QCOMPARE(loaded.case_id, QString("wildlife-demo"));
-    QCOMPARE(loaded.start_cell, QString("A9B1"));
-    QCOMPARE(loaded.no_fly_cells, QStringList({"A4B3", "A5B3", "A6B3"}));
-    QCOMPARE(loaded.tick_interval_ms, 150);
-    QCOMPARE(loaded.animals.size(), 4);
-    QVERIFY(loaded.landing.has_value());
-    QCOMPARE(loaded.landing->takeoff_anchor_cm.x_cm, 450.0);
-    QCOMPARE(loaded.landing->descent_angle_deg, 45.0);
-    QCOMPARE(loaded.mission_timing.cruise_speed_cm_per_s, 125.0);
-    QCOMPARE(loaded.mission_timing.ascent_speed_cm_per_s, 80.0);
-    QCOMPARE(loaded.mission_timing.descent_speed_cm_per_s, 70.0);
-    QCOMPARE(loaded.mission_timing.takeoff_fixed_time_s, 2.0);
-    QCOMPARE(loaded.mission_timing.landing_fixed_time_s, 3.0);
-    QCOMPARE(loaded.mission_timing.per_cell_dwell_time_s, 0.1);
+TEST(HCaseLoader, ParsesSampleCase) {
+    std::string error;
+    const auto loaded = hcore::loadCase("shared/cases/sample_case.json", &error);
+    ASSERT_TRUE(loaded.has_value()) << error;
+    EXPECT_EQ(loaded->case_id, "wildlife-demo");
+    EXPECT_EQ(loaded->start_cell, "A9B1");
+    EXPECT_EQ(loaded->no_fly_cells, (hcore::CellList{"A4B3", "A5B3", "A6B3"}));
+    EXPECT_EQ(loaded->tick_interval_ms, 150);
+    EXPECT_EQ(loaded->animals.size(), 4U);
+    ASSERT_TRUE(loaded->landing.has_value());
+    EXPECT_DOUBLE_EQ(loaded->landing->takeoff_anchor_cm.x_cm, 450.0);
+    EXPECT_DOUBLE_EQ(loaded->landing->descent_angle_deg, 45.0);
+    EXPECT_DOUBLE_EQ(loaded->mission_timing.cruise_speed_cm_per_s, 125.0);
+    EXPECT_DOUBLE_EQ(loaded->mission_timing.ascent_speed_cm_per_s, 80.0);
+    EXPECT_DOUBLE_EQ(loaded->mission_timing.descent_speed_cm_per_s, 70.0);
+    EXPECT_DOUBLE_EQ(loaded->mission_timing.takeoff_fixed_time_s, 2.0);
+    EXPECT_DOUBLE_EQ(loaded->mission_timing.landing_fixed_time_s, 3.0);
+    EXPECT_DOUBLE_EQ(loaded->mission_timing.per_cell_dwell_time_s, 0.1);
 }
 
-void HCaseLoaderTests::rejectsDeprecatedReturnToStartConfiguration() {
-    QTemporaryDir dir;
-    QVERIFY(dir.isValid());
-    const QString case_path = dir.filePath("closed_route_case.json");
-    QFile file(case_path);
-    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-    const QByteArray json = R"({"case_id":"closed-route","start_cell":"A1B1","return_to_start":true})";
-    QCOMPARE(file.write(json), static_cast<qint64>(json.size()));
-    file.close();
-
-    QString error;
-    const auto loaded = hcore::loadCase(case_path, &error);
-
-    QVERIFY(!loaded.has_value());
-    QVERIFY(error.contains("return_to_start"));
+TEST(HCaseLoader, RejectsDeprecatedReturnToStartConfiguration) {
+    const auto path = std::filesystem::temp_directory_path() / "h_closed_route_case.json";
+    { std::ofstream file(path); file << R"({"case_id":"closed-route","start_cell":"A1B1","return_to_start":true})"; }
+    std::string error;
+    const auto loaded = hcore::loadCase(path, &error);
+    std::filesystem::remove(path);
+    EXPECT_FALSE(loaded.has_value());
+    EXPECT_NE(error.find("return_to_start"), std::string::npos);
 }
 
-void HCaseLoaderTests::buildTaskPlanRejectsMissingLandingProfile() {
+TEST(HCaseLoader, BuildTaskPlanRejectsMissingLandingProfile) {
     hcore::CaseConfig config;
     config.case_id = "missing-landing";
     config.start_cell = "A1B1";
-
-    QString error;
-    const auto plan = hcore::buildTaskPlan(config, {}, &error);
-
-    QVERIFY(!plan.has_value());
-    QVERIFY(error.contains("landing"));
+    std::string error;
+    EXPECT_FALSE(hcore::buildTaskPlan(config, {}, &error).has_value());
+    EXPECT_NE(error.find("landing"), std::string::npos);
 }
 
-void HCaseLoaderTests::buildTaskPlanRejectsNonCanonicalStart() {
-    QString error;
-    const auto maybe_case = hcore::loadCase("shared/cases/sample_case.json", &error);
-    QVERIFY2(maybe_case.has_value(), qPrintable(error));
-
-    hcore::CaseConfig non_canonical_case = maybe_case.value();
-    non_canonical_case.start_cell = "A8B1";
-    const auto plan = hcore::buildTaskPlan(non_canonical_case, {}, &error);
-
-    QVERIFY(!plan.has_value());
-    QVERIFY(error.contains("A9B1"));
+TEST(HCaseLoader, BuildTaskPlanRejectsNonCanonicalStart) {
+    std::string error;
+    auto config = hcore::loadCase("shared/cases/sample_case.json", &error);
+    ASSERT_TRUE(config.has_value()) << error;
+    config->start_cell = "A8B1";
+    EXPECT_FALSE(hcore::buildTaskPlan(*config, {}, &error).has_value());
+    EXPECT_NE(error.find("A9B1"), std::string::npos);
 }
 
-void HCaseLoaderTests::buildTaskPlanPropagatesMissionTiming() {
-    QString error;
-    const auto maybe_case = hcore::loadCase("shared/cases/sample_case.json", &error);
-    QVERIFY2(maybe_case.has_value(), qPrintable(error));
-
-    hcore::CaseConfig invalid_timing_case = maybe_case.value();
-    invalid_timing_case.mission_timing.cruise_speed_cm_per_s = 0.0;
-    const auto plan = hcore::buildTaskPlan(invalid_timing_case, {}, &error);
-
-    QVERIFY(!plan.has_value());
-    QVERIFY(error.contains("mission timing"));
+TEST(HCaseLoader, BuildTaskPlanPropagatesMissionTiming) {
+    std::string error;
+    auto config = hcore::loadCase("shared/cases/sample_case.json", &error);
+    ASSERT_TRUE(config.has_value()) << error;
+    config->mission_timing.cruise_speed_cm_per_s = 0.0;
+    EXPECT_FALSE(hcore::buildTaskPlan(*config, {}, &error).has_value());
+    EXPECT_NE(error.find("mission timing"), std::string::npos);
 }
 
-void HCaseLoaderTests::buildTaskPlanProducesCanonicalPlanWithLandingMetadata() {
-    QString error;
-    const auto maybe_case = hcore::loadCase("shared/cases/sample_case.json", &error);
-    QVERIFY2(maybe_case.has_value(), qPrintable(error));
+TEST(HCaseLoader, BuildTaskPlanProducesCanonicalPlanWithLandingMetadata) {
+    std::string error;
+    const auto config = hcore::loadCase("shared/cases/sample_case.json", &error);
+    ASSERT_TRUE(config.has_value()) << error;
+    const auto plan = hcore::buildTaskPlan(*config, {}, &error);
+    ASSERT_TRUE(plan.has_value()) << error;
+    EXPECT_EQ(plan->task_id, config->case_id);
+    EXPECT_EQ(plan->task_type, "h_problem");
+    EXPECT_EQ(plan->start_waypoint_id, "A9B1");
+    EXPECT_EQ(plan->terminal_waypoint_id, "touchdown");
+    ASSERT_GE(plan->waypoints.size(), 3U);
+    EXPECT_EQ(plan->waypoints.front().id, "A9B1");
+    EXPECT_EQ(plan->waypoints.front().action, "takeoff");
+    EXPECT_DOUBLE_EQ(plan->waypoints.front().x, 0.0);
+    EXPECT_DOUBLE_EQ(plan->waypoints.front().y, 0.0);
+    EXPECT_DOUBLE_EQ(plan->waypoints.front().z, 1.2);
+    EXPECT_EQ(plan->waypoints.back().id, "touchdown");
+    EXPECT_EQ(plan->waypoints.back().action, "land");
+    EXPECT_DOUBLE_EQ(plan->waypoints.back().z, 0.0);
+    EXPECT_NE(plan->waypoints[plan->waypoints.size() - 2].id, plan->waypoints.back().id);
 
-    const auto plan = hcore::buildTaskPlan(maybe_case.value(), {}, &error);
-
-    QVERIFY2(plan.has_value(), qPrintable(error));
-    QCOMPARE(plan->task_id, maybe_case->case_id);
-    QCOMPARE(plan->task_type, QString("h_problem"));
-    QCOMPARE(plan->start_waypoint_id, QString("A9B1"));
-    QCOMPARE(plan->terminal_waypoint_id, QString("touchdown"));
-    QVERIFY(plan->waypoints.size() >= 3);
-    QCOMPARE(plan->waypoints.first().id, QString("A9B1"));
-    QCOMPARE(plan->waypoints.first().action, QString("takeoff"));
-    QCOMPARE(plan->waypoints.first().x, 0.0);
-    QCOMPARE(plan->waypoints.first().y, 0.0);
-    QCOMPARE(plan->waypoints.first().z, 1.2);
-    QCOMPARE(plan->waypoints.last().id, QString("touchdown"));
-    QCOMPARE(plan->waypoints.last().action, QString("land"));
-    QCOMPARE(plan->waypoints.last().z, 0.0);
-
-    const QJsonObject metadata = QJsonDocument::fromJson(plan->metadata_json.toUtf8()).object();
-    QCOMPARE(metadata.value("execution_contract").toString(), QString("h_field_m_v1"));
-    QCOMPARE(metadata.value("cruise_height_cm").toDouble(), 120.0);
-    QCOMPARE(metadata.value("terminal_cell").toString(),
-             plan->waypoints.at(plan->waypoints.size() - 2).id);
-    const QStringList required_metadata{
-        "case_id", "start_cell", "no_fly_cells", "terminal_cell", "landing_enabled",
-        "descent_angle_deg", "takeoff_anchor_x_cm", "takeoff_anchor_y_cm",
-        "touchdown_x_cm", "touchdown_y_cm", "descent_run_cm", "descent_heading_deg",
-        "estimated_mission_time_s", "planning_optimality", "planning_warnings",
-        "execution_contract", "cruise_height_cm",
-    };
-    for (const QString &field : required_metadata) {
-        QVERIFY2(metadata.contains(field), qPrintable(field));
+    const auto metadata = nlohmann::json::parse(plan->metadata_json);
+    EXPECT_EQ(metadata.at("execution_contract"), "h_field_m_v1");
+    EXPECT_DOUBLE_EQ(metadata.at("cruise_height_cm").get<double>(), 120.0);
+    EXPECT_EQ(metadata.at("terminal_cell"), plan->waypoints[plan->waypoints.size() - 2].id);
+    for (const char *field : {"case_id", "start_cell", "no_fly_cells", "terminal_cell",
+             "landing_enabled", "descent_angle_deg", "takeoff_anchor_x_cm",
+             "takeoff_anchor_y_cm", "touchdown_x_cm", "touchdown_y_cm", "descent_run_cm",
+             "descent_heading_deg", "estimated_mission_time_s", "planning_optimality",
+             "planning_warnings", "execution_contract", "cruise_height_cm"}) {
+        EXPECT_TRUE(metadata.contains(field)) << field;
     }
 }
-
-QTEST_MAIN(HCaseLoaderTests)
-#include "test_h_case_loader.moc"

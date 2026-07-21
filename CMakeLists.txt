@@ -23,6 +23,8 @@ add_test(
 )
 
 find_package(Qt6 REQUIRED COMPONENTS Core Test)
+find_package(GTest REQUIRED)
+find_package(nlohmann_json REQUIRED)
 find_package(protobuf CONFIG QUIET)
 if(protobuf_FOUND)
     set(NUEDC_PROTOC_EXECUTABLE protobuf::protoc)

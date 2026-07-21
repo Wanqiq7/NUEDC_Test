@@ -24,36 +24,26 @@ set(H_PROBLEM_CORE_SOURCES
     src/planning/mission_geometry.cpp
     src/planning/route_cost.cpp
     src/planning/route_planner.cpp
-    src/runtime/simulator.cpp
     src/tools/planner_cli.cpp
 )
 
 add_library(h_problem_core STATIC
     ${H_PROBLEM_CORE_SOURCES}
 )
+set_target_properties(h_problem_core PROPERTIES AUTOMOC OFF)
 
 target_include_directories(h_problem_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(h_problem_core PUBLIC
-    Qt6::Core
-    competition_core
-    proto_messages
-)
-
-add_executable(generate_h_runtime_fixture tools/generate_h_runtime_fixture.cpp)
-target_link_libraries(generate_h_runtime_fixture PRIVATE
-    Qt6::Core
-    h_problem_core
-    competition_core
+    nlohmann_json::nlohmann_json
 )
 
 add_executable(h_route_planner_cli tools/h_route_planner_cli_main.cpp)
+set_target_properties(h_route_planner_cli PROPERTIES AUTOMOC OFF)
 target_link_libraries(h_route_planner_cli PRIVATE
-    Qt6::Core
     h_problem_core
-    competition_core
 )
 
 function(add_competition_core_test target_name test_source)
@@ -76,16 +66,13 @@ function(add_h_problem_core_test target_name test_source)
 add_executable(${target_name}
     ${test_source}
 )
+set_target_properties(${target_name} PROPERTIES AUTOMOC OFF)
 target_link_libraries(${target_name} PRIVATE
-    Qt6::Core
-    Qt6::Test
+    GTest::gtest_main
     h_problem_core
 )
 add_test(NAME ${target_name} COMMAND ${target_name})
-set_tests_properties(${target_name} PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-)
+set_tests_properties(${target_name} PROPERTIES WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 endfunction()
 
 add_competition_core_test(test_task_protocol tests/test_task_protocol.cpp)
@@ -96,7 +83,6 @@ add_h_problem_core_test(test_h_case_loader tests/test_h_case_loader.cpp)
 add_h_problem_core_test(test_h_mission_geometry tests/test_h_mission_geometry.cpp)
 add_h_problem_core_test(test_h_route_planner tests/test_h_route_planner.cpp)
 add_h_problem_core_test(test_h_planning_result tests/test_h_planning_result.cpp)
-add_h_problem_core_test(test_h_simulator tests/test_h_simulator.cpp)
 add_h_problem_core_test(test_h_route_planner_cli tests/test_h_route_planner_cli.cpp)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
