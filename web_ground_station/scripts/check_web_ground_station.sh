@@ -22,6 +22,24 @@ for port_name in NUEDC_TELEMETRY_PORT NUEDC_COMMAND_PORT NUEDC_PID_DEBUG_PORT; d
 done
 [[ -f "${ROOT_DIR}/web_ground_station/uv.lock" ]] || { echo "缺少 uv.lock" >&2; exit 1; }
 [[ -f "${ROOT_DIR}/web_ground_station/frontend/pnpm-lock.yaml" ]] || { echo "缺少 pnpm-lock.yaml" >&2; exit 1; }
+PY_PROTO="${ROOT_DIR}/web_ground_station/.generated/proto/messages_pb2.py"
+PY_PROTO_HASH="${ROOT_DIR}/web_ground_station/.generated/proto/messages.proto.sha256"
+PROTO_SOURCE="${ROOT_DIR}/shared/proto/messages.proto"
+UVICORN_BIN="${NUEDC_UVICORN_BIN:-${ROOT_DIR}/web_ground_station/.venv/bin/uvicorn}"
+[[ -f "${PY_PROTO}" && -f "${PY_PROTO_HASH}" ]] || {
+  echo "缺少预生成 Python Protobuf" >&2; exit 1;
+}
+python3 - "${PROTO_SOURCE}" "${PY_PROTO_HASH}" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+digest = pathlib.Path(sys.argv[2])
+if digest.read_text(encoding="ascii").strip() != hashlib.sha256(source.read_bytes()).hexdigest():
+    raise SystemExit("预生成 Python Protobuf 哈希不匹配")
+PY
+[[ -x "${UVICORN_BIN}" ]] || { echo "Uvicorn 不可执行: ${UVICORN_BIN}" >&2; exit 1; }
 FRONTEND_DIST_DIR="${NUEDC_FRONTEND_DIST_DIR:-${ROOT_DIR}/web_ground_station/frontend/dist}"
 [[ -f "${FRONTEND_DIST_DIR}/index.html" ]] || { echo "缺少 frontend/dist" >&2; exit 1; }
 RUNTIME_DIR="${NUEDC_RUNTIME_DIR:-runtime}"

@@ -18,5 +18,6 @@ set +a
   --command-port "${NUEDC_COMMAND_PORT}"
 "${NUEDC_WEB_PREFLIGHT_CHECK:-${ROOT_DIR}/web_ground_station/scripts/check_web_ground_station.sh}"
 cd "${ROOT_DIR}/web_ground_station"
-exec uv run uvicorn nuedc_web_gateway.app:create_app --factory \
+UVICORN_BIN="${NUEDC_UVICORN_BIN:-${ROOT_DIR}/web_ground_station/.venv/bin/uvicorn}"
+exec "${UVICORN_BIN}" nuedc_web_gateway.app:create_app --factory \
   --host "${NUEDC_WEB_HOST}" --port "${NUEDC_WEB_PORT}"
