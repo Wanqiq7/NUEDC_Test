@@ -60,14 +60,15 @@ std::optional<GridPoint> decodeCell(const std::string &cell_code, std::string *e
     const char *y_end = cell_code.data() + cell_code.size();
     const bool x_ok = parseQStringCompatibleInt(x_begin, x_end, &x_value);
     const bool y_ok = parseQStringCompatibleInt(y_begin, y_end, &y_value);
-    const int x_index = x_value - 1;
-    const int y_index = y_value - 1;
-    if (!x_ok || !y_ok || x_index < 0 || y_index < 0) {
+    if (!x_ok || !y_ok || x_value <= 0 || y_value <= 0) {
         if (error_message != nullptr) {
             *error_message = "invalid cell code";
         }
         return std::nullopt;
     }
+
+    const int x_index = x_value - 1;
+    const int y_index = y_value - 1;
 
     if (error_message != nullptr) {
         error_message->clear();

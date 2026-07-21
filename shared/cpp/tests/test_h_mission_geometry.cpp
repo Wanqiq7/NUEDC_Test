@@ -49,3 +49,19 @@ TEST(HMissionGeometry, DecodesCellNumbersLikeQStringToInt) {
         EXPECT_FALSE(hcore::decodeCell(cell_code).has_value());
     }
 }
+
+TEST(HMissionGeometry, RejectsNonPositiveCellNumbersWithoutOverflow) {
+    for (const std::string &cell_code : {
+             "A0B1",
+             "A-1B1",
+             "A-2147483648B1",
+             "A1B0",
+             "A1B-1",
+             "A1B-2147483648",
+         }) {
+        SCOPED_TRACE(cell_code);
+        std::string error_message = "stale";
+        EXPECT_FALSE(hcore::decodeCell(cell_code, &error_message).has_value());
+        EXPECT_EQ(error_message, "invalid cell code");
+    }
+}
