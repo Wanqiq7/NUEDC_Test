@@ -1,0 +1,1232 @@
+[
+  {
+    "name": "sample_default_barrier",
+    "stdin_text": "{\"schema\":\"h_planning_request_v1\",\"case_path\":\"shared/cases/sample_case.json\",\"no_fly_cells\":[\"A4B3\",\"A5B3\",\"A6B3\"]}",
+    "exit_code": 0,
+    "response": {
+      "metrics": {
+        "estimated_mission_time_s": 39.13539100656604,
+        "planning_optimality": "search_limit_reached"
+      },
+      "ok": true,
+      "plan": {
+        "message_type": "task_plan",
+        "metadata_json": "{\"case_id\":\"wildlife-demo\",\"cruise_height_cm\":120,\"descent_angle_deg\":45,\"descent_heading_deg\":71.56505117707799,\"descent_run_cm\":140.11388300841907,\"estimated_mission_time_s\":39.13539100656604,\"execution_contract\":\"h_field_m_v1\",\"landing_enabled\":true,\"no_fly_cells\":[\"A4B3\",\"A5B3\",\"A6B3\"],\"planning_optimality\":\"search_limit_reached\",\"planning_warnings\":[\"time-optimal search reached its expansion limit; reporting the best feasible route\"],\"start_cell\":\"A9B1\",\"takeoff_anchor_x_cm\":450,\"takeoff_anchor_y_cm\":350,\"terminal_cell\":\"A8B4\",\"touchdown_x_cm\":444.30790021169696,\"touchdown_y_cm\":332.9237006350909}",
+        "start_waypoint_id": "A9B1",
+        "task_id": "wildlife-demo",
+        "task_type": "h_problem",
+        "terminal_waypoint_id": "touchdown",
+        "waypoints": [
+          {
+            "action": "takeoff",
+            "id": "A9B1",
+            "payload_json": "{\"cell\":\"A9B1\"}",
+            "sequence_index": 0,
+            "x": 0,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B1",
+            "payload_json": "{\"cell\":\"A8B1\"}",
+            "sequence_index": 1,
+            "x": 0,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B1",
+            "payload_json": "{\"cell\":\"A7B1\"}",
+            "sequence_index": 2,
+            "x": 0,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B1",
+            "payload_json": "{\"cell\":\"A6B1\"}",
+            "sequence_index": 3,
+            "x": 0,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B1",
+            "payload_json": "{\"cell\":\"A5B1\"}",
+            "sequence_index": 4,
+            "x": 0,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B1",
+            "payload_json": "{\"cell\":\"A4B1\"}",
+            "sequence_index": 5,
+            "x": 0,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B1",
+            "payload_json": "{\"cell\":\"A3B1\"}",
+            "sequence_index": 6,
+            "x": 0,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B1",
+            "payload_json": "{\"cell\":\"A2B1\"}",
+            "sequence_index": 7,
+            "x": 0,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B1",
+            "payload_json": "{\"cell\":\"A1B1\"}",
+            "sequence_index": 8,
+            "x": 0,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B2",
+            "payload_json": "{\"cell\":\"A1B2\"}",
+            "sequence_index": 9,
+            "x": 0.5,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B2",
+            "payload_json": "{\"cell\":\"A2B2\"}",
+            "sequence_index": 10,
+            "x": 0.5,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B2",
+            "payload_json": "{\"cell\":\"A3B2\"}",
+            "sequence_index": 11,
+            "x": 0.5,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B2",
+            "payload_json": "{\"cell\":\"A4B2\"}",
+            "sequence_index": 12,
+            "x": 0.5,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B2",
+            "payload_json": "{\"cell\":\"A5B2\"}",
+            "sequence_index": 13,
+            "x": 0.5,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B2",
+            "payload_json": "{\"cell\":\"A6B2\"}",
+            "sequence_index": 14,
+            "x": 0.5,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B2",
+            "payload_json": "{\"cell\":\"A7B2\"}",
+            "sequence_index": 15,
+            "x": 0.5,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B2",
+            "payload_json": "{\"cell\":\"A8B2\"}",
+            "sequence_index": 16,
+            "x": 0.5,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B2",
+            "payload_json": "{\"cell\":\"A9B2\"}",
+            "sequence_index": 17,
+            "x": 0.5,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B3",
+            "payload_json": "{\"cell\":\"A9B3\"}",
+            "sequence_index": 18,
+            "x": 1,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B3",
+            "payload_json": "{\"cell\":\"A8B3\"}",
+            "sequence_index": 19,
+            "x": 1,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B3",
+            "payload_json": "{\"cell\":\"A7B3\"}",
+            "sequence_index": 20,
+            "x": 1,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B4",
+            "payload_json": "{\"cell\":\"A7B4\"}",
+            "sequence_index": 21,
+            "x": 1.5,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B4",
+            "payload_json": "{\"cell\":\"A6B4\"}",
+            "sequence_index": 22,
+            "x": 1.5,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B4",
+            "payload_json": "{\"cell\":\"A5B4\"}",
+            "sequence_index": 23,
+            "x": 1.5,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B4",
+            "payload_json": "{\"cell\":\"A4B4\"}",
+            "sequence_index": 24,
+            "x": 1.5,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B4",
+            "payload_json": "{\"cell\":\"A3B4\"}",
+            "sequence_index": 25,
+            "x": 1.5,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B3",
+            "payload_json": "{\"cell\":\"A3B3\"}",
+            "sequence_index": 26,
+            "x": 1,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B3",
+            "payload_json": "{\"cell\":\"A2B3\"}",
+            "sequence_index": 27,
+            "x": 1,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B3",
+            "payload_json": "{\"cell\":\"A1B3\"}",
+            "sequence_index": 28,
+            "x": 1,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B4",
+            "payload_json": "{\"cell\":\"A1B4\"}",
+            "sequence_index": 29,
+            "x": 1.5,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B4",
+            "payload_json": "{\"cell\":\"A2B4\"}",
+            "sequence_index": 30,
+            "x": 1.5,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B5",
+            "payload_json": "{\"cell\":\"A2B5\"}",
+            "sequence_index": 31,
+            "x": 2,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B5",
+            "payload_json": "{\"cell\":\"A1B5\"}",
+            "sequence_index": 32,
+            "x": 2,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B6",
+            "payload_json": "{\"cell\":\"A1B6\"}",
+            "sequence_index": 33,
+            "x": 2.5,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B7",
+            "payload_json": "{\"cell\":\"A1B7\"}",
+            "sequence_index": 34,
+            "x": 3,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B7",
+            "payload_json": "{\"cell\":\"A2B7\"}",
+            "sequence_index": 35,
+            "x": 3,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B6",
+            "payload_json": "{\"cell\":\"A2B6\"}",
+            "sequence_index": 36,
+            "x": 2.5,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B6",
+            "payload_json": "{\"cell\":\"A3B6\"}",
+            "sequence_index": 37,
+            "x": 2.5,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B7",
+            "payload_json": "{\"cell\":\"A3B7\"}",
+            "sequence_index": 38,
+            "x": 3,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B7",
+            "payload_json": "{\"cell\":\"A4B7\"}",
+            "sequence_index": 39,
+            "x": 3,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B6",
+            "payload_json": "{\"cell\":\"A4B6\"}",
+            "sequence_index": 40,
+            "x": 2.5,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B5",
+            "payload_json": "{\"cell\":\"A4B5\"}",
+            "sequence_index": 41,
+            "x": 2,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B5",
+            "payload_json": "{\"cell\":\"A3B5\"}",
+            "sequence_index": 42,
+            "x": 2,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B5",
+            "payload_json": "{\"cell\":\"A4B5\"}",
+            "sequence_index": 43,
+            "x": 2,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B5",
+            "payload_json": "{\"cell\":\"A5B5\"}",
+            "sequence_index": 44,
+            "x": 2,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B6",
+            "payload_json": "{\"cell\":\"A5B6\"}",
+            "sequence_index": 45,
+            "x": 2.5,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B7",
+            "payload_json": "{\"cell\":\"A5B7\"}",
+            "sequence_index": 46,
+            "x": 3,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B7",
+            "payload_json": "{\"cell\":\"A6B7\"}",
+            "sequence_index": 47,
+            "x": 3,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B6",
+            "payload_json": "{\"cell\":\"A6B6\"}",
+            "sequence_index": 48,
+            "x": 2.5,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B5",
+            "payload_json": "{\"cell\":\"A6B5\"}",
+            "sequence_index": 49,
+            "x": 2,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B5",
+            "payload_json": "{\"cell\":\"A7B5\"}",
+            "sequence_index": 50,
+            "x": 2,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B6",
+            "payload_json": "{\"cell\":\"A7B6\"}",
+            "sequence_index": 51,
+            "x": 2.5,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B7",
+            "payload_json": "{\"cell\":\"A7B7\"}",
+            "sequence_index": 52,
+            "x": 3,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B7",
+            "payload_json": "{\"cell\":\"A8B7\"}",
+            "sequence_index": 53,
+            "x": 3,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B7",
+            "payload_json": "{\"cell\":\"A9B7\"}",
+            "sequence_index": 54,
+            "x": 3,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B6",
+            "payload_json": "{\"cell\":\"A9B6\"}",
+            "sequence_index": 55,
+            "x": 2.5,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B6",
+            "payload_json": "{\"cell\":\"A8B6\"}",
+            "sequence_index": 56,
+            "x": 2.5,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B5",
+            "payload_json": "{\"cell\":\"A8B5\"}",
+            "sequence_index": 57,
+            "x": 2,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B5",
+            "payload_json": "{\"cell\":\"A9B5\"}",
+            "sequence_index": 58,
+            "x": 2,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B4",
+            "payload_json": "{\"cell\":\"A9B4\"}",
+            "sequence_index": 59,
+            "x": 1.5,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B4",
+            "payload_json": "{\"cell\":\"A8B4\"}",
+            "sequence_index": 60,
+            "x": 1.5,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "land",
+            "id": "touchdown",
+            "payload_json": "{\"touchdown\":true}",
+            "sequence_index": 61,
+            "x": 0.1707629936490912,
+            "y": 0.05692099788303039,
+            "z": 0
+          }
+        ]
+      }
+    },
+    "stderr_json_forbidden": true
+  },
+  {
+    "name": "barrier_a2b2_a2b3_a2b4",
+    "stdin_text": "{\"schema\":\"h_planning_request_v1\",\"case_path\":\"shared/cases/sample_case.json\",\"no_fly_cells\":[\"A2B2\",\"A2B3\",\"A2B4\"]}",
+    "exit_code": 0,
+    "response": {
+      "metrics": {
+        "estimated_mission_time_s": 38.337841067426766,
+        "planning_optimality": "best_effort"
+      },
+      "ok": true,
+      "plan": {
+        "message_type": "task_plan",
+        "metadata_json": "{\"case_id\":\"wildlife-demo\",\"cruise_height_cm\":120,\"descent_angle_deg\":45,\"descent_heading_deg\":34.000000000000014,\"descent_run_cm\":100.6919557412736,\"estimated_mission_time_s\":38.337841067426766,\"execution_contract\":\"h_field_m_v1\",\"landing_enabled\":true,\"no_fly_cells\":[\"A2B2\",\"A2B3\",\"A2B4\"],\"planning_optimality\":\"best_effort\",\"planning_warnings\":[\"time-optimal search reports the best deterministic heuristic route; optimality is not proven\"],\"start_cell\":\"A9B1\",\"takeoff_anchor_x_cm\":450,\"takeoff_anchor_y_cm\":350,\"terminal_cell\":\"A7B2\",\"touchdown_x_cm\":433.47741456356516,\"touchdown_y_cm\":356.30622708711076}",
+        "start_waypoint_id": "A9B1",
+        "task_id": "wildlife-demo",
+        "task_type": "h_problem",
+        "terminal_waypoint_id": "touchdown",
+        "waypoints": [
+          {
+            "action": "takeoff",
+            "id": "A9B1",
+            "payload_json": "{\"cell\":\"A9B1\"}",
+            "sequence_index": 0,
+            "x": 0,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B1",
+            "payload_json": "{\"cell\":\"A8B1\"}",
+            "sequence_index": 1,
+            "x": 0,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B1",
+            "payload_json": "{\"cell\":\"A7B1\"}",
+            "sequence_index": 2,
+            "x": 0,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B1",
+            "payload_json": "{\"cell\":\"A6B1\"}",
+            "sequence_index": 3,
+            "x": 0,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B1",
+            "payload_json": "{\"cell\":\"A5B1\"}",
+            "sequence_index": 4,
+            "x": 0,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B1",
+            "payload_json": "{\"cell\":\"A4B1\"}",
+            "sequence_index": 5,
+            "x": 0,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B1",
+            "payload_json": "{\"cell\":\"A3B1\"}",
+            "sequence_index": 6,
+            "x": 0,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B1",
+            "payload_json": "{\"cell\":\"A2B1\"}",
+            "sequence_index": 7,
+            "x": 0,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B1",
+            "payload_json": "{\"cell\":\"A1B1\"}",
+            "sequence_index": 8,
+            "x": 0,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B2",
+            "payload_json": "{\"cell\":\"A1B2\"}",
+            "sequence_index": 9,
+            "x": 0.5,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B3",
+            "payload_json": "{\"cell\":\"A1B3\"}",
+            "sequence_index": 10,
+            "x": 1,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B4",
+            "payload_json": "{\"cell\":\"A1B4\"}",
+            "sequence_index": 11,
+            "x": 1.5,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B5",
+            "payload_json": "{\"cell\":\"A1B5\"}",
+            "sequence_index": 12,
+            "x": 2,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B6",
+            "payload_json": "{\"cell\":\"A1B6\"}",
+            "sequence_index": 13,
+            "x": 2.5,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A1B7",
+            "payload_json": "{\"cell\":\"A1B7\"}",
+            "sequence_index": 14,
+            "x": 3,
+            "y": 4,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B7",
+            "payload_json": "{\"cell\":\"A2B7\"}",
+            "sequence_index": 15,
+            "x": 3,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B6",
+            "payload_json": "{\"cell\":\"A2B6\"}",
+            "sequence_index": 16,
+            "x": 2.5,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A2B5",
+            "payload_json": "{\"cell\":\"A2B5\"}",
+            "sequence_index": 17,
+            "x": 2,
+            "y": 3.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B5",
+            "payload_json": "{\"cell\":\"A3B5\"}",
+            "sequence_index": 18,
+            "x": 2,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B6",
+            "payload_json": "{\"cell\":\"A3B6\"}",
+            "sequence_index": 19,
+            "x": 2.5,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B7",
+            "payload_json": "{\"cell\":\"A3B7\"}",
+            "sequence_index": 20,
+            "x": 3,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B7",
+            "payload_json": "{\"cell\":\"A4B7\"}",
+            "sequence_index": 21,
+            "x": 3,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B6",
+            "payload_json": "{\"cell\":\"A4B6\"}",
+            "sequence_index": 22,
+            "x": 2.5,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B5",
+            "payload_json": "{\"cell\":\"A4B5\"}",
+            "sequence_index": 23,
+            "x": 2,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B4",
+            "payload_json": "{\"cell\":\"A4B4\"}",
+            "sequence_index": 24,
+            "x": 1.5,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B4",
+            "payload_json": "{\"cell\":\"A3B4\"}",
+            "sequence_index": 25,
+            "x": 1.5,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B3",
+            "payload_json": "{\"cell\":\"A3B3\"}",
+            "sequence_index": 26,
+            "x": 1,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A3B2",
+            "payload_json": "{\"cell\":\"A3B2\"}",
+            "sequence_index": 27,
+            "x": 0.5,
+            "y": 3,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B2",
+            "payload_json": "{\"cell\":\"A4B2\"}",
+            "sequence_index": 28,
+            "x": 0.5,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A4B3",
+            "payload_json": "{\"cell\":\"A4B3\"}",
+            "sequence_index": 29,
+            "x": 1,
+            "y": 2.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B3",
+            "payload_json": "{\"cell\":\"A5B3\"}",
+            "sequence_index": 30,
+            "x": 1,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B2",
+            "payload_json": "{\"cell\":\"A5B2\"}",
+            "sequence_index": 31,
+            "x": 0.5,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B2",
+            "payload_json": "{\"cell\":\"A6B2\"}",
+            "sequence_index": 32,
+            "x": 0.5,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B3",
+            "payload_json": "{\"cell\":\"A6B3\"}",
+            "sequence_index": 33,
+            "x": 1,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B4",
+            "payload_json": "{\"cell\":\"A6B4\"}",
+            "sequence_index": 34,
+            "x": 1.5,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B4",
+            "payload_json": "{\"cell\":\"A5B4\"}",
+            "sequence_index": 35,
+            "x": 1.5,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B5",
+            "payload_json": "{\"cell\":\"A5B5\"}",
+            "sequence_index": 36,
+            "x": 2,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B6",
+            "payload_json": "{\"cell\":\"A5B6\"}",
+            "sequence_index": 37,
+            "x": 2.5,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A5B7",
+            "payload_json": "{\"cell\":\"A5B7\"}",
+            "sequence_index": 38,
+            "x": 3,
+            "y": 2,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B7",
+            "payload_json": "{\"cell\":\"A6B7\"}",
+            "sequence_index": 39,
+            "x": 3,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B6",
+            "payload_json": "{\"cell\":\"A6B6\"}",
+            "sequence_index": 40,
+            "x": 2.5,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A6B5",
+            "payload_json": "{\"cell\":\"A6B5\"}",
+            "sequence_index": 41,
+            "x": 2,
+            "y": 1.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B5",
+            "payload_json": "{\"cell\":\"A7B5\"}",
+            "sequence_index": 42,
+            "x": 2,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B6",
+            "payload_json": "{\"cell\":\"A7B6\"}",
+            "sequence_index": 43,
+            "x": 2.5,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B7",
+            "payload_json": "{\"cell\":\"A7B7\"}",
+            "sequence_index": 44,
+            "x": 3,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B7",
+            "payload_json": "{\"cell\":\"A8B7\"}",
+            "sequence_index": 45,
+            "x": 3,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B7",
+            "payload_json": "{\"cell\":\"A9B7\"}",
+            "sequence_index": 46,
+            "x": 3,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B6",
+            "payload_json": "{\"cell\":\"A9B6\"}",
+            "sequence_index": 47,
+            "x": 2.5,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B6",
+            "payload_json": "{\"cell\":\"A8B6\"}",
+            "sequence_index": 48,
+            "x": 2.5,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B5",
+            "payload_json": "{\"cell\":\"A8B5\"}",
+            "sequence_index": 49,
+            "x": 2,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B5",
+            "payload_json": "{\"cell\":\"A9B5\"}",
+            "sequence_index": 50,
+            "x": 2,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B4",
+            "payload_json": "{\"cell\":\"A9B4\"}",
+            "sequence_index": 51,
+            "x": 1.5,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B3",
+            "payload_json": "{\"cell\":\"A9B3\"}",
+            "sequence_index": 52,
+            "x": 1,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A9B2",
+            "payload_json": "{\"cell\":\"A9B2\"}",
+            "sequence_index": 53,
+            "x": 0.5,
+            "y": 0,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B2",
+            "payload_json": "{\"cell\":\"A8B2\"}",
+            "sequence_index": 54,
+            "x": 0.5,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B3",
+            "payload_json": "{\"cell\":\"A8B3\"}",
+            "sequence_index": 55,
+            "x": 1,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A8B4",
+            "payload_json": "{\"cell\":\"A8B4\"}",
+            "sequence_index": 56,
+            "x": 1.5,
+            "y": 0.5,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B4",
+            "payload_json": "{\"cell\":\"A7B4\"}",
+            "sequence_index": 57,
+            "x": 1.5,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B3",
+            "payload_json": "{\"cell\":\"A7B3\"}",
+            "sequence_index": 58,
+            "x": 1,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "navigate",
+            "id": "A7B2",
+            "payload_json": "{\"cell\":\"A7B2\"}",
+            "sequence_index": 59,
+            "x": 0.5,
+            "y": 1,
+            "z": 1.2
+          },
+          {
+            "action": "land",
+            "id": "touchdown",
+            "payload_json": "{\"touchdown\":true}",
+            "sequence_index": 60,
+            "x": -0.06306227087110755,
+            "y": 0.1652258543643484,
+            "z": 0
+          }
+        ]
+      }
+    },
+    "stderr_json_forbidden": true
+  },
+  {
+    "name": "raw_invalid_json",
+    "stdin_text": "{",
+    "exit_code": 2,
+    "response": {
+      "error_code": "invalid_request",
+      "message": "request must be a JSON object",
+      "ok": false
+    },
+    "stderr_json_forbidden": true
+  },
+  {
+    "name": "wrong_schema",
+    "stdin_text": "{\"schema\":\"wrong\",\"case_path\":\"shared/cases/sample_case.json\",\"no_fly_cells\":[]}",
+    "exit_code": 2,
+    "response": {
+      "error_code": "invalid_request",
+      "message": "invalid schema or case_path",
+      "ok": false
+    },
+    "stderr_json_forbidden": true
+  },
+  {
+    "name": "empty_case_path",
+    "stdin_text": "{\"schema\":\"h_planning_request_v1\",\"case_path\":\"\",\"no_fly_cells\":[]}",
+    "exit_code": 2,
+    "response": {
+      "error_code": "invalid_request",
+      "message": "invalid schema or case_path",
+      "ok": false
+    },
+    "stderr_json_forbidden": true
+  },
+  {
+    "name": "non_array_no_fly",
+    "stdin_text": "{\"schema\":\"h_planning_request_v1\",\"case_path\":\"shared/cases/sample_case.json\",\"no_fly_cells\":\"A2B2\"}",
+    "exit_code": 2,
+    "response": {
+      "error_code": "invalid_request",
+      "message": "no_fly_cells must be an array of strings",
+      "ok": false
+    },
+    "stderr_json_forbidden": true
+  },
+  {
+    "name": "out_of_bounds_no_fly",
+    "stdin_text": "{\"schema\":\"h_planning_request_v1\",\"case_path\":\"shared/cases/sample_case.json\",\"no_fly_cells\":[\"A10B1\"]}",
+    "exit_code": 3,
+    "response": {
+      "error_code": "invalid_no_fly_zone",
+      "message": "invalid no-fly cell: A10B1",
+      "ok": false
+    },
+    "stderr_json_forbidden": true
+  },
+  {
+    "name": "missing_case",
+    "stdin_text": "{\"schema\":\"h_planning_request_v1\",\"case_path\":\"shared/cases/missing.json\",\"no_fly_cells\":[]}",
+    "exit_code": 3,
+    "response": {
+      "error_code": "case_load_failed",
+      "message": "No such file or directory",
+      "ok": false
+    },
+    "stderr_json_forbidden": true
+  },
+  {
+    "name": "blocked_start",
+    "stdin_text": "{\"schema\":\"h_planning_request_v1\",\"case_path\":\"shared/cases/sample_case.json\",\"no_fly_cells\":[\"A9B1\"]}",
+    "exit_code": 3,
+    "response": {
+      "error_code": "planning_failed",
+      "message": "start cell cannot be inside the no-fly zone",
+      "ok": false
+    },
+    "stderr_json_forbidden": true
+  }
+]

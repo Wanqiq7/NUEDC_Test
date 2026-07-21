@@ -98,3 +98,15 @@ add_h_problem_core_test(test_h_route_planner tests/test_h_route_planner.cpp)
 add_h_problem_core_test(test_h_planning_result tests/test_h_planning_result.cpp)
 add_h_problem_core_test(test_h_simulator tests/test_h_simulator.cpp)
 add_h_problem_core_test(test_h_route_planner_cli tests/test_h_route_planner_cli.cpp)
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(
+    NAME test_h_route_planner_golden
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_planner_golden.py
+            $<TARGET_FILE:h_route_planner_cli>
+            ${PROJECT_SOURCE_DIR}/shared/cases/golden/planner_cli_cases.json
+)
+set_tests_properties(test_h_route_planner_golden PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+)
