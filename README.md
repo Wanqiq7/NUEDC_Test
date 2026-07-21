@@ -136,6 +136,7 @@ cd web_ground_station/frontend
 corepack pnpm install --offline --frozen-lockfile
 corepack pnpm build
 cd ../..
+web_ground_station/scripts/install_mediamtx.sh  # 仅首次赛前联网准备
 source runtime/web_ground_station.env
 web_ground_station/scripts/check_web_ground_station.sh
 web_ground_station/scripts/start_competition.sh
