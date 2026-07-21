@@ -1,5 +1,5 @@
+import hashlib
 import importlib.util
-import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -10,19 +10,25 @@ _PROTO_SOURCE = _REPO_ROOT / "shared/proto/messages.proto"
 _GENERATED_MODULE = (
     _REPO_ROOT / "web_ground_station/.generated/proto/messages_pb2.py"
 )
-_GENERATOR = _REPO_ROOT / "web_ground_station/scripts/generate_python_proto.py"
+_GENERATED_HASH = _GENERATED_MODULE.with_name("messages.proto.sha256")
 
 
-def _generate_if_stale() -> None:
-    if (
-        not _GENERATED_MODULE.exists()
-        or _GENERATED_MODULE.stat().st_mtime < _PROTO_SOURCE.stat().st_mtime
-    ):
-        subprocess.run([sys.executable, str(_GENERATOR)], check=True)
+def _validate_generated() -> None:
+    if not _GENERATED_MODULE.is_file() or not _GENERATED_HASH.is_file():
+        raise RuntimeError(
+            "generated protobuf is missing; run "
+            "web_ground_station/scripts/generate_python_proto.py"
+        )
+    expected = hashlib.sha256(_PROTO_SOURCE.read_bytes()).hexdigest()
+    actual = _GENERATED_HASH.read_text(encoding="ascii").strip()
+    if actual != expected:
+        raise RuntimeError(
+            "generated protobuf hash does not match shared/proto/messages.proto"
+        )
 
 
 def load_messages_module() -> ModuleType:
-    _generate_if_stale()
+    _validate_generated()
     module_name = "nuedc_web_gateway.generated.messages_pb2"
     spec = importlib.util.spec_from_file_location(module_name, _GENERATED_MODULE)
     if spec is None or spec.loader is None:

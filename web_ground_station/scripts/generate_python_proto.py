@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -17,6 +18,10 @@ def main() -> None:
             str(proto_source),
         ],
         check=True,
+    )
+    source_hash = hashlib.sha256(proto_source.read_bytes()).hexdigest()
+    (output_dir / "messages.proto.sha256").write_text(
+        source_hash + "\n", encoding="ascii"
     )
 
 
