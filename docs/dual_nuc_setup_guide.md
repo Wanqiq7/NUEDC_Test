@@ -124,12 +124,28 @@ source runtime/ground_control_network.env
 ## 6. 日常联调启动
 
 热点和客户端连接首次配置完成后，日常联调不需要重复修改 NetworkManager 配置。
+先在地面站从两棵干净仓库创建唯一部署清单并做双端契约验证：
+
+```bash
+cd /path/to/NUEDC_Test
+web_ground_station/scripts/verify_cross_repo_manifest_contract.sh \
+  --ground-repo "$PWD" --airborne-repo /path/to/airborne-repo \
+  --model /path/to/ani_rk3588_fp16.rknn \
+  --output runtime/deployment_manifest.json
+```
+
+把该文件复制为机载 staging 文件并在同一文件系统用 `mv` 原子替换发布清单，禁止两端分别
+生成。Ground 环境设 `NUEDC_DEPLOYMENT_MANIFEST=runtime/deployment_manifest.json`；Airborne
+环境设为发布清单绝对路径。随后使用机载仓库的离线安装脚本生成版本目录和 `current` 软链，
+验证发布后再启动固定的 systemd 入口；回滚只切换 `current` 到上一完整版本，不拼接文件。
+
 先在机载端设置硬件门禁所需环境变量，并通过联调入口启动 ROS 2 硬件栈：
 
 ```bash
 cd /home/sb/Ground_station/Mid360_add_groundstation
 export NUEDC_STM32_GATE_FILE=/home/cat/evidence/stm32-gate.json
 export NUEDC_MODEL_PATH=/home/cat/Mid360_add_groundstation/packages/models/ani_rk3588_fp16.rknn
+export NUEDC_DEPLOYMENT_MANIFEST=/opt/nuedc/current/deployment_manifest.json
 ./src/nuedc_airborne/airborne_bringup/scripts/start_airborne_integration.sh
 ```
 

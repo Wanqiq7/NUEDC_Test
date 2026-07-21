@@ -128,6 +128,38 @@ def test_verify_ground_accepts_local_commit_and_protocol(tmp_path):
     load_module().verify_manifest(manifest_path, repo, "ground", repo / "shared/proto/messages.proto")
 
 
+@pytest.mark.parametrize("staged", [False, True])
+def test_verify_ground_rejects_tracked_repository_changes(tmp_path, staged):
+    proto = b"proto"
+    repo = tmp_path / "ground"
+    commit = make_repo(repo, proto, "2026-07-20T00:00:00Z")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(valid_manifest(commit, "b" * 40, proto, b"model")), encoding="utf-8"
+    )
+    (repo / ".gitignore").write_text("runtime/deployment_manifest.json\n# changed\n", encoding="utf-8")
+    if staged:
+        subprocess.run(["git", "-C", str(repo), "add", ".gitignore"], check=True)
+
+    with pytest.raises(ValueError, match="tracked changes"):
+        load_module().verify_manifest(
+            manifest_path, repo, "ground", repo / "shared/proto/messages.proto"
+        )
+
+
+def test_verify_ground_ignores_runtime_manifest(tmp_path):
+    proto = b"proto"
+    repo = tmp_path / "ground"
+    commit = make_repo(repo, proto, "2026-07-20T00:00:00Z")
+    manifest_path = repo / "runtime/deployment_manifest.json"
+    manifest_path.parent.mkdir()
+    manifest_path.write_text(
+        json.dumps(valid_manifest(commit, "b" * 40, proto, b"model")), encoding="utf-8"
+    )
+
+    load_module().verify_manifest(manifest_path, repo, "ground", repo / "shared/proto/messages.proto")
+
+
 @pytest.mark.parametrize(
     ("mutation", "error"),
     [

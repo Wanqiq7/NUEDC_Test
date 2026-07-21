@@ -13,6 +13,8 @@ EOF
 printf '#!/usr/bin/env bash\nexit 0\n' > "${TMP_DIR}/planner"
 chmod +x "${TMP_DIR}/planner"
 cp "${ROOT_DIR}/runtime/web_ground_station.env" "${TMP_DIR}/web_ground_station.env"
+grep -q '^NUEDC_DEPLOYMENT_MANIFEST=runtime/deployment_manifest.json$' \
+  "${TMP_DIR}/web_ground_station.env"
 printf 'NUEDC_RUNTIME_DIR=%s\nNUEDC_PLANNER_CLI=%s\n' \
   "${TMP_DIR}/runtime" "${TMP_DIR}/planner" >> "${TMP_DIR}/web_ground_station.env"
 printf 'NUEDC_DEPLOYMENT_MANIFEST=%s\n' "${TMP_DIR}/deployment.json" \

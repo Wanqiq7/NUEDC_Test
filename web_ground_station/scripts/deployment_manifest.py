@@ -53,6 +53,23 @@ def require_clean_repository(repo):
         raise ValueError(f"dirty repository rejected: {repo}")
 
 
+def require_no_tracked_changes(repo):
+    for arguments in (("diff", "--quiet"), ("diff", "--cached", "--quiet")):
+        try:
+            subprocess.run(
+                ["git", "-C", str(repo), *arguments],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as error:
+            raise ValueError(f"git command failed for repository {repo}") from error
+        except subprocess.CalledProcessError as error:
+            if error.returncode == 1:
+                raise ValueError(f"tracked changes rejected: {repo}") from error
+            raise ValueError(f"git command failed for repository {repo}") from error
+
+
 def validate_document(document):
     if not isinstance(document, dict):
         raise ValueError("manifest JSON must be an object")
@@ -133,6 +150,7 @@ def create_manifest(ground_repo, airborne_repo, model, output, created_at_utc=No
 
 def verify_manifest(manifest, repo, role, proto):
     document = read_manifest(manifest)
+    require_no_tracked_changes(repo)
     expected_commit = document[f"{role}_commit"]
     if repository_commit(repo) != expected_commit:
         raise ValueError(f"local {role} commit does not match deployment manifest")

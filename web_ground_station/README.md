@@ -43,6 +43,10 @@ cd frontend
 corepack pnpm install --offline --frozen-lockfile
 corepack pnpm build
 cd /home/sb/Ground_station/.worktrees/nuedc-web
+python3 web_ground_station/scripts/deployment_manifest.py create \
+  --ground-repo "$PWD" --airborne-repo /path/to/airborne-repo \
+  --model /path/to/ani_rk3588_fp16.rknn \
+  --output runtime/deployment_manifest.json
 source runtime/web_ground_station.env
 web_ground_station/scripts/check_web_ground_station.sh
 web_ground_station/scripts/start_competition.sh
@@ -51,6 +55,12 @@ web_ground_station/scripts/start_competition.sh
 预检确认固定地址与端口、`uv.lock`、`pnpm-lock.yaml`、静态前端和 C++ 规划器均可用。
 比赛启动不会安装依赖、不会启动热更新，也不会访问互联网。启动后在地面站 Chromium 打开
 `http://10.42.0.1:8000`。
+
+创建清单时两个仓库必须无修改。把同一个 `runtime/deployment_manifest.json` 先写到临时文件，
+再用 `mv` 原子替换到机载发布目录；Ground 使用
+`NUEDC_DEPLOYMENT_MANIFEST=runtime/deployment_manifest.json`，Airborne 使用发布目录内同一文件的
+绝对路径。可在部署前运行 `verify_cross_repo_manifest_contract.sh`，确认 Ground 生成器的实际输出
+能同时被两端验证器消费；验证也会拒绝 HEAD 之后的已跟踪修改。
 
 ## 操作闭环
 
