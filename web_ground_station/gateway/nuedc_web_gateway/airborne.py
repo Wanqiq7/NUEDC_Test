@@ -64,6 +64,7 @@ class _ZmqRequestTransport:
 
     async def send(self, payload: bytes) -> bytes:
         socket = self._context.socket(zmq.REQ)
+        socket.setsockopt(zmq.TOS, 46 << 2)
         socket.setsockopt(zmq.LINGER, 0)
         socket.setsockopt(zmq.SNDTIMEO, round(self._timeout_s * 1000))
         socket.setsockopt(zmq.RCVTIMEO, round(self._timeout_s * 1000))
@@ -105,6 +106,7 @@ class AirborneClient:
             self._context, config.command_endpoint, timeout_ms
         )
         self._telemetry = self._context.socket(zmq.SUB)
+        self._telemetry.setsockopt(zmq.TOS, 46 << 2)
         self._telemetry.setsockopt(zmq.LINGER, 0)
         self._telemetry.setsockopt(zmq.SUBSCRIBE, b"")
         self._telemetry.connect(config.telemetry_endpoint)

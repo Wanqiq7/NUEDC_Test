@@ -48,6 +48,20 @@ if digest.read_text(encoding="ascii").strip() != hashlib.sha256(source.read_byte
     raise SystemExit("预生成 Python Protobuf 哈希不匹配")
 PY
 [[ -x "${UVICORN_BIN}" ]] || { echo "Uvicorn 不可执行: ${UVICORN_BIN}" >&2; exit 1; }
+MEDIAMTX_BIN="${NUEDC_MEDIAMTX_BIN:-${ROOT_DIR}/web_ground_station/vendor/mediamtx/mediamtx}"
+MEDIAMTX_CONFIG="${NUEDC_MEDIAMTX_CONFIG:-${ROOT_DIR}/web_ground_station/config/mediamtx.yml}"
+[[ "${MEDIAMTX_BIN}" = /* ]] || MEDIAMTX_BIN="${ROOT_DIR}/${MEDIAMTX_BIN}"
+[[ "${MEDIAMTX_CONFIG}" = /* ]] || MEDIAMTX_CONFIG="${ROOT_DIR}/${MEDIAMTX_CONFIG}"
+[[ -x "${MEDIAMTX_BIN}" ]] || { echo "MediaMTX 不可执行: ${MEDIAMTX_BIN}" >&2; exit 1; }
+[[ -f "${MEDIAMTX_CONFIG}" ]] || { echo "缺少 MediaMTX 配置: ${MEDIAMTX_CONFIG}" >&2; exit 1; }
+: "${NUEDC_VIDEO_RTSP_USER:?NUEDC_VIDEO_RTSP_USER is required}"
+: "${NUEDC_VIDEO_RTSP_PASSWORD:?NUEDC_VIDEO_RTSP_PASSWORD is required}"
+[[ "${NUEDC_MEDIAMTX_WHEP_URL:-}" == "http://127.0.0.1:8889/camera_raw/whep" ]] || {
+  echo "MediaMTX WHEP 地址必须使用固定本机端点" >&2; exit 1;
+}
+[[ "${NUEDC_MEDIAMTX_API_URL:-}" == "http://127.0.0.1:9997" ]] || {
+  echo "MediaMTX API 地址必须使用固定本机端点" >&2; exit 1;
+}
 FRONTEND_DIST_DIR="${NUEDC_FRONTEND_DIST_DIR:-${ROOT_DIR}/web_ground_station/frontend/dist}"
 [[ -f "${FRONTEND_DIST_DIR}/index.html" ]] || { echo "缺少 frontend/dist" >&2; exit 1; }
 RUNTIME_DIR="${NUEDC_RUNTIME_DIR:-runtime}"

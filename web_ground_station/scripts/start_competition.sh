@@ -19,5 +19,28 @@ set +a
   --command-port "${NUEDC_COMMAND_PORT}"
 cd "${ROOT_DIR}/web_ground_station"
 UVICORN_BIN="${NUEDC_UVICORN_BIN:-${ROOT_DIR}/web_ground_station/.venv/bin/uvicorn}"
-exec "${UVICORN_BIN}" nuedc_web_gateway.app:create_app --factory \
-  --host "${NUEDC_WEB_HOST}" --port "${NUEDC_WEB_PORT}"
+MEDIAMTX_RUNNER="${NUEDC_MEDIAMTX_RUNNER:-${ROOT_DIR}/web_ground_station/scripts/run_mediamtx.sh}"
+mediamtx_pid=""
+gateway_pid=""
+cleanup() {
+  for pid in "${gateway_pid}" "${mediamtx_pid}"; do
+    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+      kill "${pid}" 2>/dev/null || true
+    fi
+  done
+  [[ -z "${gateway_pid}" ]] || wait "${gateway_pid}" 2>/dev/null || true
+  [[ -z "${mediamtx_pid}" ]] || wait "${mediamtx_pid}" 2>/dev/null || true
+}
+trap cleanup EXIT TERM INT
+
+"${MEDIAMTX_RUNNER}" &
+mediamtx_pid=$!
+"${UVICORN_BIN}" nuedc_web_gateway.app:create_app --factory \
+  --host "${NUEDC_WEB_HOST}" --port "${NUEDC_WEB_PORT}" &
+gateway_pid=$!
+
+set +e
+wait -n "${mediamtx_pid}" "${gateway_pid}"
+status=$?
+set -e
+exit "${status}"

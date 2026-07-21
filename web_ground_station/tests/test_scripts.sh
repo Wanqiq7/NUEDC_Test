@@ -11,7 +11,9 @@ cat > "${TMP_DIR}/deployment.json" <<EOF
 {"schema":"nuedc.deployment.v1","ground_commit":"${GROUND_COMMIT}","airborne_commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","protocol_sha256":"${PROTOCOL_SHA256}","model_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","created_at_utc":"2026-07-21T00:00:00Z"}
 EOF
 printf '#!/usr/bin/env bash\nexit 0\n' > "${TMP_DIR}/planner"
-chmod +x "${TMP_DIR}/planner"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${TMP_DIR}/bin/mediamtx"
+printf 'paths: {}\n' > "${TMP_DIR}/mediamtx.yml"
+chmod +x "${TMP_DIR}/planner" "${TMP_DIR}/bin/mediamtx"
 cp "${ROOT_DIR}/runtime/web_ground_station.env" "${TMP_DIR}/web_ground_station.env"
 grep -q '^NUEDC_DEPLOYMENT_MANIFEST=runtime/deployment_manifest.json$' \
   "${TMP_DIR}/web_ground_station.env"
@@ -19,6 +21,13 @@ printf 'NUEDC_RUNTIME_DIR=%s\nNUEDC_PLANNER_CLI=%s\n' \
   "${TMP_DIR}/runtime" "${TMP_DIR}/planner" >> "${TMP_DIR}/web_ground_station.env"
 printf 'NUEDC_DEPLOYMENT_MANIFEST=%s\n' "${TMP_DIR}/deployment.json" \
   >> "${TMP_DIR}/web_ground_station.env"
+printf 'NUEDC_MEDIAMTX_BIN=%s\nNUEDC_MEDIAMTX_CONFIG=%s\n' \
+  "${TMP_DIR}/bin/mediamtx" "${TMP_DIR}/mediamtx.yml" >> "${TMP_DIR}/web_ground_station.env"
+printf '%s\n' \
+  'NUEDC_MEDIAMTX_WHEP_URL=http://127.0.0.1:8889/camera_raw/whep' \
+  'NUEDC_MEDIAMTX_API_URL=http://127.0.0.1:9997' \
+  'NUEDC_VIDEO_RTSP_USER=test-viewer' \
+  'NUEDC_VIDEO_RTSP_PASSWORD=test-secret' >> "${TMP_DIR}/web_ground_station.env"
 cat > "${TMP_DIR}/bin/uv" <<'EOF'
 #!/usr/bin/env bash
 printf 'uv %s\n' "$*" >> "${FORBIDDEN_LOG}"
@@ -35,7 +44,16 @@ set -e
 printf '%s\n' "$*" >> "${UVICORN_LOG}"
 printf '%s\n%s\n' "${NUEDC_RUNTIME_DIR}" "${NUEDC_PLANNER_CLI}" > "${FAKE_ENV_LOG}"
 EOF
-chmod +x "${TMP_DIR}/bin/uv" "${TMP_DIR}/bin/protoc" "${TMP_DIR}/bin/uvicorn"
+cat > "${TMP_DIR}/bin/mediamtx-runner" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'mediamtx\n' >> "${ORDER_LOG}"
+printf 'started\n' >> "${MEDIAMTX_LOG}"
+trap 'exit 0' TERM INT
+while :; do sleep 1; done
+EOF
+chmod +x "${TMP_DIR}/bin/uv" "${TMP_DIR}/bin/protoc" \
+  "${TMP_DIR}/bin/uvicorn" "${TMP_DIR}/bin/mediamtx-runner"
 
 cat > "${TMP_DIR}/bin/network-check" <<'EOF'
 #!/usr/bin/env bash
@@ -55,11 +73,12 @@ run_competition() {
   UVICORN_LOG="${TMP_DIR}/uvicorn.log" FAKE_ENV_LOG="${TMP_DIR}/uvicorn.env.log" \
     FORBIDDEN_LOG="${TMP_DIR}/forbidden.log" \
     NETWORK_LOG="${TMP_DIR}/network.log" PREFLIGHT_LOG="${TMP_DIR}/preflight.log" \
-    ORDER_LOG="${TMP_DIR}/order.log" \
+    ORDER_LOG="${TMP_DIR}/order.log" MEDIAMTX_LOG="${TMP_DIR}/mediamtx.log" \
     PATH="${TMP_DIR}/bin:${PATH}" \
     NUEDC_NETWORK_CHECK="${TMP_DIR}/bin/network-check" \
     NUEDC_WEB_PREFLIGHT_CHECK="${TMP_DIR}/bin/preflight-check" \
     NUEDC_UVICORN_BIN="${TMP_DIR}/bin/uvicorn" \
+    NUEDC_MEDIAMTX_RUNNER="${TMP_DIR}/bin/mediamtx-runner" \
     NUEDC_WEB_ENV_FILE="${TMP_DIR}/web_ground_station.env" \
     "$@" bash "${ROOT_DIR}/web_ground_station/scripts/start_competition.sh"
 }
@@ -70,19 +89,24 @@ run_competition_with_real_preflight() {
   UVICORN_LOG="${TMP_DIR}/uvicorn.log" FAKE_ENV_LOG="${TMP_DIR}/uvicorn.env.log" \
     FORBIDDEN_LOG="${TMP_DIR}/forbidden.log" \
     NETWORK_LOG="${TMP_DIR}/network.log" \
+    ORDER_LOG="${TMP_DIR}/order.log" MEDIAMTX_LOG="${TMP_DIR}/mediamtx.log" \
     PATH="${TMP_DIR}/bin:${PATH}" \
     NUEDC_NETWORK_CHECK="${TMP_DIR}/bin/network-check" \
     NUEDC_UVICORN_BIN="${TMP_DIR}/bin/uvicorn" \
+    NUEDC_MEDIAMTX_RUNNER="${TMP_DIR}/bin/mediamtx-runner" \
     NUEDC_WEB_ENV_FILE="${env_file}" \
     NUEDC_FRONTEND_DIST_DIR="${frontend_dist_dir}" \
     bash "${ROOT_DIR}/web_ground_station/scripts/start_competition.sh"
 }
 
 rm -f "${TMP_DIR}/uvicorn.log" "${TMP_DIR}/forbidden.log" \
-  "${TMP_DIR}/network.log" "${TMP_DIR}/preflight.log" "${TMP_DIR}/order.log"
+  "${TMP_DIR}/network.log" "${TMP_DIR}/preflight.log" "${TMP_DIR}/order.log" \
+  "${TMP_DIR}/mediamtx.log"
 run_competition env
 [[ "$(sed -n '1p' "${TMP_DIR}/order.log")" == "preflight" ]]
 [[ "$(sed -n '2p' "${TMP_DIR}/order.log")" == "network" ]]
+[[ "$(sed -n '3p' "${TMP_DIR}/order.log")" == "mediamtx" ]]
+[[ "$(cat "${TMP_DIR}/mediamtx.log")" == "started" ]]
 [[ "$(cat "${TMP_DIR}/network.log")" == \
   "--host 10.42.0.2 --telemetry-port 5557 --command-port 5558" ]]
 [[ "$(cat "${TMP_DIR}/preflight.log")" == "called" ]]
@@ -163,3 +187,4 @@ grep -q 'local protocol' "${TMP_DIR}/protocol-mismatch.out"
 [[ ! -e "${TMP_DIR}/forbidden.log" ]]
 [[ ! -e "${TMP_DIR}/network.log" ]]
 echo "web ground station scripts: PASS"
+bash "${ROOT_DIR}/web_ground_station/scripts/tests/test_run_mediamtx.sh"

@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Mapping
+from urllib.parse import urlsplit
 
 
 def _port(env: Mapping[str, str], name: str, default: int) -> int:
@@ -20,6 +22,41 @@ def _boolean(env: Mapping[str, str], name: str, default: bool) -> bool:
     return env[name].strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _positive_float(
+    env: Mapping[str, str], name: str, default: float
+) -> float:
+    raw_value = env.get(name, str(default))
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a finite positive number") from error
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a finite positive number")
+    return value
+
+
+def _loopback_http_url(
+    env: Mapping[str, str], name: str, default: str
+) -> str:
+    value = env.get(name, default).strip()
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{name} must be a loopback HTTP URL")
+    try:
+        if parsed.port is None:
+            raise ValueError
+    except ValueError as error:
+        raise ValueError(f"{name} must include a valid port") from error
+    return value.rstrip("/")
+
+
 @dataclass(frozen=True)
 class GatewayConfig:
     airborne_host: str
@@ -31,6 +68,9 @@ class GatewayConfig:
     web_port: int
     runtime_dir: Path
     planner_cli: Path
+    mediamtx_whep_url: str = "http://127.0.0.1:8889/camera_raw/whep"
+    mediamtx_api_url: str = "http://127.0.0.1:9997"
+    video_proxy_timeout_s: float = 3.0
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "GatewayConfig":
@@ -48,6 +88,19 @@ class GatewayConfig:
                     "NUEDC_PLANNER_CLI",
                     "build/shared/cpp/h_route_planner_cli",
                 )
+            ),
+            mediamtx_whep_url=_loopback_http_url(
+                env,
+                "NUEDC_MEDIAMTX_WHEP_URL",
+                "http://127.0.0.1:8889/camera_raw/whep",
+            ),
+            mediamtx_api_url=_loopback_http_url(
+                env,
+                "NUEDC_MEDIAMTX_API_URL",
+                "http://127.0.0.1:9997",
+            ),
+            video_proxy_timeout_s=_positive_float(
+                env, "NUEDC_VIDEO_PROXY_TIMEOUT_S", 3.0
             ),
         )
 
