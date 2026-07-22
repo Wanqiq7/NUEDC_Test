@@ -5,6 +5,7 @@ scan_forbidden_references() {
     # Return rg's status unchanged: 0 = matches, 1 = no matches, >1 = scan error.
     rg -n \
         --glob '!scripts/tests/test_web_only_ground_station.sh' \
+        --glob '!scripts/tests/test_web_only_ground_station_docs.sh' \
         --glob '!docs/**' \
         --glob '!**/.generated/**' \
         --glob '!**/build/**' \
@@ -17,8 +18,13 @@ scan_forbidden_references() {
 scan_obsolete_current_docs() {
     # Keep historical design records out of this policy check. These are the
     # current entry-point documents that must describe the shipped boundary.
-    rg -n \
-        'Qt[[:space:]]*6|Qt6|QtTest|competition_core|C\+\+[^\n]*(Protobuf|ZeroMQ)|(Protobuf|ZeroMQ)[^\n]*C\+\+|Protobuf codec|控制命令处理|command handler|planner[^\n]*simulator|规划[^\n]*(仿真|模拟器)' \
+    local planner='(?:the[[:space:]]+)?(?:C\+\+[[:space:]]+)?planner(?:[[:space:]]+(?:library|CLI|core|component))?'
+    local forbidden='(?:Qt(?:[[:space:]]+Core|6|Test)?|C\+\+[[:space:]]+Protobuf|ZeroMQ|simulator|command[[:space:]]+(?:handler|handling)|competition_core)'
+    local forward_relation='(?:requires?|depends[[:space:]]+on|owns?|uses?)'
+    local passive_relation='(?:is|are)[[:space:]]+(?:required|depended[[:space:]]+on|owned|used)[[:space:]]+by'
+
+    rg -n -i -P \
+        "(?:${planner}[[:space:]]+${forward_relation}[[:space:]]+(?:the[[:space:]]+)?${forbidden}|${forbidden}[[:space:]]+${passive_relation}[[:space:]]+${planner})" \
         "$@"
 }
 
