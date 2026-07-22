@@ -536,6 +536,42 @@ async def test_restart_safe_publisher_epoch_rejects_retired_packets(
 
 
 @pytest.mark.asyncio
+async def test_full_airborne_reboot_accepts_lower_publisher_epoch(
+    transport_fixture,
+):
+    client, ground_state, _, _, pub_server = transport_fixture
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+
+    old_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                1_000_000_500,
+                {"current_cell": "A1B2", "visited_cells": 9},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await old_publish
+
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+    rebooted_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                100,
+                {"current_cell": "A9B1", "visited_cells": 1},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await rebooted_publish
+    assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
+
+
+@pytest.mark.asyncio
 async def test_summary_updates_running_false(transport_fixture):
     client, ground_state, recorder, _, pub_server = transport_fixture
     ground_state.apply_plan(plan_for("case-1"), now_ms())
