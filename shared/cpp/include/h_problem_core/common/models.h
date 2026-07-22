@@ -1,15 +1,10 @@
 #pragma once
 
-#include "competition_core/task/models.h"
-
-#include <QMap>
-#include <QPoint>
-#include <QSet>
-#include <QString>
-#include <QStringList>
-#include <QVector>
-
+#include <cstdint>
 #include <optional>
+#include <set>
+#include <string>
+#include <vector>
 
 namespace hcore {
 
@@ -18,10 +13,18 @@ struct PointCm {
     double y_cm = 0.0;
 };
 
+struct GridPoint {
+    int x = 0;
+    int y = 0;
+};
+
+using CellList = std::vector<std::string>;
+using CellSet = std::set<std::string>;
+
 struct Animal {
-    QString cell;
-    QString name;
-    quint32 count = 0;
+    std::string cell;
+    std::string name;
+    std::uint32_t count = 0;
 };
 
 struct LandingProfile {
@@ -45,16 +48,13 @@ struct MissionTiming {
 };
 
 struct CaseConfig {
-    QString case_id;
-    QString start_cell;
-    QStringList no_fly_cells;
+    std::string case_id;
+    std::string start_cell;
+    CellList no_fly_cells;
     int tick_interval_ms = 100;
-    QVector<Animal> animals;
+    std::vector<Animal> animals;
     std::optional<LandingProfile> landing;
     MissionTiming mission_timing;
 };
-
-using AckResult = competition::AckResult;
-using CommandState = competition::CommandState;
 
 } // namespace hcore

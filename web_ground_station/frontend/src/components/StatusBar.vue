@@ -18,6 +18,9 @@
       <q-btn data-testid="open-detections" class="history-button" flat icon="history" label="检测记录" aria-label="打开检测记录" @click="openDetectionHistory">
         <q-tooltip>检测记录</q-tooltip>
       </q-btn>
+      <q-btn data-testid="open-raw-video" flat round icon="videocam" aria-label="查看原始图传" @click="videoOpen = true">
+        <q-tooltip>查看原始图传</q-tooltip>
+      </q-btn>
       <q-btn data-testid="open-details" flat round icon="info" aria-label="打开任务详情" @click="detailsOpen = true">
         <q-tooltip>任务详情</q-tooltip>
       </q-btn>
@@ -43,6 +46,8 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <RawVideoDialog v-model="videoOpen" />
 
     <q-dialog v-model="detectionsOpen">
       <q-card v-if="detectionsOpen" data-testid="detection-dialog-content" class="details-dialog detection-dialog">
@@ -78,10 +83,12 @@ import { QBtn, QCard, QCardSection, QDialog, QSeparator, QTooltip } from 'quasar
 import { fetchDetectionHistory } from '../api/gateway';
 import type { DynamicPayload } from '../models/gateway';
 import { useGroundStore } from '../stores/ground';
+import RawVideoDialog from './RawVideoDialog.vue';
 
 const store = useGroundStore();
 const detailsOpen = ref(false);
 const detectionsOpen = ref(false);
+const videoOpen = ref(false);
 const historyDetections = ref<DynamicPayload[]>([]);
 const historyLoading = ref(false);
 const historyError = ref('');

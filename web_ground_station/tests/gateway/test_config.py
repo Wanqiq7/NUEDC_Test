@@ -15,6 +15,9 @@ def test_competition_defaults():
     assert config.web_host == "0.0.0.0"
     assert config.web_port == 8000
     assert config.pid_debug_enabled is False
+    assert config.mediamtx_whep_url == "http://127.0.0.1:8889/camera_raw/whep"
+    assert config.mediamtx_api_url == "http://127.0.0.1:9997"
+    assert config.video_proxy_timeout_s == 3.0
 
 
 def test_environment_overrides_all_fields():
@@ -29,6 +32,9 @@ def test_environment_overrides_all_fields():
             "NUEDC_WEB_PORT": "18000",
             "NUEDC_RUNTIME_DIR": "/tmp/nuedc-runtime",
             "NUEDC_PLANNER_CLI": "/tmp/h-route-planner",
+            "NUEDC_MEDIAMTX_WHEP_URL": "http://localhost:18889/camera_raw/whep",
+            "NUEDC_MEDIAMTX_API_URL": "http://[::1]:19997",
+            "NUEDC_VIDEO_PROXY_TIMEOUT_S": "1.5",
         }
     )
 
@@ -40,6 +46,9 @@ def test_environment_overrides_all_fields():
     assert config.web_port == 18000
     assert config.runtime_dir == Path("/tmp/nuedc-runtime")
     assert config.planner_cli == Path("/tmp/h-route-planner")
+    assert config.mediamtx_whep_url == "http://localhost:18889/camera_raw/whep"
+    assert config.mediamtx_api_url == "http://[::1]:19997"
+    assert config.video_proxy_timeout_s == 1.5
 
 
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on", " On "])
@@ -71,3 +80,23 @@ def test_config_is_immutable():
 
     with pytest.raises(FrozenInstanceError):
         config.web_port = 9000
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("NUEDC_MEDIAMTX_WHEP_URL", "http://10.42.0.2:8889/camera_raw/whep"),
+        ("NUEDC_MEDIAMTX_WHEP_URL", "https://example.com/camera_raw/whep"),
+        ("NUEDC_MEDIAMTX_API_URL", "http://10.42.0.2:9997"),
+        ("NUEDC_MEDIAMTX_API_URL", "file:///tmp/mediamtx.sock"),
+    ],
+)
+def test_media_upstreams_must_be_loopback_http(name, value):
+    with pytest.raises(ValueError, match=name):
+        GatewayConfig.from_env({name: value})
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "eleven"])
+def test_video_proxy_timeout_must_be_finite_and_positive(value):
+    with pytest.raises(ValueError, match="NUEDC_VIDEO_PROXY_TIMEOUT_S"):
+        GatewayConfig.from_env({"NUEDC_VIDEO_PROXY_TIMEOUT_S": value})

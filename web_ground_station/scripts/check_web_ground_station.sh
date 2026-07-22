@@ -9,6 +9,14 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+: "${NUEDC_DEPLOYMENT_MANIFEST:?NUEDC_DEPLOYMENT_MANIFEST is required}"
+[[ "${NUEDC_DEPLOYMENT_MANIFEST}" = /* ]] || \
+  NUEDC_DEPLOYMENT_MANIFEST="${ROOT_DIR}/${NUEDC_DEPLOYMENT_MANIFEST}"
+python3 "${ROOT_DIR}/web_ground_station/scripts/deployment_manifest.py" verify \
+  --manifest "${NUEDC_DEPLOYMENT_MANIFEST}" \
+  --repo "${ROOT_DIR}" --role ground \
+  --proto "${ROOT_DIR}/shared/proto/messages.proto"
+
 [[ "${NUEDC_AIRBORNE_HOST:-}" == "10.42.0.2" ]] || { echo "机载端必须为 10.42.0.2" >&2; exit 1; }
 [[ "${NUEDC_WEB_HOST:-}" == "0.0.0.0" || "${NUEDC_WEB_HOST:-}" == "10.42.0.1" ]] || {
   echo "Web 主机必须兼容 10.42.0.1 热点入口" >&2; exit 1;
@@ -22,6 +30,38 @@ for port_name in NUEDC_TELEMETRY_PORT NUEDC_COMMAND_PORT NUEDC_PID_DEBUG_PORT; d
 done
 [[ -f "${ROOT_DIR}/web_ground_station/uv.lock" ]] || { echo "缺少 uv.lock" >&2; exit 1; }
 [[ -f "${ROOT_DIR}/web_ground_station/frontend/pnpm-lock.yaml" ]] || { echo "缺少 pnpm-lock.yaml" >&2; exit 1; }
+PY_PROTO="${ROOT_DIR}/web_ground_station/.generated/proto/messages_pb2.py"
+PY_PROTO_HASH="${ROOT_DIR}/web_ground_station/.generated/proto/messages.proto.sha256"
+PROTO_SOURCE="${ROOT_DIR}/shared/proto/messages.proto"
+UVICORN_BIN="${NUEDC_UVICORN_BIN:-${ROOT_DIR}/web_ground_station/.venv/bin/uvicorn}"
+[[ -f "${PY_PROTO}" && -f "${PY_PROTO_HASH}" ]] || {
+  echo "缺少预生成 Python Protobuf" >&2; exit 1;
+}
+python3 - "${PROTO_SOURCE}" "${PY_PROTO_HASH}" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+digest = pathlib.Path(sys.argv[2])
+if digest.read_text(encoding="ascii").strip() != hashlib.sha256(source.read_bytes()).hexdigest():
+    raise SystemExit("预生成 Python Protobuf 哈希不匹配")
+PY
+[[ -x "${UVICORN_BIN}" ]] || { echo "Uvicorn 不可执行: ${UVICORN_BIN}" >&2; exit 1; }
+MEDIAMTX_BIN="${NUEDC_MEDIAMTX_BIN:-${ROOT_DIR}/web_ground_station/vendor/mediamtx/mediamtx}"
+MEDIAMTX_CONFIG="${NUEDC_MEDIAMTX_CONFIG:-${ROOT_DIR}/web_ground_station/config/mediamtx.yml}"
+[[ "${MEDIAMTX_BIN}" = /* ]] || MEDIAMTX_BIN="${ROOT_DIR}/${MEDIAMTX_BIN}"
+[[ "${MEDIAMTX_CONFIG}" = /* ]] || MEDIAMTX_CONFIG="${ROOT_DIR}/${MEDIAMTX_CONFIG}"
+[[ -x "${MEDIAMTX_BIN}" ]] || { echo "MediaMTX 不可执行: ${MEDIAMTX_BIN}" >&2; exit 1; }
+[[ -f "${MEDIAMTX_CONFIG}" ]] || { echo "缺少 MediaMTX 配置: ${MEDIAMTX_CONFIG}" >&2; exit 1; }
+: "${NUEDC_VIDEO_RTSP_USER:?NUEDC_VIDEO_RTSP_USER is required}"
+: "${NUEDC_VIDEO_RTSP_PASSWORD:?NUEDC_VIDEO_RTSP_PASSWORD is required}"
+[[ "${NUEDC_MEDIAMTX_WHEP_URL:-}" == "http://127.0.0.1:8889/camera_raw/whep" ]] || {
+  echo "MediaMTX WHEP 地址必须使用固定本机端点" >&2; exit 1;
+}
+[[ "${NUEDC_MEDIAMTX_API_URL:-}" == "http://127.0.0.1:9997" ]] || {
+  echo "MediaMTX API 地址必须使用固定本机端点" >&2; exit 1;
+}
 FRONTEND_DIST_DIR="${NUEDC_FRONTEND_DIST_DIR:-${ROOT_DIR}/web_ground_station/frontend/dist}"
 [[ -f "${FRONTEND_DIST_DIR}/index.html" ]] || { echo "缺少 frontend/dist" >&2; exit 1; }
 RUNTIME_DIR="${NUEDC_RUNTIME_DIR:-runtime}"

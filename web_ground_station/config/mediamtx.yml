@@ -1,0 +1,23 @@
+logLevel: warn
+api: yes
+apiAddress: 127.0.0.1:9997
+metrics: no
+pprof: no
+playback: no
+moq: no
+srt: no
+rtsp: no
+rtmp: no
+hls: no
+webrtc: yes
+webrtcAddress: 127.0.0.1:8889
+webrtcAdditionalHosts: [127.0.0.1]
+
+pathDefaults:
+  record: no
+
+paths:
+  camera_raw:
+    source: __NUEDC_RTSP_SOURCE__
+    sourceOnDemand: yes
+    sourceOnDemandCloseAfter: 1s

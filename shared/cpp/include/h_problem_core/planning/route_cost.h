@@ -5,11 +5,11 @@
 namespace hcore {
 
 double estimateMissionTimeSeconds(
-    const QStringList &route,
+    const CellList &route,
     int height = 7,
     std::optional<LandingProfile> landing_profile = std::nullopt,
     int width = 9,
-    QSet<QString> no_fly_cells = {},
+    CellSet no_fly_cells = {},
     MissionTiming timing = {});
 
 } // namespace hcore

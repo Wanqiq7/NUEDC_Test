@@ -1,5 +1,6 @@
 import asyncio
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -11,6 +12,7 @@ from nuedc_web_gateway.config import GatewayConfig
 from nuedc_web_gateway.models import AckSnapshot, WebEvent
 from nuedc_web_gateway.planner import PlannerError
 from nuedc_web_gateway.state import GroundState
+from nuedc_web_gateway.video import VideoGatewayError
 
 
 def plan_for(task_id="case-1"):
@@ -151,6 +153,30 @@ async def wait_command_online(state):
     raise AssertionError("command link did not become online")
 
 
+class FakeVideoGateway:
+    def __init__(self):
+        self.offers = []
+        self.closed_sessions = []
+        self.aclosed = False
+        self.error = None
+
+    async def open(self, offer_sdp):
+        self.offers.append(offer_sdp)
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(session_id="opaque-session", answer_sdp="v=0\r\nanswer")
+
+    async def close(self, session_id):
+        self.closed_sessions.append(session_id)
+        return True
+
+    async def health(self):
+        return True
+
+    async def aclose(self):
+        self.aclosed = True
+
+
 def test_app_factory_uses_exported_runtime_environment(monkeypatch, tmp_path):
     planner_path = tmp_path / "planner"
     captured = {}
@@ -167,6 +193,10 @@ def test_app_factory_uses_exported_runtime_environment(monkeypatch, tmp_path):
         def __init__(self, config, state, recorder):
             captured["config"] = config
 
+    class FactoryVideoGateway:
+        def __init__(self, config):
+            captured["video_config"] = config
+
     monkeypatch.setenv("NUEDC_AIRBORNE_HOST", "192.0.2.20")
     monkeypatch.setenv("NUEDC_TELEMETRY_PORT", "16557")
     monkeypatch.setenv("NUEDC_COMMAND_PORT", "16558")
@@ -175,6 +205,7 @@ def test_app_factory_uses_exported_runtime_environment(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "PlannerClient", FactoryPlanner)
     monkeypatch.setattr(app_module, "JsonlRecorder", FactoryRecorder)
     monkeypatch.setattr(app_module, "AirborneClient", FactoryAirborne)
+    monkeypatch.setattr(app_module, "VideoGateway", FactoryVideoGateway)
 
     application = app_module.create_app()
 
@@ -183,6 +214,91 @@ def test_app_factory_uses_exported_runtime_environment(monkeypatch, tmp_path):
     assert captured["config"].command_endpoint == "tcp://192.0.2.20:16558"
     assert captured["planner_path"] == planner_path
     assert captured["recorder_path"] == tmp_path / "sessions"
+    assert captured["video_config"] is captured["config"]
+
+
+@pytest.mark.asyncio
+async def test_video_whep_session_is_same_origin_and_released(tmp_path):
+    svc, *_ = services(tmp_path)
+    video = FakeVideoGateway()
+    svc.video = video
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        opened = await request(
+            app,
+            "POST",
+            "/api/video/whep",
+            content=b"v=0\r\noffer",
+            headers={"Content-Type": "application/sdp"},
+        )
+        closed = await request(
+            app, "DELETE", "/api/video/whep/opaque-session"
+        )
+
+    assert opened.status_code == 201
+    assert opened.headers["location"] == "/api/video/whep/opaque-session"
+    assert opened.headers["content-type"].startswith("application/sdp")
+    assert opened.text == "v=0\r\nanswer"
+    assert video.offers == ["v=0\r\noffer"]
+    assert closed.status_code == 204
+    assert video.closed_sessions == ["opaque-session"]
+    assert video.aclosed is True
+
+
+@pytest.mark.asyncio
+async def test_video_whep_rejects_non_sdp_content(tmp_path):
+    svc, *_ = services(tmp_path)
+    svc.video = FakeVideoGateway()
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(
+            app,
+            "POST",
+            "/api/video/whep",
+            content=b'{}',
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 415
+    assert response.json()["error_code"] == "invalid_video_offer"
+
+
+@pytest.mark.asyncio
+async def test_video_whep_maps_upstream_failure_to_service_unavailable(tmp_path):
+    svc, *_ = services(tmp_path)
+    video = FakeVideoGateway()
+    video.error = VideoGatewayError(
+        "video_upstream_unavailable", "media gateway is unavailable"
+    )
+    svc.video = video
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(
+            app,
+            "POST",
+            "/api/video/whep",
+            content=b"v=0\r\noffer",
+            headers={"Content-Type": "application/sdp"},
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "ok": False,
+        "error_code": "video_upstream_unavailable",
+        "message": "media gateway is unavailable",
+    }
+
+
+@pytest.mark.asyncio
+async def test_video_health_is_independent_of_mission_state(tmp_path):
+    svc, *_ = services(tmp_path)
+    svc.video = FakeVideoGateway()
+    app = create_app(svc)
+    async with app.router.lifespan_context(app):
+        response = await request(app, "GET", "/api/video/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "available": True}
 
 
 @pytest.mark.asyncio

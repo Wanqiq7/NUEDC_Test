@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,7 @@ from .models import AckSnapshot, PlanningRequest, WebEvent
 from .planner import PlannerClient, PlannerError, is_canonical_plan, store_plan_atomic
 from .recorder import JsonlRecorder
 from .state import GroundState
+from .video import VideoGateway, VideoGatewayError
 
 
 def _now_ms() -> int:
@@ -36,6 +37,7 @@ class GatewayServices:
     state: GroundState
     recorder: JsonlRecorder
     airborne: AirborneClient
+    video: VideoGateway | None = None
     stop: asyncio.Event = field(default_factory=asyncio.Event)
     tasks: list[asyncio.Task[Any]] = field(default_factory=list)
     initial_probe_task: asyncio.Task[Any] | None = None
@@ -106,6 +108,8 @@ async def _lifespan(app: FastAPI):
         services.initial_probe_task = None
         await services.recorder.stop()
         services.airborne.close()
+        if services.video is not None:
+            await services.video.aclose()
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -130,7 +134,8 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
             config.planner_cli, timeout_s=10.0, max_output_bytes=4 * 1024 * 1024
         )
         airborne = AirborneClient(config, state, recorder)
-        services = GatewayServices(config, planner, state, recorder, airborne)
+        video = VideoGateway(config)
+        services = GatewayServices(config, planner, state, recorder, airborne, video)
 
     app = FastAPI(lifespan=_lifespan)
     app.state.services = services
@@ -138,6 +143,45 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
     @app.get("/api/health")
     async def health():
         return {"ok": True}
+
+    @app.get("/api/video/health")
+    async def video_health():
+        video = getattr(services, "video", None)
+        available = video is not None and await video.health()
+        return {"ok": True, "available": available}
+
+    @app.post("/api/video/whep")
+    async def open_video(request: Request):
+        if request.headers.get("content-type", "").split(";", 1)[0].strip() != "application/sdp":
+            return _error(415, "invalid_video_offer", "video offer must be application/sdp")
+        offer = await request.body()
+        if not offer or len(offer) > 64 * 1024:
+            return _error(413, "invalid_video_offer", "video offer has an invalid size")
+        try:
+            offer_sdp = offer.decode("utf-8")
+        except UnicodeDecodeError:
+            return _error(422, "invalid_video_offer", "video offer must be UTF-8 SDP")
+        video = getattr(services, "video", None)
+        if video is None:
+            return _error(503, "video_unavailable", "video gateway is unavailable")
+        try:
+            session = await video.open(offer_sdp)
+        except VideoGatewayError as error:
+            status = 504 if error.error_code == "video_upstream_timeout" else 503
+            return _error(status, error.error_code, str(error))
+        return Response(
+            content=session.answer_sdp,
+            status_code=201,
+            media_type="application/sdp",
+            headers={"Location": f"/api/video/whep/{session.session_id}"},
+        )
+
+    @app.delete("/api/video/whep/{session_id}", status_code=204)
+    async def close_video(session_id: str):
+        video = getattr(services, "video", None)
+        if video is not None:
+            await video.close(session_id)
+        return Response(status_code=204)
 
     @app.get("/api/snapshot")
     async def snapshot():
