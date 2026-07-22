@@ -336,6 +336,145 @@ def test_plan_switch_resets_task_specific_state():
     assert snapshot.mission_loaded is False
 
 
+def test_same_task_replan_starts_fresh_runtime_and_accepts_new_sequence():
+    state = active_state("wildlife-demo")
+    state.apply_task_event(
+        "wildlife-demo",
+        "telemetry",
+        90_000,
+        101,
+        {"current_cell": "A1B2", "visited_cells": 9},
+    )
+    state.apply_task_event(
+        "wildlife-demo",
+        "detection",
+        90_001,
+        102,
+        {"track_id": "old-track", "animal_name": "hare", "count": 1},
+    )
+
+    state.apply_plan(
+        {
+            "task_id": "wildlife-demo",
+            "message_type": "task_plan",
+            "waypoints": [{"id": "A9B1"}, {"id": "touchdown"}],
+        },
+        103,
+    )
+
+    reset = state.snapshot(104)
+    assert reset.current_cell is None
+    assert reset.visited_count == 0
+    assert reset.detection_totals == {}
+    assert reset.recent_detections == []
+    assert state.detection_history() == [
+        {
+            "task_id": "wildlife-demo",
+            "track_id": "old-track",
+            "animal_name": "hare",
+            "count": 1,
+        }
+    ]
+
+    accepted = state.apply_task_event(
+        "wildlife-demo",
+        "telemetry",
+        1,
+        105,
+        {"current_cell": "A9B1", "visited_cells": 1},
+    )
+    assert accepted is not None
+    assert state.snapshot(106).current_cell == "A9B1"
+
+
+def test_same_task_replan_preserves_global_ack_sequence_watermark():
+    state = active_state("wildlife-demo")
+    state.apply_ack(
+        AckSnapshot(
+            ok=True,
+            message="newest ack",
+            task_id="wildlife-demo",
+            mission_loaded=True,
+            mission_running=False,
+            last_accepted_sequence=100,
+            vision_armed=False,
+        ),
+        101,
+    )
+    state.apply_plan(
+        {
+            "task_id": "wildlife-demo",
+            "message_type": "task_plan",
+            "waypoints": [],
+        },
+        102,
+    )
+    state.apply_ack(
+        AckSnapshot(
+            ok=True,
+            message="stale ack",
+            task_id="wildlife-demo",
+            mission_loaded=False,
+            mission_running=False,
+            last_accepted_sequence=99,
+            vision_armed=False,
+        ),
+        103,
+    )
+
+    snapshot = state.snapshot(104)
+    assert snapshot.ack is not None
+    assert snapshot.ack.message == "newest ack"
+    assert snapshot.ack.last_accepted_sequence == 100
+    assert snapshot.command_link == "online"
+    assert snapshot.mission_loaded is False
+
+
+def test_detection_history_survives_replan_without_capacity_eviction():
+    state = active_state()
+    for seq in range(1, 502):
+        state.apply_task_event(
+            "active",
+            "detection",
+            seq,
+            100 + seq,
+            {"track_id": f"track-{seq}", "animal_name": "hare", "count": 1},
+        )
+
+    state.apply_plan(
+        {"task_id": "active", "message_type": "task_plan", "waypoints": []},
+        700,
+    )
+
+    assert len(state.detection_history()) == 501
+
+
+def test_detection_history_uses_canonical_task_id():
+    state = active_state()
+    state.apply_task_event(
+        "active",
+        "detection",
+        1,
+        101,
+        {
+            "task_id": "spoofed",
+            "track_id": "track-1",
+            "animal_name": "hare",
+            "count": 1,
+        },
+    )
+
+    assert state.detection_history() == [
+        {
+            "task_id": "active",
+            "track_id": "track-1",
+            "animal_name": "hare",
+            "count": 1,
+        }
+    ]
+    assert state.detection_history("active") == state.detection_history()
+
+
 def test_ten_thousand_telemetry_frames_keep_bounded_state_and_subscriber_queue():
     state = active_state()
     subscriber = state.subscribe(maxsize=64)

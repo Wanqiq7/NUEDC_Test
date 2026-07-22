@@ -48,6 +48,7 @@ class GroundState:
         self._recent_detections: deque[dict[str, Any]] = deque(
             maxlen=_RECENT_DETECTION_LIMIT
         )
+        self._detection_history: deque[dict[str, Any]] = deque()
         self._detection_keys: set[tuple[str, str | int]] = set()
         self._target_update: dict[str, Any] | None = None
         self._recent_summary: dict[str, Any] | None = None
@@ -103,11 +104,17 @@ class GroundState:
         if not isinstance(task_id, str) or not task_id:
             raise ValueError("plan task_id must be a non-empty string")
         with self._lock:
-            switched = task_id != self._active_task_id
             self._active_task_id = task_id
             self._plan = plan_copy
-            if switched:
-                self._reset_task_state()
+            self._reset_task_state()
+            if self._ack is not None:
+                self._ack = self._ack.model_copy(
+                    update={
+                        "mission_loaded": False,
+                        "mission_running": False,
+                        "vision_armed": False,
+                    }
+                )
             snapshot_seq = self._advance_snapshot()
             event = WebEvent(
                 type="task_plan",
@@ -232,6 +239,15 @@ class GroundState:
         with self._lock:
             self._publish(event)
 
+    def detection_history(self, task_id: str | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            entries = (
+                item
+                for item in self._detection_history
+                if task_id is None or item.get("task_id") == task_id
+            )
+            return deepcopy(list(entries))
+
     def snapshot(self, now_ms: int) -> GroundSnapshot:
         with self._lock:
             task_matches = (
@@ -333,6 +349,7 @@ class GroundState:
             return
         self._detection_keys.add(key)
         self._recent_detections.append(payload)
+        self._detection_history.append({**payload, "task_id": task_id})
         animal_name = payload.get("animal_name")
         count = payload.get("count", 1)
         if isinstance(animal_name, str) and animal_name:

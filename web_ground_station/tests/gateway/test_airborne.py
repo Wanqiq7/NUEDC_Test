@@ -484,6 +484,139 @@ async def test_other_task_event_is_ignored(transport_fixture):
 
 
 @pytest.mark.asyncio
+async def test_restart_safe_publisher_epoch_rejects_retired_packets(
+    transport_fixture,
+):
+    client, ground_state, _, _, pub_server = transport_fixture
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+
+    old_sequence = 1_000_000_500
+    old_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                old_sequence,
+                {"current_cell": "A1B2", "visited_cells": 9},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await old_publish
+
+    new_sequence = 1_001_000_000
+    new_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                new_sequence,
+                {"current_cell": "A9B1", "visited_cells": 1},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await new_publish
+    assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
+
+    delayed_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                old_sequence,
+                {"current_cell": "A1B2", "visited_cells": 9},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is None
+    await delayed_publish
+    assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
+
+
+@pytest.mark.asyncio
+async def test_full_airborne_reboot_accepts_lower_publisher_epoch(
+    transport_fixture,
+):
+    client, ground_state, _, rep_server, pub_server = transport_fixture
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+
+    rep_server.queue_ack(
+        task_id="wildlife-demo",
+        mission_loaded=True,
+        mission_running=False,
+        vision_armed=False,
+    )
+    await client.send_mission_load(plan_for("wildlife-demo"))
+    rep_server.queue_ack(
+        task_id="wildlife-demo",
+        mission_loaded=True,
+        mission_running=True,
+        vision_armed=False,
+    )
+    await client.send_control(GroundControlCommand.START, "wildlife-demo")
+    rep_server.queue_ack(
+        task_id="wildlife-demo",
+        mission_loaded=True,
+        mission_running=True,
+        vision_armed=True,
+    )
+    await client.send_control(GroundControlCommand.ARM_TARGETING, "wildlife-demo")
+
+    before_reboot = ground_state.snapshot(now_ms())
+    assert before_reboot.mission_loaded is True
+    assert before_reboot.mission_running is True
+    assert before_reboot.vision_armed is True
+
+    old_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                1_000_000_500,
+                {"current_cell": "A1B2", "visited_cells": 9},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await old_publish
+
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+    after_replan = ground_state.snapshot(now_ms())
+    assert after_replan.mission_loaded is False
+    assert after_replan.mission_running is False
+    assert after_replan.vision_armed is False
+
+    rep_server.queue_ack(
+        task_id="wildlife-demo",
+        mission_loaded=True,
+        mission_running=False,
+        vision_armed=False,
+    )
+    load_ack = await client.send_mission_load(plan_for("wildlife-demo"))
+
+    assert load_ack.ok is True
+    assert load_ack.task_id == "wildlife-demo"
+    assert load_ack.mission_loaded is True
+    assert rep_server.requests[-1].WhichOneof("payload") == "mission_load"
+    assert ground_state.snapshot(now_ms()).mission_loaded is True
+
+    rebooted_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                100,
+                {"current_cell": "A9B1", "visited_cells": 1},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await rebooted_publish
+    assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
+
+
+@pytest.mark.asyncio
 async def test_summary_updates_running_false(transport_fixture):
     client, ground_state, recorder, _, pub_server = transport_fixture
     ground_state.apply_plan(plan_for("case-1"), now_ms())
@@ -639,6 +772,4 @@ def test_ground_control_command_is_a_string_enum():
 
 
 def test_command_epoch_matches_sender_independent_contract():
-    assert initial_command_sequence(1_720_000_000_123) == (
-        1_720_000_000_123 << 20
-    )
+    assert initial_command_sequence(1_720_000_000_123) == (1_720_000_000_123 << 20)
