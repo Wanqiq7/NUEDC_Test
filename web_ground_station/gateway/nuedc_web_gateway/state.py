@@ -103,11 +103,17 @@ class GroundState:
         if not isinstance(task_id, str) or not task_id:
             raise ValueError("plan task_id must be a non-empty string")
         with self._lock:
-            switched = task_id != self._active_task_id
             self._active_task_id = task_id
             self._plan = plan_copy
-            if switched:
-                self._reset_task_state()
+            self._reset_task_state()
+            if self._ack is not None:
+                self._ack = self._ack.model_copy(
+                    update={
+                        "mission_loaded": False,
+                        "mission_running": False,
+                        "vision_armed": False,
+                    }
+                )
             snapshot_seq = self._advance_snapshot()
             event = WebEvent(
                 type="task_plan",
