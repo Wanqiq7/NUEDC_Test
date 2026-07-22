@@ -541,6 +541,33 @@ async def test_full_airborne_reboot_accepts_lower_publisher_epoch(
     client, ground_state, _, rep_server, pub_server = transport_fixture
     ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
 
+    rep_server.queue_ack(
+        task_id="wildlife-demo",
+        mission_loaded=True,
+        mission_running=False,
+        vision_armed=False,
+    )
+    await client.send_mission_load(plan_for("wildlife-demo"))
+    rep_server.queue_ack(
+        task_id="wildlife-demo",
+        mission_loaded=True,
+        mission_running=True,
+        vision_armed=False,
+    )
+    await client.send_control(GroundControlCommand.START, "wildlife-demo")
+    rep_server.queue_ack(
+        task_id="wildlife-demo",
+        mission_loaded=True,
+        mission_running=True,
+        vision_armed=True,
+    )
+    await client.send_control(GroundControlCommand.ARM_TARGETING, "wildlife-demo")
+
+    before_reboot = ground_state.snapshot(now_ms())
+    assert before_reboot.mission_loaded is True
+    assert before_reboot.mission_running is True
+    assert before_reboot.vision_armed is True
+
     old_publish = asyncio.create_task(
         pub_server.publish(
             task_event(
@@ -555,9 +582,17 @@ async def test_full_airborne_reboot_accepts_lower_publisher_epoch(
     await old_publish
 
     ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
-    assert ground_state.snapshot(now_ms()).mission_loaded is False
+    after_replan = ground_state.snapshot(now_ms())
+    assert after_replan.mission_loaded is False
+    assert after_replan.mission_running is False
+    assert after_replan.vision_armed is False
 
-    rep_server.queue_ack(task_id="wildlife-demo")
+    rep_server.queue_ack(
+        task_id="wildlife-demo",
+        mission_loaded=True,
+        mission_running=False,
+        vision_armed=False,
+    )
     load_ack = await client.send_mission_load(plan_for("wildlife-demo"))
 
     assert load_ack.ok is True
