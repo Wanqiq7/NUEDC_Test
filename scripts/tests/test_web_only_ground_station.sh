@@ -2,7 +2,7 @@
 set -euo pipefail
 
 scan_forbidden_references() {
-    # Return rg's status unchanged: 0 = matches, 1 = no matches, >1 = scan error.
+    # 原样返回 rg 状态：0 表示有匹配，1 表示无匹配，大于 1 表示扫描错误。
     rg -n \
         --glob '!scripts/tests/test_web_only_ground_station.sh' \
         --glob '!scripts/tests/test_web_only_ground_station_docs.sh' \
@@ -16,8 +16,7 @@ scan_forbidden_references() {
 }
 
 scan_obsolete_current_docs() {
-    # Keep historical design records out of this policy check. These are the
-    # current entry-point documents that must describe the shipped boundary.
+    # 此策略检查排除历史设计记录；以下当前入口文档必须描述实际交付边界。
     local planner='(?:the[[:space:]]+)?(?:C\+\+[[:space:]]+)?planner(?:[[:space:]]+(?:library|CLI|core|component))?'
     local forbidden='(?:Qt(?:[[:space:]]+Core|6|Test)?|(?:C\+\+[[:space:]]+)?Protobuf|ZeroMQ|simulator|command[[:space:]]+(?:handler|handling)|competition_core)'
     local forward_relation='(?:requires?|depends[[:space:]]+on|owns?|uses?)'
@@ -32,11 +31,11 @@ main() {
     local repo_root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 
     if [[ -d "$repo_root/ground_station_computer" ]]; then
-        echo "legacy ground_station_computer source tree is still present" >&2
+        echo "旧版 ground_station_computer 源码树仍然存在" >&2
         return 1
     fi
     if [[ -d "$repo_root/shared/cpp/include/competition_core" ]]; then
-        echo "legacy competition_core headers are still present" >&2
+        echo "旧版 competition_core 头文件仍然存在" >&2
         return 1
     fi
 
@@ -46,7 +45,7 @@ main() {
         "$repo_root/shared/cpp" \
         "$repo_root/web_ground_station" \
         "$repo_root/scripts"; then
-        echo "Qt-era native references remain in web-only ground station sources" >&2
+        echo "Web-only 地面站源码中仍有 Qt 时代的原生代码引用" >&2
         return 1
     else
         scan_status=$?
@@ -54,10 +53,10 @@ main() {
 
     case "$scan_status" in
         1)
-            echo "web-only ground station source boundary is clean"
+            echo "Web-only 地面站源码边界检查通过"
             ;;
         *)
-            echo "failed to scan web-only ground station sources (rg exit $scan_status)" >&2
+            echo "扫描 Web-only 地面站源码失败（rg 退出码 $scan_status）" >&2
             return "$scan_status"
             ;;
     esac
@@ -67,7 +66,7 @@ main() {
         "$repo_root/README.md" \
         "$repo_root/shared/cpp/README.md" \
         "$repo_root/AGENTS.md"; then
-        echo "obsolete Qt-era planner claims remain in current documentation" >&2
+        echo "当前文档中仍有过时的 Qt 时代规划器描述" >&2
         return 1
     else
         scan_status=$?
@@ -75,10 +74,10 @@ main() {
 
     case "$scan_status" in
         1)
-            echo "current documentation describes the web-only boundary"
+            echo "当前文档已正确描述 Web-only 边界"
             ;;
         *)
-            echo "failed to scan current documentation (rg exit $scan_status)" >&2
+            echo "扫描当前文档失败（rg 退出码 $scan_status）" >&2
             return "$scan_status"
             ;;
     esac

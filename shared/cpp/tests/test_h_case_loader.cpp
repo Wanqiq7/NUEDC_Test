@@ -132,7 +132,7 @@ TEST(HCaseLoader, IgnoresAnimalsWhenValueIsNotAnArray) {
     }
 }
 
-TEST(HCaseLoader, ParsesAnimalObjectsAndRejectsNonObjectsInArray) {
+TEST(HCaseLoader, ParsesAnimalObjectsAndRejectsInvalidEntriesInArray) {
     auto valid = minimalCase();
     valid["animals"] = {{{"cell", "A1B2"}, {"name", "deer"}, {"count", 2}}};
     std::string error;
@@ -141,10 +141,19 @@ TEST(HCaseLoader, ParsesAnimalObjectsAndRejectsNonObjectsInArray) {
     ASSERT_EQ(loaded->animals.size(), 1U);
     EXPECT_EQ(loaded->animals.front().cell, "A1B2");
 
-    auto invalid = minimalCase();
-    invalid["animals"] = nlohmann::json::array({nullptr});
-    EXPECT_FALSE(hcore::caseFromJsonObject(invalid, &error).has_value());
-    EXPECT_NE(error.find("objects"), std::string::npos);
+    for (const nlohmann::json animal : {
+             nlohmann::json(nullptr),
+             nlohmann::json::object(),
+             nlohmann::json{{"name", "deer"}},
+             nlohmann::json{{"cell", "A1B2"}},
+         }) {
+        auto invalid = minimalCase();
+        invalid["animals"] = nlohmann::json::array({animal});
+        error.clear();
+        EXPECT_FALSE(hcore::caseFromJsonObject(invalid, &error).has_value())
+            << animal.dump();
+        EXPECT_FALSE(error.empty()) << animal.dump();
+    }
 }
 
 TEST(HCaseLoader, IgnoresLandingWhenValueIsNotAnObject) {

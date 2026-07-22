@@ -1,64 +1,64 @@
-# Web-only Ground Station and Qt-free Planner Implementation Plan
+# Web-only 地面站与无 Qt 规划器实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供智能体执行者使用：** 必须使用子技能：建议使用 superpowers:subagent-driven-development，也可使用 superpowers:executing-plans，按任务逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Remove every active Qt ground-station dependency while preserving the existing C++17 H-task planner as a stateless CLI with normalized-JSON behavior equivalent to the Qt baseline.
+**目标：** 移除所有在用的地面站 Qt 依赖，同时保留现有 C++17 H 题规划器，使其成为无状态 CLI，并使规范化 JSON 行为与 Qt 基线等价。
 
-**Architecture:** Keep Vue, FastAPI, and the airborne wire path unchanged. Freeze the current Qt CLI output, replace only the planner's transitive closure with STL and `nlohmann_json`, then delete unrelated C++ protocol, simulator, state, and storage code. Verify compatibility at the binary boundary and through the unchanged Gateway worker-thread `subprocess.Popen` adapter.
+**架构：** 保持 Vue、FastAPI 和机载 wire 路径不变。冻结当前 Qt CLI 输出，仅用 STL 和 `nlohmann_json` 替换规划器的传递闭包，然后删除无关的 C++ 协议、模拟器、状态与存储代码。在二进制边界以及未修改的 Gateway 工作线程 `subprocess.Popen` 适配器上验证兼容性。
 
-**Tech Stack:** C++17, CMake 3.16+, STL, nlohmann_json, GoogleTest, Python 3.10/pytest, Vue 3/Vitest/Playwright, uv, pnpm.
+**技术栈：** C++17、CMake 3.16+、STL、nlohmann_json、GoogleTest、Python 3.10/pytest、Vue 3/Vitest/Playwright、uv、pnpm。
 
-## Global Constraints
+## 全局约束
 
-- The sole native ground component is a Qt-free C++17 stateless route-planning CLI.
-- Preserve `build/shared/cpp/h_route_planner_cli`, `NUEDC_PLANNER_CLI`, `h_planning_request_v1`, response fields, error codes, and exit codes `0/2/3/4`.
-- Preserve search and waypoint order, repeats, XYZ/action/payload, route cost, optimality, A9-to-A1 and B1-to-B7 axes, descent-start versus touchdown, and `h_field_m_v1`.
-- Do not modify `web_ground_station/gateway/nuedc_web_gateway/planner.py`; retain `asyncio.to_thread` plus synchronous `subprocess.Popen`.
-- Keep Python Protobuf/pyzmq and `shared/proto/messages.proto`; remove only C++ Protobuf/ZeroMQ dependencies.
-- Final active source/CMake contains no Qt6, QtTest, AUTOMOC, `Q_OBJECT`, or `#include <Q...>`.
-- Do not change UI, planning behavior, wire protocol, PID/PlotJuggler scope, or airborne ROS 2 code.
-- Work in the isolated Web worktree and preserve unrelated edits in `/home/sb/Ground_station/AGENTS.md`.
-- Each implementation task receives spec-compliance review, then code-quality review.
+- 唯一的地面端原生组件是无 Qt 的 C++17 无状态航线规划 CLI。
+- 保持 `build/shared/cpp/h_route_planner_cli`、`NUEDC_PLANNER_CLI`、`h_planning_request_v1`、响应字段、错误码以及退出码 `0/2/3/4` 不变。
+- 保持搜索与航点顺序、重复点、XYZ/action/payload、航线代价、最优性、A9 到 A1 与 B1 到 B7 的坐标轴、下降起点与着陆点的区分，以及 `h_field_m_v1` 不变。
+- 不修改 `web_ground_station/gateway/nuedc_web_gateway/planner.py`；保留 `asyncio.to_thread` 加同步 `subprocess.Popen`。
+- 保留 Python Protobuf/pyzmq 和 `shared/proto/messages.proto`；仅移除 C++ Protobuf/ZeroMQ 依赖。
+- 最终在用源码和 CMake 中不得包含 Qt6、QtTest、AUTOMOC、`Q_OBJECT` 或 `#include <Q...>`。
+- 不修改 UI、规划行为、wire 协议、PID/PlotJuggler 范围或机载 ROS 2 代码。
+- 在隔离的 Web worktree 中工作，并保留 `/home/sb/Ground_station/AGENTS.md` 中无关的改动。
+- 每个实施任务先接受规范符合性审查，再接受代码质量审查。
 
-## Final File Map
+## 最终文件图
 
-- Create `shared/cpp/include/h_problem_core/common/task_plan.h` for planner-only task plan values and JSON conversion.
-- Retain and port `shared/cpp/{include,src}/h_problem_core/{common,mission,planning,tools}`.
-- Retain `shared/cpp/tools/h_route_planner_cli_main.cpp` as stdin/stdout adapter only.
-- Create `shared/cases/golden/planner_cli_cases.json` and capture/verify scripts under `shared/cpp/tests/`.
-- Rewrite retained `shared/cpp/tests/test_h_*.cpp` with GoogleTest.
-- Create `scripts/tests/test_web_only_ground_station.sh` for source/build boundaries.
-- Delete `shared/cpp/include/competition_core`, H simulator, C++ protocol/storage/task sources, runtime fixture generator, and their tests.
+- 创建 `shared/cpp/include/h_problem_core/common/task_plan.h`，存放仅供规划器使用的任务计划值与 JSON 转换。
+- 保留并移植 `shared/cpp/{include,src}/h_problem_core/{common,mission,planning,tools}`。
+- 保留 `shared/cpp/tools/h_route_planner_cli_main.cpp`，使其仅承担 stdin/stdout 适配。
+- 创建 `shared/cases/golden/planner_cli_cases.json`，并在 `shared/cpp/tests/` 下创建捕获/验证脚本。
+- 使用 GoogleTest 重写保留的 `shared/cpp/tests/test_h_*.cpp`。
+- 创建 `scripts/tests/test_web_only_ground_station.sh`，检查源码/构建边界。
+- 删除 `shared/cpp/include/competition_core`、H 模拟器、C++ 协议/存储/任务源码、运行时 fixture 生成器及其测试。
 
 ---
 
-### Task 1: Freeze the Qt CLI Baseline
+### 任务 1：冻结 Qt CLI 基线
 
-**Files:**
-- Create: `shared/cases/golden/planner_cli_cases.json`
-- Create: `shared/cpp/tests/capture_planner_golden.py`
-- Create: `shared/cpp/tests/verify_planner_golden.py`
-- Modify: `shared/cpp/CMakeLists.txt`
+**文件：**
+- 创建：`shared/cases/golden/planner_cli_cases.json`
+- 创建：`shared/cpp/tests/capture_planner_golden.py`
+- 创建：`shared/cpp/tests/verify_planner_golden.py`
+- 修改：`shared/cpp/CMakeLists.txt`
 
-**Interfaces:**
-- Consumes: current Qt `build/shared/cpp/h_route_planner_cli`.
-- Produces: fixture keys `name`, `stdin_text`, `exit_code`, `response`, `stderr_json_forbidden`; verifier CLI `verify_planner_golden.py PLANNER FIXTURE`.
+**接口：**
+- 输入：当前 Qt `build/shared/cpp/h_route_planner_cli`。
+- 输出：fixture 键 `name`、`stdin_text`、`exit_code`、`response`、`stderr_json_forbidden`；验证器 CLI `verify_planner_golden.py PLANNER FIXTURE`。
 
-- [ ] **Step 1: Write the failing verifier**
+- [ ] **步骤 1：编写预期失败的验证器**
 
-Run each case from repository root. Require exactly one stdout JSON document. Compare objects recursively, arrays in order, strings/bools exactly, numbers with `math.isclose(rel_tol=1e-12, abs_tol=1e-9)`, exit code exactly, and forbid `{` in stderr when requested.
+从仓库根目录运行每个案例。要求 stdout 恰好包含一个 JSON 文档。递归比较对象；数组按顺序比较；字符串/布尔值精确比较；数字使用 `math.isclose(rel_tol=1e-12, abs_tol=1e-9)`；退出码精确比较；按要求禁止 stderr 中出现 `{`。
 
-- [ ] **Step 2: Verify the missing fixture fails**
+- [ ] **步骤 2：验证缺失 fixture 会失败**
 
-Run: `python3 shared/cpp/tests/verify_planner_golden.py build/shared/cpp/h_route_planner_cli shared/cases/golden/planner_cli_cases.json`
+运行：`python3 shared/cpp/tests/verify_planner_golden.py build/shared/cpp/h_route_planner_cli shared/cases/golden/planner_cli_cases.json`
 
-Expected: non-zero because the fixture is absent.
+预期：由于 fixture 不存在而返回非零。
 
-- [ ] **Step 3: Implement fixed baseline capture cases**
+- [ ] **步骤 3：实现固定基线捕获案例**
 
-Capture in order: sample/default barrier; `A2B2/A2B3/A2B4`; raw `{`; wrong schema; empty case path; non-array no-fly; `A10B1`; missing case; blocked start `A9B1`. Preserve raw invalid stdin, compact object requests, refuse overwrite without `--overwrite`, and write stable indented JSON plus newline.
+按顺序捕获：sample/default barrier；`A2B2/A2B3/A2B4`；原始 `{`；错误 schema；空 case 路径；非数组 no-fly；`A10B1`；缺失 case；起点被阻塞的 `A9B1`。保留原始无效 stdin 和紧凑对象请求；没有 `--overwrite` 时拒绝覆盖；写入稳定缩进的 JSON，并以换行结尾。
 
-- [ ] **Step 4: Build old CLI, capture, and register CTest**
+- [ ] **步骤 4：构建旧 CLI、捕获并注册 CTest**
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -67,9 +67,9 @@ python3 shared/cpp/tests/capture_planner_golden.py --planner build/shared/cpp/h_
 ctest --test-dir build -R 'test_h_route_planner_(cli|golden)' --output-on-failure
 ```
 
-Expected: nine fixtures; old CLI and new binary verifier pass.
+预期：九个 fixture；旧 CLI 和新二进制验证器均通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add shared/cases/golden shared/cpp/tests/capture_planner_golden.py shared/cpp/tests/verify_planner_golden.py shared/cpp/CMakeLists.txt
@@ -78,46 +78,46 @@ git commit -m "test(planner): freeze Qt CLI golden behavior"
 
 ---
 
-### Task 2: Migrate the Minimal Planner Closure
+### 任务 2：迁移最小规划器闭包
 
-**Files:**
-- Create: `shared/cpp/include/h_problem_core/common/task_plan.h`
-- Modify: retained headers in `shared/cpp/include/h_problem_core/{common,mission,planning,tools}`
-- Modify: retained sources in `shared/cpp/src/{mission,planning,tools}`
-- Modify: `shared/cpp/tools/h_route_planner_cli_main.cpp`, `shared/cpp/CMakeLists.txt`
-- Rewrite: `test_h_case_loader.cpp`, `test_h_mission_geometry.cpp`, `test_h_route_planner.cpp`, `test_h_planning_result.cpp`, `test_h_route_planner_cli.cpp`
+**文件：**
+- 创建：`shared/cpp/include/h_problem_core/common/task_plan.h`
+- 修改：`shared/cpp/include/h_problem_core/{common,mission,planning,tools}` 中保留的头文件
+- 修改：`shared/cpp/src/{mission,planning,tools}` 中保留的源码
+- 修改：`shared/cpp/tools/h_route_planner_cli_main.cpp`、`shared/cpp/CMakeLists.txt`
+- 重写：`test_h_case_loader.cpp`、`test_h_mission_geometry.cpp`、`test_h_route_planner.cpp`、`test_h_planning_result.cpp`、`test_h_route_planner_cli.cpp`
 
-**Interfaces:**
-- Consumes: Task 1 golden fixture and current algorithm bodies.
-- Produces: `runPlannerCliRequest(std::string_view)`, `loadCase(const std::filesystem::path&, std::string*)`, `buildTaskPlan(const CaseConfig&, std::optional<CellList>, std::string*)`, STL geometry/search APIs.
+**接口：**
+- 输入：任务 1 的 golden fixture 和当前算法主体。
+- 输出：`runPlannerCliRequest(std::string_view)`、`loadCase(const std::filesystem::path&, std::string*)`、`buildTaskPlan(const CaseConfig&, std::optional<CellList>, std::string*)`、STL 几何/搜索 API。
 
-- [ ] **Step 1: Rewrite retained tests with GoogleTest**
+- [ ] **步骤 1：使用 GoogleTest 重写保留的测试**
 
-Preserve every existing scenario, including exact small-grid optimality and all legal three-cell barriers. Add explicit assertions: `encodeCell(8,0) == "A9B1"`; `encodeCell(0,6) == "A1B7"`; A9B1 maps to mission `(0,0)`; repeats remain; terminal ID is `touchdown`; penultimate waypoint is descent-start cell; final waypoint is distinct `land` at `z=0`.
+保留每个现有场景，包括精确的小网格最优性和全部合法三格屏障。增加明确断言：`encodeCell(8,0) == "A9B1"`；`encodeCell(0,6) == "A1B7"`；A9B1 映射到任务坐标 `(0,0)`；保留重复点；终点 ID 为 `touchdown`；倒数第二个航点是下降起点单元格；最终航点是独立的 `land`，且 `z=0`。
 
-- [ ] **Step 2: Prove rewritten tests fail against Qt APIs**
+- [ ] **步骤 2：证明重写后的测试无法针对 Qt API 构建**
 
-Run: `cmake --build build --target test_h_case_loader test_h_mission_geometry test_h_route_planner test_h_planning_result test_h_route_planner_cli --parallel`
+运行：`cmake --build build --target test_h_case_loader test_h_mission_geometry test_h_route_planner test_h_planning_result test_h_route_planner_cli --parallel`
 
-Expected: compile failure on STL interfaces or missing GoogleTest targets.
+预期：因 STL 接口或 GoogleTest 目标缺失而编译失败。
 
-- [ ] **Step 3: Define exact planner values and containers**
+- [ ] **步骤 3：定义精确的规划器值与容器**
 
-Use `CellList = std::vector<std::string>`, `CellSet = std::set<std::string>`, `GridPoint { int x; int y; }`, fixed-width sequence integers, and planner-only `TaskWaypoint`/`TaskPlan`. Do not carry Ack, command state, events, summaries, mutexes, or Qt metatypes. Use ordered `std::set`/`std::map` wherever old iteration affects candidates or tie breaks; use unordered containers only for lookup-only data.
+使用 `CellList = std::vector<std::string>`、`CellSet = std::set<std::string>`、`GridPoint { int x; int y; }`、定宽序列整数以及仅供规划器使用的 `TaskWaypoint`/`TaskPlan`。不得携带 Ack、命令状态、事件、摘要、互斥量或 Qt 元类型。旧迭代顺序会影响候选项或平局判定时，使用有序 `std::set`/`std::map`；无序容器仅用于纯查找数据。
 
-- [ ] **Step 4: Port geometry, cost, and route search mechanically**
+- [ ] **步骤 4：机械移植几何、代价与航线搜索**
 
-Replace Qt collection/string methods without changing loop order, comparison tuples, search limits, or formulas. Replace Qt degree/radian helpers with a fixed C++17 Pi constant and local conversion functions. Preserve the landing candidate sampling order and epsilon values exactly.
+替换 Qt 集合/字符串方法，但不改变循环顺序、比较元组、搜索限制或公式。用固定的 C++17 Pi 常量和局部转换函数替代 Qt 角度/弧度 helper。精确保留着陆候选采样顺序和 epsilon 值。
 
-- [ ] **Step 5: Port case and plan JSON**
+- [ ] **步骤 5：移植 case 与计划 JSON**
 
-Use `std::ifstream`, `std::filesystem::path`, and `nlohmann::json`. Validate JSON types before conversion and preserve existing English error classes. Preserve defaults `tick_interval_ms=100`, descent tolerance `5.0`, preferred heading `45.0`, heading tolerance `35.0`. Keep metadata and payload as compact JSON strings.
+使用 `std::ifstream`、`std::filesystem::path` 和 `nlohmann::json`。转换前验证 JSON 类型，并保留现有英文错误分类。保留默认值 `tick_interval_ms=100`、下降容差 `5.0`、首选航向 `45.0`、航向容差 `35.0`。将 metadata 和 payload 保持为紧凑 JSON 字符串。
 
-- [ ] **Step 6: Port the CLI contract**
+- [ ] **步骤 6：移植 CLI 契约**
 
-Expose `PlannerCliResult { int exit_code; std::string stdout_bytes; std::string stderr_bytes; }`. Invalid document/object/schema/case path/no-fly array returns `2`; invalid cell, case load failure, or no route returns `3`; internal metadata failure returns `4`. Main reads all stdin, adds no stdout newline/log, writes diagnostics only to stderr, and returns the result code.
+暴露 `PlannerCliResult { int exit_code; std::string stdout_bytes; std::string stderr_bytes; }`。无效文档/对象/schema/case 路径/no-fly 数组返回 `2`；无效单元格、case 加载失败或无航线返回 `3`；内部 metadata 失败返回 `4`。Main 读取全部 stdin，不向 stdout 添加换行或日志，只向 stderr 写诊断信息，并返回结果码。
 
-- [ ] **Step 7: Build and verify**
+- [ ] **步骤 7：构建并验证**
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -127,9 +127,9 @@ python3 shared/cpp/tests/verify_planner_golden.py build/shared/cpp/h_route_plann
 ldd build/shared/cpp/h_route_planner_cli | rg 'Qt|protobuf|zmq'
 ```
 
-Expected: tests/golden pass; final `rg` has no output and exit `1`.
+预期：测试/golden 通过；最后一个 `rg` 无输出且退出码为 `1`。
 
-- [ ] **Step 8: Commit**
+- [ ] **步骤 8：提交**
 
 ```bash
 git add shared/cpp/include/h_problem_core shared/cpp/src/mission shared/cpp/src/planning shared/cpp/src/tools shared/cpp/tools/h_route_planner_cli_main.cpp shared/cpp/tests/test_h_*.cpp shared/cpp/CMakeLists.txt
@@ -138,33 +138,33 @@ git commit -m "refactor(planner): remove Qt from route planning CLI"
 
 ---
 
-### Task 3: Delete Qt-era Modules and Simplify CMake
+### 任务 3：删除 Qt 时代模块并简化 CMake
 
-**Files:**
-- Delete: `shared/cpp/include/competition_core`, `shared/cpp/include/h_problem_core/runtime/simulator.h`
-- Delete: `shared/cpp/src/{protocol,runtime,storage,task}`
-- Delete: `shared/cpp/tools/generate_h_runtime_fixture.cpp`
-- Delete: `test_h_simulator.cpp`, `test_json_codec.cpp`, `test_task_ports.cpp`, `test_task_protocol.cpp`
-- Create: `scripts/tests/test_web_only_ground_station.sh`
-- Modify: `CMakeLists.txt`, `shared/cpp/CMakeLists.txt`
+**文件：**
+- 删除：`shared/cpp/include/competition_core`、`shared/cpp/include/h_problem_core/runtime/simulator.h`
+- 删除：`shared/cpp/src/{protocol,runtime,storage,task}`
+- 删除：`shared/cpp/tools/generate_h_runtime_fixture.cpp`
+- 删除：`test_h_simulator.cpp`、`test_json_codec.cpp`、`test_task_ports.cpp`、`test_task_protocol.cpp`
+- 创建：`scripts/tests/test_web_only_ground_station.sh`
+- 修改：`CMakeLists.txt`、`shared/cpp/CMakeLists.txt`
 
-**Interfaces:**
-- Consumes: Qt-free planner from Task 2.
-- Produces: build graph containing planner library/CLI/tests plus existing shell tests.
+**接口：**
+- 输入：任务 2 的无 Qt 规划器。
+- 输出：只包含规划器库/CLI/测试以及现有 shell 测试的构建图。
 
-- [ ] **Step 1: Add and fail the source-boundary test**
+- [ ] **步骤 1：添加源码边界测试并确认其失败**
 
-Scan active top-level CMake, `shared/cpp`, `web_ground_station`, and `scripts` for `Qt6|QtTest|CMAKE_AUTOMOC|Q_OBJECT|#include[[:space:]]*<Q`; assert `ground_station_computer` and `shared/cpp/include/competition_core` are absent.
+扫描在用的顶层 CMake、`shared/cpp`、`web_ground_station` 和 `scripts`，查找 `Qt6|QtTest|CMAKE_AUTOMOC|Q_OBJECT|#include[[:space:]]*<Q`；断言不存在 `ground_station_computer` 和 `shared/cpp/include/competition_core`。
 
-Run: `bash scripts/tests/test_web_only_ground_station.sh`
+运行：`bash scripts/tests/test_web_only_ground_station.sh`
 
-Expected: FAIL on current CMake/legacy files.
+预期：在当前 CMake/旧文件上失败。
 
-- [ ] **Step 2: Delete legacy files and dependencies**
+- [ ] **步骤 2：删除旧文件与依赖**
 
-Top-level CMake retains C++17, testing, and existing shell tests; adds Python3 Interpreter, nlohmann_json, GTest, and `add_subdirectory(shared/cpp)`. Remove AUTOMOC, Qt, C++ Protobuf generation, ZeroMQ/cppzmq, and `proto_messages`. C++ subdirectory exposes only planner library, CLI, five GoogleTests, and golden verifier.
+顶层 CMake 保留 C++17、测试和现有 shell 测试；添加 Python3 Interpreter、nlohmann_json、GTest 和 `add_subdirectory(shared/cpp)`。移除 AUTOMOC、Qt、C++ Protobuf 生成、ZeroMQ/cppzmq 和 `proto_messages`。C++ 子目录仅暴露规划器库、CLI、五个 GoogleTest 和 golden 验证器。
 
-- [ ] **Step 3: Clean-build without Qt**
+- [ ] **步骤 3：在无 Qt 环境下全新构建**
 
 ```bash
 cmake -S . -B build-noqt -DCMAKE_BUILD_TYPE=Release
@@ -174,9 +174,9 @@ bash scripts/tests/test_web_only_ground_station.sh
 ldd build-noqt/shared/cpp/h_route_planner_cli | rg 'Qt|protobuf|zmq'
 ```
 
-Expected: build/tests pass and linkage scan is empty.
+预期：构建/测试通过，链接扫描无输出。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add -A CMakeLists.txt shared/cpp scripts/tests/test_web_only_ground_station.sh
@@ -185,21 +185,21 @@ git commit -m "build(ground): remove Qt-era native stack"
 
 ---
 
-### Task 4: Test the Real CLI Through the Unchanged Gateway
+### 任务 4：通过未修改的 Gateway 测试真实 CLI
 
-**Files:**
-- Modify: `web_ground_station/tests/gateway/test_planner.py`
-- Do not modify: `web_ground_station/gateway/nuedc_web_gateway/planner.py`
+**文件：**
+- 修改：`web_ground_station/tests/gateway/test_planner.py`
+- 不修改：`web_ground_station/gateway/nuedc_web_gateway/planner.py`
 
-**Interfaces:**
-- Consumes: `NUEDC_TEST_PLANNER_CLI` and existing `PlannerClient`.
-- Produces: real cross-language integration coverage.
+**接口：**
+- 输入：`NUEDC_TEST_PLANNER_CLI` 和现有 `PlannerClient`。
+- 输出：真实的跨语言集成覆盖。
 
-- [ ] **Step 1: Add real-binary pytest**
+- [ ] **步骤 1：添加真实二进制 pytest**
 
-Skip only when the variable is absent; if set, require the file. Plan sample/default barrier and assert A9B1, terminal `touchdown`, final `land`, `h_field_m_v1`, and `metadata.terminal_cell == waypoints[-2].id`.
+仅在变量不存在时跳过；变量存在时要求文件存在。为 sample/default barrier 生成计划，并断言 A9B1、终点 `touchdown`、最终 `land`、`h_field_m_v1` 以及 `metadata.terminal_cell == waypoints[-2].id`。
 
-- [ ] **Step 2: Verify optional and enabled modes**
+- [ ] **步骤 2：验证可选模式和启用模式**
 
 ```bash
 cd web_ground_station
@@ -208,9 +208,9 @@ NUEDC_TEST_PLANNER_CLI=../build-noqt/shared/cpp/h_route_planner_cli uv run pytes
 git diff --exit-code HEAD -- gateway/nuedc_web_gateway/planner.py
 ```
 
-Expected: first run has one explicit skip, second exercises real CLI, production adapter has no diff.
+预期：首次运行有一个明确跳过，第二次运行会执行真实 CLI，生产适配器无 diff。
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git add web_ground_station/tests/gateway/test_planner.py
@@ -219,29 +219,29 @@ git commit -m "test(web): exercise Qt-free planner integration"
 
 ---
 
-### Task 5: Update Current Documentation and AGENTS.md
+### 任务 5：更新当前文档与 AGENTS.md
 
-**Files:**
-- Modify: `README.md`, `shared/cpp/README.md`, `AGENTS.md`, `scripts/tests/test_web_only_ground_station.sh`
-- Modify carefully: `/home/sb/Ground_station/AGENTS.md`
+**文件：**
+- 修改：`README.md`、`shared/cpp/README.md`、`AGENTS.md`、`scripts/tests/test_web_only_ground_station.sh`
+- 谨慎修改：`/home/sb/Ground_station/AGENTS.md`
 
-**Interfaces:**
-- Consumes: final structure and workspace ROS 2 guidance.
-- Produces: Web-only build/test/ownership instructions without losing airborne guidance.
+**接口：**
+- 输入：最终结构与工作区 ROS 2 指南。
+- 输出：不丢失机载指南的 Web-only 构建/测试/职责说明。
 
-- [ ] **Step 1: Make boundary test reject obsolete current docs**
+- [ ] **步骤 1：使边界测试拒绝过时的当前文档**
 
-Scan only current README files and repository AGENTS for claims that the planner requires Qt, C++ Protobuf/ZeroMQ, simulator, command handler, or `competition_core`; exclude historical design records.
+仅扫描当前 README 文件和仓库 AGENTS，检查其中是否声称规划器需要 Qt、C++ Protobuf/ZeroMQ、模拟器、命令 handler 或 `competition_core`；排除历史设计记录。
 
-- [ ] **Step 2: Rewrite repository docs**
+- [ ] **步骤 2：重写仓库文档**
 
-Document C++ packages `build-essential cmake nlohmann-json3-dev libgtest-dev`; remove old install/generation claims. State Web entry `http://10.42.0.1:8000`, planner path, `h_field_m_v1`, golden verification, real Gateway test, and PID via PlotJuggler.
+记录 C++ 软件包 `build-essential cmake nlohmann-json3-dev libgtest-dev`；删除旧安装/生成说明。说明 Web 入口 `http://10.42.0.1:8000`、规划器路径、`h_field_m_v1`、golden 验证、真实 Gateway 测试，以及使用 PlotJuggler 进行 PID 调试。
 
-- [ ] **Step 3: Update both AGENTS files**
+- [ ] **步骤 3：更新两个 AGENTS 文件**
 
-Repository guidance uses STL/nlohmann_json/GoogleTest and forbids communication/state/UI in planner. Reread workspace AGENTS immediately before editing; replace only obsolete `NUEDC_Test` Qt paragraphs, preserve all ROS 2 and unrelated user text, and keep `shared/proto` as Python Gateway/airborne wire source.
+仓库指南使用 STL/nlohmann_json/GoogleTest，并禁止在规划器中加入通信/状态/UI。在编辑前立即重读工作区 AGENTS；仅替换过时的 `NUEDC_Test` Qt 段落，保留所有 ROS 2 指南和无关用户文本，并保留 `shared/proto` 作为 Python Gateway/机载 wire 源。
 
-- [ ] **Step 4: Verify and commit repository docs**
+- [ ] **步骤 4：验证并提交仓库文档**
 
 ```bash
 bash scripts/tests/test_web_only_ground_station.sh
@@ -250,21 +250,21 @@ git add README.md shared/cpp/README.md AGENTS.md scripts/tests/test_web_only_gro
 git commit -m "docs(ground): document Web-only planner stack"
 ```
 
-Workspace `/home/sb/Ground_station/AGENTS.md` remains an explicit delivered edit outside this repository commit.
+工作区 `/home/sb/Ground_station/AGENTS.md` 仍是此仓库提交之外明确交付的改动。
 
 ---
 
-### Task 6: Full Regression and Deployment Checks
+### 任务 6：完整回归与部署检查
 
-**Files:**
-- Modify only if a test exposes an owning-component regression.
-- Create/update: `.superpowers/sdd/progress.md`
+**文件：**
+- 仅在测试暴露所属组件回归时修改。
+- 创建/更新：`.superpowers/sdd/progress.md`
 
-**Interfaces:**
-- Consumes: all migrated code/docs.
-- Produces: exact native, Gateway, frontend, browser, boundary, and deployment evidence.
+**接口：**
+- 输入：所有已迁移代码/文档。
+- 输出：精确的原生、Gateway、前端、浏览器、边界和部署证据。
 
-- [ ] **Step 1: Native and Gateway checks**
+- [ ] **步骤 1：原生与 Gateway 检查**
 
 ```bash
 cmake -S . -B build-noqt -DCMAKE_BUILD_TYPE=Release
@@ -275,7 +275,7 @@ NUEDC_TEST_PLANNER_CLI=../build-noqt/shared/cpp/h_route_planner_cli uv run pytes
 uv run ruff check gateway tests scripts
 ```
 
-- [ ] **Step 2: Frontend and browser checks**
+- [ ] **步骤 2：前端与浏览器检查**
 
 ```bash
 cd web_ground_station/frontend
@@ -285,9 +285,9 @@ pnpm build
 pnpm exec playwright test
 ```
 
-Expected: all configured viewports including 1024x600 pass; no screenshot approval because UI is unchanged.
+预期：包括 1024x600 在内的所有已配置视口均通过；因为 UI 未改动，不需要截图审批。
 
-- [ ] **Step 3: Boundary/deployment checks and evidence**
+- [ ] **步骤 3：边界/部署检查与证据**
 
 ```bash
 cd ../..
@@ -297,29 +297,29 @@ bash web_ground_station/tests/test_cross_repo_manifest_contract.sh
 ldd build-noqt/shared/cpp/h_route_planner_cli
 ```
 
-Record commands/results and environment skips in progress. For a failure, add/tighten its test, make the smallest fix, rerun, and commit scoped. Never commit build trees, caches, runtime DB/session logs, screenshots, or frontend dist.
+在 progress 中记录命令/结果和环境跳过项。如果失败，则新增或收紧相应测试，实施最小修复，重跑并进行 scoped commit。绝不提交构建树、缓存、运行时 DB/session 日志、截图或前端 dist。
 
 ---
 
-### Task 7: Independent Whole-branch Review and Handoff
+### 任务 7：独立全分支审查与交接
 
-**Files:**
-- Review: `66ce1da..HEAD`
-- Modify only for Critical/Important findings.
+**文件：**
+- 审查：`66ce1da..HEAD`
+- 仅针对 Critical/Important 发现进行修改。
 
-**Interfaces:**
-- Consumes: all task commits/evidence.
-- Produces: acceptance-clean branch; no merge/push without separate request.
+**接口：**
+- 输入：所有任务提交/证据。
+- 输出：验收无问题的分支；未经另行请求不合并或推送。
 
-- [ ] **Step 1: Dispatch independent review**
+- [ ] **步骤 1：发起独立审查**
 
-Review golden equivalence, deterministic tie breaks, exact CLI contract, no active Qt/C++ wire dependencies, preserved Python wire code, unchanged thread/Popen adapter, axes/repeats/descent/touchdown, retained ROS 2 AGENTS guidance, no generated artifacts, and direct plus Gateway integration coverage.
+审查 golden 等价性、确定性平局判定、精确 CLI 契约、无在用 Qt/C++ wire 依赖、保留 Python wire 代码、未修改 thread/Popen 适配器、坐标轴/重复点/下降/着陆、保留 ROS 2 AGENTS 指南、无生成产物，以及直接与 Gateway 集成覆盖。
 
-- [ ] **Step 2: Fix and re-review findings**
+- [ ] **步骤 2：修复并复审发现**
 
-Expose each Critical/Important issue with a test, apply smallest correction, run focused test, commit, and re-review until none remain.
+为每个 Critical/Important 问题添加能暴露它的测试，实施最小修正，运行聚焦测试，提交并复审，直至没有此类问题。
 
-- [ ] **Step 3: Final verification and handoff**
+- [ ] **步骤 3：最终验证与交接**
 
 ```bash
 git diff --check 66ce1da..HEAD
@@ -331,4 +331,4 @@ cd frontend
 pnpm test && pnpm typecheck && pnpm build
 ```
 
-Report commits, deletions, removed dependencies, exact test results, hardware-only residual validation, and workspace AGENTS changes. Do not merge or push unless requested.
+报告提交、删除项、移除的依赖、精确测试结果、仅限硬件的剩余验证，以及工作区 AGENTS 改动。未经请求不得合并或推送。

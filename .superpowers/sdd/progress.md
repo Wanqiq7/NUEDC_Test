@@ -30,14 +30,14 @@ Post-competition branch: feat/stack-optimization-airborne at 7e159e1 with Phase 
 Final verification: Ground frontend 48 tests + typecheck/build, Gateway focused 18 + Ruff/shell, real cross-repo contract PASS; Competition deployment tests 62 passed/1 root-only skip and flight_control_adapter 16/16.
 Acceptance gates pending: real root /opt install as User=sb, systemd/dual-NUC flow, disabled-propeller STM32/motor zero response, physical hotspot, complete ROS/RKNN resources, and 10-minute RK3588/Point-LIO benchmark.
 
-## 2026-07-22 Web-only Qt-free Planner Migration
+## 2026-07-22 Web-only 无 Qt 规划器迁移
 
-Plan: docs/superpowers/plans/2026-07-22-web-only-qt-free-planner.md
-Base: 3109ccf36af7485a04ab025192f77f2fd22669d8
-Task 1: complete (commits 3109ccf..b7cf3fd, review clean; 9 golden cases, CTest 2/2)
-Task 2: complete (commits b7cf3fd..1b8166f, review clean after parser/range/overflow fixes; CTest 6/6, golden 9/9, no Qt wire linkage)
-Task 3: complete (commits 1b8166f..b595da6, approved; clean CTest 9/9, boundary/ldd clean; minor: single-quote textual include and helper error-path automation deferred to final review)
-Task 4: complete (commits b595da6..c2bdf18, review clean; optional 19 passed/1 skipped, real CLI 20 passed, production adapter unchanged)
-Task 5: complete (commits c2bdf18..dac52ca, review clean after boundary wording fixes; docs and workspace AGENTS updated)
-Task 6: complete (fresh native CTest 43/43 with discovered GoogleTests; real-planner Gateway 150 passed; Ruff pass; frontend 53/53 + typecheck/build; Playwright 4/4 including 1024x600; boundary/deployment and cross-repo manifest contract pass; no external gap)
-Task 7: complete (whole-branch findings fixed; Qt case-field compatibility restored with RED/GREEN loader and CLI regressions; five GoogleTest binaries use discovery; final verification and handoff report complete)
+计划：docs/superpowers/plans/2026-07-22-web-only-qt-free-planner.md
+基线：3109ccf36af7485a04ab025192f77f2fd22669d8
+任务 1：完成（提交 3109ccf..b7cf3fd，审查无问题；9 个 golden 案例，CTest 2/2）
+任务 2：完成（提交 b7cf3fd..1b8166f，修复解析器、范围和溢出问题后审查无问题；CTest 6/6，golden 9/9，无 Qt wire 链接）
+任务 3：完成（提交 1b8166f..b595da6，已批准；全新 CTest 9/9，边界和 ldd 检查通过；次要项：单引号文本 include 与 helper 错误路径自动化留待最终审查）
+任务 4：完成（提交 b595da6..c2bdf18，审查无问题；可选模式 19 通过/1 跳过，真实 CLI 20 通过，生产适配器未改动）
+任务 5：完成（提交 c2bdf18..dac52ca，修正文档边界措辞后审查无问题；已更新文档和工作区 AGENTS）
+任务 6：完成（全新原生 CTest 43/43，含自动发现的 GoogleTest；真实规划器 Gateway 150 通过；Ruff 通过；前端 53/53 加 typecheck/build；Playwright 4/4，含 1024x600；边界、部署及跨仓库清单契约均通过；无外部缺口）
+任务 7：完成（全分支问题已修复；通过 RED/GREEN loader 与 CLI 回归恢复 Qt case 字段兼容性；五个 GoogleTest 二进制使用自动发现；最终验证与交接报告完成）

@@ -14,7 +14,7 @@ assert_forbidden() {
     printf '%s\n' "$claim" >"$probe"
 
     if ! scan_obsolete_current_docs "$probe" >/dev/null; then
-        echo "expected forbidden planner claim to be detected: $claim" >&2
+        echo "预期检测到禁止的规划器描述：$claim" >&2
         return 1
     fi
 }
@@ -27,13 +27,13 @@ assert_allowed() {
 
     local scan_status
     if scan_obsolete_current_docs "$probe" >/dev/null; then
-        echo "expected legitimate documentation to pass: $claim" >&2
+        echo "预期合法文档通过检查：$claim" >&2
         return 1
     else
         scan_status=$?
     fi
     if [[ $scan_status -ne 1 ]]; then
-        echo "legitimate documentation scan failed with rg exit $scan_status: $claim" >&2
+        echo "合法文档扫描失败，rg 退出码为 $scan_status：$claim" >&2
         return "$scan_status"
     fi
 }
@@ -58,14 +58,14 @@ assert_allowed planner_without_qt "The planner does not require Qt."
 assert_allowed historical_boundary "Historical docs describe the retired Qt planner architecture."
 
 if scan_obsolete_current_docs "$tmp_dir/missing.md" >/dev/null 2>&1; then
-    echo "expected a missing scan target to fail" >&2
+    echo "预期缺失的扫描目标触发失败" >&2
     exit 1
 else
     scan_status=$?
 fi
 if [[ $scan_status -le 1 ]]; then
-    echo "expected scan error status to propagate, got $scan_status" >&2
+    echo "预期扫描错误状态向上传递，实际得到 $scan_status" >&2
     exit 1
 fi
 
-echo "current-document boundary scan self-test passed"
+echo "当前文档边界扫描自测通过"
