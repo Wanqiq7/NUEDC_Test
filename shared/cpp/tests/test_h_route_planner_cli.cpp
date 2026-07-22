@@ -1,9 +1,40 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <unistd.h>
 
 #include "h_problem_core/tools/planner_cli.h"
+
+namespace {
+
+class TemporaryCaseFile {
+public:
+    explicit TemporaryCaseFile(const nlohmann::json &contents) {
+        static std::atomic<unsigned int> sequence{0};
+        path_ = std::filesystem::temp_directory_path()
+            / ("h_route_planner_cli_" + std::to_string(::getpid()) + "_"
+                + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "_"
+                + std::to_string(sequence.fetch_add(1)) + ".json");
+        std::ofstream file(path_);
+        file << contents.dump();
+    }
+
+    ~TemporaryCaseFile() {
+        std::error_code ignored;
+        std::filesystem::remove(path_, ignored);
+    }
+
+    const std::filesystem::path &path() const { return path_; }
+
+private:
+    std::filesystem::path path_;
+};
+
+} // namespace
 
 TEST(HRoutePlannerCli, PlansCanonicalTask) {
     const auto result = hcore::runPlannerCliRequest(R"({"schema":"h_planning_request_v1","case_path":"shared/cases/sample_case.json","no_fly_cells":["A2B2","A2B3","A2B4"]})");
@@ -59,4 +90,28 @@ TEST(HRoutePlannerCli, ClassifiesDirectoryCasePathAsLoadFailure) {
     const auto output = nlohmann::json::parse(result.stdout_bytes);
     EXPECT_EQ(output.at("error_code"), "case_load_failed");
     EXPECT_NE(output.at("message").get<std::string>().find("Is a directory"), std::string::npos);
+}
+
+TEST(HRoutePlannerCli, ClassifiesNonObjectLandingAsPlanningFailure) {
+    for (const nlohmann::json landing : {
+             nlohmann::json(nullptr),
+             nlohmann::json("not-an-object"),
+             nlohmann::json::array(),
+         }) {
+        const TemporaryCaseFile case_file({
+            {"case_id", "missing-landing"},
+            {"start_cell", "A9B1"},
+            {"landing", landing},
+        });
+        const nlohmann::json request{
+            {"schema", "h_planning_request_v1"},
+            {"case_path", case_file.path().string()},
+            {"no_fly_cells", nlohmann::json::array()},
+        };
+        const auto result = hcore::runPlannerCliRequest(request.dump());
+        ASSERT_EQ(result.exit_code, 3);
+        const auto output = nlohmann::json::parse(result.stdout_bytes);
+        EXPECT_EQ(output.at("error_code"), "planning_failed");
+        EXPECT_NE(output.at("message").get<std::string>().find("landing"), std::string::npos);
+    }
 }

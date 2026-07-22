@@ -24,16 +24,20 @@ target_link_libraries(h_route_planner_cli PRIVATE
     h_problem_core
 )
 
+include(GoogleTest)
+
 function(add_h_problem_core_test target_name test_source)
-add_executable(${target_name}
-    ${test_source}
-)
-target_link_libraries(${target_name} PRIVATE
-    GTest::gtest_main
-    h_problem_core
-)
-add_test(NAME ${target_name} COMMAND ${target_name})
-set_tests_properties(${target_name} PROPERTIES WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+    add_executable(${target_name}
+        ${test_source}
+    )
+    target_link_libraries(${target_name} PRIVATE
+        GTest::gtest_main
+        h_problem_core
+    )
+    gtest_discover_tests(${target_name}
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        DISCOVERY_MODE PRE_TEST
+    )
 endfunction()
 
 add_h_problem_core_test(test_h_case_loader tests/test_h_case_loader.cpp)

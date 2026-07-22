@@ -50,6 +50,15 @@ nlohmann::json minimalCase() {
     return {{"case_id", "minimal"}, {"start_cell", "A1B1"}};
 }
 
+nlohmann::json validLanding() {
+    return {
+        {"takeoff_anchor_cm", {450.0, 50.0}},
+        {"cruise_height_cm", 120.0},
+        {"descent_angle_deg", 45.0},
+        {"touchdown_radius_cm", 20.0},
+    };
+}
+
 } // namespace
 
 TEST(HCaseLoader, ParsesSampleCase) {
@@ -106,6 +115,65 @@ TEST(HCaseLoader, LoadsRepresentableSignedAndUnsignedTickIntervals) {
         ASSERT_TRUE(loaded.has_value()) << error;
         EXPECT_EQ(loaded->tick_interval_ms, value.get<int>());
     }
+}
+
+TEST(HCaseLoader, IgnoresAnimalsWhenValueIsNotAnArray) {
+    for (const nlohmann::json value : {
+             nlohmann::json(nullptr),
+             nlohmann::json("not-an-array"),
+             nlohmann::json::object(),
+         }) {
+        auto object = minimalCase();
+        object["animals"] = value;
+        std::string error;
+        const auto loaded = hcore::caseFromJsonObject(object, &error);
+        ASSERT_TRUE(loaded.has_value()) << error;
+        EXPECT_TRUE(loaded->animals.empty());
+    }
+}
+
+TEST(HCaseLoader, ParsesAnimalObjectsAndRejectsNonObjectsInArray) {
+    auto valid = minimalCase();
+    valid["animals"] = {{{"cell", "A1B2"}, {"name", "deer"}, {"count", 2}}};
+    std::string error;
+    const auto loaded = hcore::caseFromJsonObject(valid, &error);
+    ASSERT_TRUE(loaded.has_value()) << error;
+    ASSERT_EQ(loaded->animals.size(), 1U);
+    EXPECT_EQ(loaded->animals.front().cell, "A1B2");
+
+    auto invalid = minimalCase();
+    invalid["animals"] = nlohmann::json::array({nullptr});
+    EXPECT_FALSE(hcore::caseFromJsonObject(invalid, &error).has_value());
+    EXPECT_NE(error.find("objects"), std::string::npos);
+}
+
+TEST(HCaseLoader, IgnoresLandingWhenValueIsNotAnObject) {
+    for (const nlohmann::json value : {
+             nlohmann::json(nullptr),
+             nlohmann::json("not-an-object"),
+             nlohmann::json::array(),
+         }) {
+        auto object = minimalCase();
+        object["landing"] = value;
+        std::string error;
+        const auto loaded = hcore::caseFromJsonObject(object, &error);
+        ASSERT_TRUE(loaded.has_value()) << error;
+        EXPECT_FALSE(loaded->landing.has_value());
+    }
+}
+
+TEST(HCaseLoader, ParsesLandingObjectAndRejectsObjectMissingRequiredValues) {
+    auto valid = minimalCase();
+    valid["landing"] = validLanding();
+    std::string error;
+    const auto loaded = hcore::caseFromJsonObject(valid, &error);
+    ASSERT_TRUE(loaded.has_value()) << error;
+    EXPECT_TRUE(loaded->landing.has_value());
+
+    auto invalid = minimalCase();
+    invalid["landing"] = nlohmann::json::object();
+    EXPECT_FALSE(hcore::caseFromJsonObject(invalid, &error).has_value());
+    EXPECT_NE(error.find("takeoff_anchor_cm"), std::string::npos);
 }
 
 TEST(HCaseLoader, ReportsDistinctMissingAndDirectoryOpenErrors) {

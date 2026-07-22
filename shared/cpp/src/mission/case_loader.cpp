@@ -125,8 +125,7 @@ std::optional<CaseConfig> caseFromJsonObject(const nlohmann::json &object, std::
             || !optionalTimingValue(*it, "landing_fixed_time_s", &config.mission_timing.landing_fixed_time_s, false, error)
             || !optionalTimingValue(*it, "per_cell_dwell_time_s", &config.mission_timing.per_cell_dwell_time_s, false, error)) return std::nullopt;
     }
-    if (const auto it = object.find("animals"); it != object.end()) {
-        if (!it->is_array()) { if (error) *error = "animals must contain objects"; return std::nullopt; }
+    if (const auto it = object.find("animals"); it != object.end() && it->is_array()) {
         for (const auto &entry : *it) {
             if (!entry.is_object()) { if (error) *error = "animals must contain objects"; return std::nullopt; }
             Animal animal;
@@ -151,8 +150,7 @@ std::optional<CaseConfig> caseFromJsonObject(const nlohmann::json &object, std::
             config.animals.push_back(animal);
         }
     }
-    if (const auto it = object.find("landing"); it != object.end()) {
-        if (!it->is_object()) { if (error) *error = "invalid landing"; return std::nullopt; }
+    if (const auto it = object.find("landing"); it != object.end() && it->is_object()) {
         const auto anchor = it->find("takeoff_anchor_cm");
         if (anchor == it->end() || !anchor->is_array() || anchor->size() < 2
             || !(*anchor)[0].is_number() || !(*anchor)[1].is_number()) {
