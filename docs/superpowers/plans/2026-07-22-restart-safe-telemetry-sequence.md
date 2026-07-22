@@ -4,7 +4,7 @@
 
 **Goal:** Ensure a running Web Gateway immediately accepts telemetry after the airborne `ground_link` process or the complete airborne stack restarts, including repeated executions that reuse `task_id=wildlife-demo`.
 
-**Architecture:** Keep the existing Protobuf schema unchanged. Make the airborne envelope sequence restart-safe by seeding `SequencedPublisher` from a Unix-millisecond boot epoch shifted by 20 counter bits; independently treat every newly applied Web plan as a new execution boundary and reset only Gateway task-runtime state, while preserving process-lifetime detection history and the global command ACK watermark.
+**Architecture:** Keep the existing Protobuf schema unchanged. Make the airborne envelope sequence restart-safe within one Linux boot by seeding `SequencedPublisher` directly from the nanosecond value of `CLOCK_BOOTTIME`; independently treat every newly applied Web plan as a new execution boundary so a complete airborne reboot and reload resets only Gateway task-runtime state, while preserving process-lifetime detection history and the global command ACK watermark.
 
 **Tech Stack:** C++17, ROS 2 Humble, ZeroMQ, Protobuf, Python 3.10, FastAPI, pytest, GoogleTest, colcon.
 
@@ -13,9 +13,11 @@
 - Do not modify either repository's `shared/proto/messages.proto`; this fix must not introduce a Protobuf regeneration dependency.
 - Preserve the existing wire envelope fields and WebSocket payload shape.
 - High-frequency telemetry may drop intermediate frames, but a restarted publisher must never be blocked by a watermark from its previous process.
+- A `ground_link` process restart within one airborne OS boot uses monotonic `CLOCK_BOOTTIME`; after an airborne OS reboot, the operator must replan/reload so the Gateway establishes a fresh execution boundary.
 - Replanning with the same `task_id` starts a fresh task-runtime view: current cell, visited count, totals, recent detections, summary, error, telemetry TTL, PID TTL, deduplication keys, and event watermark reset.
 - Process-lifetime detection history does not reset on replanning; it resets only when the Gateway process exits.
-- Command ACK sequence deduplication remains global across plans and must not reset.
+- Process-lifetime detection history is not capacity-evicted during a Gateway lifetime, and every stored detection keeps the Gateway-supplied canonical `task_id` even if payload JSON contains another value.
+- Command ACK sequence deduplication and command-link health remain global across plans and must not reset; cached `mission_loaded`, `mission_running`, and `vision_armed` flags reset to `false` because they describe the retired plan execution.
 - Do not commit generated `build/`, `install/`, `log/`, frontend `dist/`, runtime session logs, or `.playwright-cli/` artifacts.
 - Both repositories may already contain unrelated user changes; stage only the exact files listed in each task.
 
@@ -27,7 +29,7 @@
 
 - Modify `src/ground_link/include/ground_link/event_gateway.hpp`: declare the restart-safe sequence epoch function and counter-bit constant.
 - Modify `src/ground_link/src/event_gateway.cpp`: implement deterministic epoch construction with overflow validation.
-- Modify `src/ground_link/src/ground_link_node.cpp`: seed `SequencedPublisher` from the current Unix time instead of `1`.
+- Modify `src/ground_link/src/ground_link_node.cpp`: seed `SequencedPublisher` from Linux `CLOCK_BOOTTIME` instead of `1`.
 - Modify `src/ground_link/test/test_envelope_codec.cpp`: prove later boots dominate all ordinary event counts from earlier boots and preserve per-process incrementing.
 
 ### Ground-station repository: `/home/sb/Ground_station/.worktrees/nuedc-web`
@@ -48,8 +50,8 @@
 - Test: `/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/test/test_envelope_codec.cpp`
 
 **Interfaces:**
-- Produces: `constexpr std::uint32_t kPublishSequenceCounterBits = 20;`
-- Produces: `std::uint64_t initialPublishSequence(std::int64_t unix_time_ms);`
+- Produces: `std::int64_t bootTimeNanoseconds();`
+- Produces: `std::uint64_t initialPublishSequence(std::int64_t boot_time_ns);`
 - Preserves: `SequencedPublisher(Send send, std::uint64_t first_sequence)` and its existing increment-on-publish behavior.
 
 - [ ] **Step 1: Write the failing epoch tests**
@@ -59,13 +61,10 @@ Add tests that express the exact restart contract:
 ```cpp
 TEST(EventGateway, PublishSequenceUsesRestartSafeBootEpoch)
 {
-    const auto first_boot = ground_link::initialPublishSequence(1'000'000);
-    const auto later_boot = ground_link::initialPublishSequence(1'000'001);
+    const auto first_boot = ground_link::initialPublishSequence(1'000'000'000);
+    const auto later_boot = ground_link::initialPublishSequence(1'000'100'001);
 
-    EXPECT_EQ(
-        first_boot,
-        static_cast<std::uint64_t>(1'000'000)
-            << ground_link::kPublishSequenceCounterBits);
+    EXPECT_EQ(first_boot, 1'000'000'000u);
     EXPECT_GT(later_boot, first_boot + 100'000);
 }
 
@@ -78,11 +77,11 @@ TEST(EventGateway, NegativeBootTimeClampsToZero)
 In the existing concurrent `SequencedPublisher` test, replace the literal seed and expected values with the epoch base while retaining all 200 concurrent publishes:
 
 ```cpp
-const auto base = ground_link::initialPublishSequence(1'000'000);
+const auto base = ground_link::initialPublishSequence(1'000'000'000);
 ground_link::SequencedPublisher publisher([&](const std::string &bytes) {
     const auto parsed = ground_link::parseEnvelope(bytes);
     std::lock_guard<std::mutex> lock(sequences_mutex);
-    wire_sequences.push_back(parsed.sequence());
+    wire_sequences.push_back(parsed.decoded_sequence);
     return true;
 }, base);
 
@@ -100,47 +99,45 @@ Run:
 ```bash
 cd /home/sb/Ground_station/.worktrees/airborne-restart-safe
 source /opt/ros/humble/setup.bash
-CTEST_PARALLEL_LEVEL=1 colcon test --packages-select ground_link \
-  --ctest-args -j1 --output-on-failure
-colcon test-result --verbose
+CMAKE_BUILD_PARALLEL_LEVEL=2 MAKEFLAGS=-j2 \
+  colcon build --packages-select ground_link --parallel-workers 1 \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
-Expected: compilation fails because `initialPublishSequence` and `kPublishSequenceCounterBits` do not exist.
+Expected: compilation fails because `bootTimeNanoseconds` and `initialPublishSequence` do not exist. `colcon test` alone is insufficient here because it does not rebuild a changed test executable.
 
 - [ ] **Step 3: Implement deterministic epoch construction**
 
 Add to `event_gateway.hpp`:
 
 ```cpp
-constexpr std::uint32_t kPublishSequenceCounterBits = 20;
-std::uint64_t initialPublishSequence(std::int64_t unix_time_ms);
+std::int64_t bootTimeNanoseconds();
+std::uint64_t initialPublishSequence(std::int64_t boot_time_ns);
 ```
 
 Add to `event_gateway.cpp`:
 
 ```cpp
-std::uint64_t initialPublishSequence(const std::int64_t unix_time_ms)
+std::uint64_t initialPublishSequence(const std::int64_t boot_time_ns)
 {
-    const auto non_negative = static_cast<std::uint64_t>(std::max<std::int64_t>(0, unix_time_ms));
-    constexpr auto max_epoch =
-        std::numeric_limits<std::uint64_t>::max() >> kPublishSequenceCounterBits;
-    return std::min(non_negative, max_epoch) << kPublishSequenceCounterBits;
+    return static_cast<std::uint64_t>(std::max<std::int64_t>(0, boot_time_ns));
 }
 ```
 
-Add the required `<algorithm>` and `<limits>` includes. The clamp makes the function defined even if the system clock is invalid or far outside the representable epoch.
+Add the required `<algorithm>` include. The clamp makes the function defined for an invalid negative input, while the signed 64-bit nanosecond input covers roughly 292 years of OS uptime without shifting or overflow.
 
 - [ ] **Step 4: Seed the publisher in the ROS node**
 
-In `ground_link_node.cpp`, compute the boot epoch once in the constructor:
+In `ground_link_node.cpp`, compute the monotonic OS boot epoch once in the constructor:
 
 ```cpp
-const auto unix_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-    std::chrono::system_clock::now().time_since_epoch()).count();
+const auto boot_time_ns = bootTimeNanoseconds();
 sequenced_publisher_ = std::make_unique<SequencedPublisher>(
     [this](const std::string &bytes) { return send(bytes); },
-    initialPublishSequence(unix_time_ms));
+    initialPublishSequence(boot_time_ns));
 ```
+
+Implement `bootTimeNanoseconds()` in `event_gateway.cpp` with `clock_gettime(CLOCK_BOOTTIME, ...)`, adding the required `<cerrno>`, `<ctime>`, `<limits>`, and `<system_error>` includes. Validate `tv_sec` before multiplying by `1'000'000'000`; a clock failure or unrepresentable uptime must throw instead of silently falling back to `system_clock` or wrapping.
 
 Do not reseed on LOAD, START, plan revision, or execution ID. The sequence domain belongs to the `ground_link` process and remains monotonic for its entire lifetime.
 
@@ -233,6 +230,37 @@ def test_same_task_replan_starts_fresh_runtime_and_accepts_new_sequence():
     assert state.snapshot(106).current_cell == "A9B1"
 ```
 
+Also add these bounded-lifetime and canonical-ownership checks:
+
+```python
+def test_detection_history_is_not_evicted_during_gateway_lifetime():
+    state = active_state("active")
+    for sequence in range(501):
+        state.apply_task_event(
+            "active",
+            "detection",
+            sequence + 1,
+            200 + sequence,
+            {"track_id": f"track-{sequence}", "animal_name": "hare", "count": 1},
+        )
+
+    assert len(state.detection_history()) == 501
+
+
+def test_detection_history_uses_canonical_task_id():
+    state = active_state("active")
+    state.apply_task_event(
+        "active",
+        "detection",
+        1,
+        101,
+        {"task_id": "spoofed", "track_id": "track-1", "animal_name": "hare"},
+    )
+
+    assert state.detection_history("active")[0]["task_id"] == "active"
+    assert state.detection_history("spoofed") == []
+```
+
 - [ ] **Step 2: Write the ACK-watermark preservation test**
 
 Add this test so plan replacement cannot weaken command replay protection:
@@ -276,7 +304,9 @@ def test_same_task_replan_preserves_global_ack_sequence_watermark():
     snapshot = state.snapshot(104)
     assert snapshot.ack is not None
     assert snapshot.ack.message == "newest ack"
-    assert snapshot.mission_loaded is True
+    assert snapshot.ack.last_accepted_sequence == 100
+    assert snapshot.command_link == "online"
+    assert snapshot.mission_loaded is False
 ```
 
 - [ ] **Step 3: Run both tests and verify RED**
@@ -300,10 +330,18 @@ with self._lock:
     self._active_task_id = task_id
     self._plan = plan_copy
     self._reset_task_state()
+    if self._ack is not None:
+        self._ack = self._ack.model_copy(
+            update={
+                "mission_loaded": False,
+                "mission_running": False,
+                "vision_armed": False,
+            }
+        )
     snapshot_seq = self._advance_snapshot()
 ```
 
-Keep `_detection_history`, `_highest_ack_sequence`, `_ack`, `_last_command_success_ms`, and `_command_failures` outside `_reset_task_state()`. Do not clear process-lifetime detection history or command connectivity when replanning.
+Keep `_detection_history`, `_highest_ack_sequence`, `_ack`, `_last_command_success_ms`, and `_command_failures` outside `_reset_task_state()`. Store history in an unbounded process-lifetime deque and write detection entries as `{**payload, "task_id": task_id}` so payload keys cannot replace the canonical task ID. Preserve the ACK identity, message, and sequence, but clear its retired-plan mission flags as shown above. Do not clear process-lifetime detection history or command connectivity when replanning.
 
 - [ ] **Step 5: Run focused and full state tests**
 
@@ -349,7 +387,7 @@ async def test_restart_safe_publisher_epoch_rejects_retired_packets(
     client, ground_state, _, _, pub_server = transport_fixture
     ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
 
-    old_sequence = (1_000_000 << 20) + 500
+    old_sequence = 1_000_000_500
     old_publish = asyncio.create_task(
         pub_server.publish(
             task_event(
@@ -364,7 +402,7 @@ async def test_restart_safe_publisher_epoch_rejects_retired_packets(
     await old_publish
 
     ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
-    new_sequence = 1_000_001 << 20
+    new_sequence = 1_001_000_000
     new_publish = asyncio.create_task(
         pub_server.publish(
             task_event(
