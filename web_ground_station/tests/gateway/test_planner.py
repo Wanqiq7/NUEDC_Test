@@ -25,6 +25,32 @@ def make_python_executable(tmp_path: Path, body: str) -> Path:
 
 
 @pytest.mark.asyncio
+async def test_real_planner_cli_returns_execution_contract():
+    configured_cli = os.environ.get("NUEDC_TEST_PLANNER_CLI")
+    if configured_cli is None:
+        pytest.skip("NUEDC_TEST_PLANNER_CLI is not set")
+
+    executable = Path(configured_cli)
+    assert executable.is_file(), f"planner CLI is not a file: {executable}"
+    repository_root = Path(__file__).resolve().parents[3]
+    client = PlannerClient(executable, timeout_s=10.0, max_output_bytes=1024 * 1024)
+
+    plan = await client.plan(
+        PlanningRequest(
+            case_path=str(repository_root / "shared/cases/sample_case.json"),
+            no_fly_cells=["A4B3", "A5B3", "A6B3"],
+        )
+    )
+
+    metadata = json.loads(plan["metadata_json"])
+    assert plan["start_waypoint_id"] == "A9B1"
+    assert plan["terminal_waypoint_id"] == "touchdown"
+    assert plan["waypoints"][-1]["action"] == "land"
+    assert metadata["execution_contract"] == "h_field_m_v1"
+    assert metadata["terminal_cell"] == plan["waypoints"][-2]["id"]
+
+
+@pytest.mark.asyncio
 async def test_returns_canonical_plan_from_versioned_request(tmp_path):
     request_capture = tmp_path / "request.json"
     executable = make_python_executable(
