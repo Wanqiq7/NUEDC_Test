@@ -14,6 +14,14 @@ scan_forbidden_references() {
         "$@"
 }
 
+scan_obsolete_current_docs() {
+    # Keep historical design records out of this policy check. These are the
+    # current entry-point documents that must describe the shipped boundary.
+    rg -n \
+        'Qt[[:space:]]*6|Qt6|QtTest|competition_core|C\+\+[^\n]*(Protobuf|ZeroMQ)|(Protobuf|ZeroMQ)[^\n]*C\+\+|Protobuf codec|控制命令处理|command handler|planner[^\n]*simulator|规划[^\n]*(仿真|模拟器)' \
+        "$@"
+}
+
 main() {
     local repo_root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 
@@ -21,7 +29,6 @@ main() {
         echo "legacy ground_station_computer source tree is still present" >&2
         return 1
     fi
-
     if [[ -d "$repo_root/shared/cpp/include/competition_core" ]]; then
         echo "legacy competition_core headers are still present" >&2
         return 1
@@ -45,6 +52,27 @@ main() {
             ;;
         *)
             echo "failed to scan web-only ground station sources (rg exit $scan_status)" >&2
+            return "$scan_status"
+            ;;
+    esac
+
+
+    if scan_obsolete_current_docs \
+        "$repo_root/README.md" \
+        "$repo_root/shared/cpp/README.md" \
+        "$repo_root/AGENTS.md"; then
+        echo "obsolete Qt-era planner claims remain in current documentation" >&2
+        return 1
+    else
+        scan_status=$?
+    fi
+
+    case "$scan_status" in
+        1)
+            echo "current documentation describes the web-only boundary"
+            ;;
+        *)
+            echo "failed to scan current documentation (rg exit $scan_status)" >&2
             return "$scan_status"
             ;;
     esac

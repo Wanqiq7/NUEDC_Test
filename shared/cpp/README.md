@@ -1,11 +1,15 @@
-# 通用任务共享 C++ 核心库
+# H 题共享 C++ 规划器
 
-`shared/cpp` 按职责分层存放两端共享代码。当前有两个 CMake 目标：
+`shared/cpp` 是不依赖 UI 和通信框架的 C++17 规划边界。它提供两个 CMake 目标：
 
-- `competition_core`：通用任务模型、`TaskPlan` JSON 存储、Protobuf codec 与控制命令处理。
-- `h_problem_core`：H 题案例解析、航线规划、仿真和 H 题到通用任务模型的 Adapter，依赖 `competition_core`。
+- `h_problem_core`：无状态案例加载、禁飞区校验、路线规划、坐标转换和降落几何库。
+- `h_route_planner_cli`：Gateway 调用的 stdin/stdout JSON 进程，构建路径为
+  `build/shared/cpp/h_route_planner_cli`。
 
-运行时任务计划以 `competition::TaskPlan` 作为唯一规范模型；各题目核心可保留内部规划结构，但持久化和协议传输必须通过通用模型。
+规划器只使用 STL 与 `nlohmann_json`，测试使用 GoogleTest。它不连接机载端、不处理命令、
+不保存运行时权威状态，也不包含桌面或 Web UI。通信、状态镜像、任务持久化及 Protobuf
+转换由 Python Gateway 负责；`shared/proto/messages.proto` 是 Python Gateway 与机载端的
+wire 源。
 
 ## H 题速度任务契约
 
@@ -18,13 +22,48 @@ terminal_waypoint_id=touchdown 表示最终落点，metadata_json.terminal_cell
 该契约必须原子部署：机载端最终系统测试通过前，不得单独部署这版地面站契约；
 地面站与机载端的 LOAD 契约门禁和速度控制器必须在同一部署窗口上线。
 
-- `include/competition_core/task/`：通用任务模型，例如 `TaskDefinition`、`TaskPlan`、`TaskEvent`、`TaskSummary`。
-- `include/competition_core/mission/`：通用 `TaskPlan` JSON 读写与校验。
-- `include/competition_core/protocol/`：通用 `Envelope` codec 与 `MissionLoad` / 控制命令处理。
-- `common/`：H 题案例数据模型，例如 `CaseConfig`、降落与时间配置。
-- `planning/`：航线规划、方格几何、路线代价和降落终端区域计算。
-- `mission/`：案例 JSON 解析与直接生成通用 `TaskPlan`。
-- `protocol/`：通用 `TaskPlan` 协议与事件 payload 构造。
-- `runtime/`：按 H 题任务路线生成通用任务事件。
+## 构建与验证
 
-新增跨题共享逻辑优先放入 `include/competition_core/`；只有 H 题专有兼容逻辑才继续放入 `include/h_problem_core/` 和 `src/<layer>/`。
+Ubuntu 22.04 安装 C++ 依赖：
+
+```bash
+sudo apt install -y build-essential cmake nlohmann-json3-dev libgtest-dev
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
+```
+
+直接调用 planner：
+
+```bash
+printf '%s' '{"schema":"h_planning_request_v1","case_path":"shared/cases/sample_case.json","no_fly_cells":["A4B3","A5B3","A6B3"]}' \
+  | build/shared/cpp/h_route_planner_cli
+```
+
+固定输出、错误码和退出码由 golden 校验锁定：
+
+```bash
+python3 shared/cpp/tests/verify_planner_golden.py \
+  build/shared/cpp/h_route_planner_cli \
+  shared/cases/golden/planner_cli_cases.json
+```
+
+Gateway 的真实进程集成测试：
+
+```bash
+cd web_ground_station
+NUEDC_TEST_PLANNER_CLI=../build/shared/cpp/h_route_planner_cli \
+  uv run pytest tests/gateway/test_planner.py \
+  -k real_planner_cli_returns_execution_contract -v
+```
+
+## 目录与扩展边界
+
+- `include/h_problem_core/common/`：H 题案例与 `TaskPlan` 数据模型。
+- `include/h_problem_core/planning/`：航线、代价与降落几何接口。
+- `include/h_problem_core/mission/`：案例加载与 `h_field_m_v1` 计划生成接口。
+- `include/h_problem_core/tools/`：版本化 planner CLI 请求/响应接口。
+- `src/`：对应实现；`tools/`：可执行程序入口；`tests/`：GoogleTest 与 golden 工具。
+
+只把确定性的 H 题规划逻辑放入这里。通信、状态机、持久化、协议生成和 UI 变更应留在
+各自的 Gateway、wire 或前端边界。
