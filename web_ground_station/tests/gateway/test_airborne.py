@@ -504,7 +504,6 @@ async def test_restart_safe_publisher_epoch_rejects_retired_packets(
     assert await client.receive_one_telemetry() is not None
     await old_publish
 
-    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
     new_sequence = 1_001_000_000
     new_publish = asyncio.create_task(
         pub_server.publish(
