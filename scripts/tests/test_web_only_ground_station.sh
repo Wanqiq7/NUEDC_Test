@@ -19,7 +19,7 @@ scan_obsolete_current_docs() {
     # Keep historical design records out of this policy check. These are the
     # current entry-point documents that must describe the shipped boundary.
     local planner='(?:the[[:space:]]+)?(?:C\+\+[[:space:]]+)?planner(?:[[:space:]]+(?:library|CLI|core|component))?'
-    local forbidden='(?:Qt(?:[[:space:]]+Core|6|Test)?|C\+\+[[:space:]]+Protobuf|ZeroMQ|simulator|command[[:space:]]+(?:handler|handling)|competition_core)'
+    local forbidden='(?:Qt(?:[[:space:]]+Core|6|Test)?|(?:C\+\+[[:space:]]+)?Protobuf|ZeroMQ|simulator|command[[:space:]]+(?:handler|handling)|competition_core)'
     local forward_relation='(?:requires?|depends[[:space:]]+on|owns?|uses?)'
     local passive_relation='(?:is|are)[[:space:]]+(?:required|depended[[:space:]]+on|owned|used)[[:space:]]+by'
 
