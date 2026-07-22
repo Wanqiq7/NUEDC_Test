@@ -41,3 +41,4 @@ Acceptance gates pending: real root /opt install as User=sb, systemd/dual-NUC fl
 任务 5：完成（提交 c2bdf18..dac52ca，修正文档边界措辞后审查无问题；已更新文档和工作区 AGENTS）
 任务 6：完成（全新原生 CTest 43/43，含自动发现的 GoogleTest；真实规划器 Gateway 150 通过；Ruff 通过；前端 53/53 加 typecheck/build；Playwright 4/4，含 1024x600；边界、部署及跨仓库清单契约均通过；无外部缺口）
 任务 7：完成（全分支问题已修复；通过 RED/GREEN loader 与 CLI 回归恢复 Qt case 字段兼容性；五个 GoogleTest 二进制使用自动发现；最终验证与交接报告完成）
+任务 8：完成（提交 bcfb70e..bea85bf，审查无问题；新增动物对象缺少必填字段的回归测试；新增叙述性文档与脚本消息已按仓库规范中文化）
