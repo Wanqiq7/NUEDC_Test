@@ -484,6 +484,58 @@ async def test_other_task_event_is_ignored(transport_fixture):
 
 
 @pytest.mark.asyncio
+async def test_restart_safe_publisher_epoch_rejects_retired_packets(
+    transport_fixture,
+):
+    client, ground_state, _, _, pub_server = transport_fixture
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+
+    old_sequence = 1_000_000_500
+    old_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                old_sequence,
+                {"current_cell": "A1B2", "visited_cells": 9},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await old_publish
+
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+    new_sequence = 1_001_000_000
+    new_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                new_sequence,
+                {"current_cell": "A9B1", "visited_cells": 1},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await new_publish
+    assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
+
+    delayed_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                old_sequence,
+                {"current_cell": "A1B2", "visited_cells": 9},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is None
+    await delayed_publish
+    assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
+
+
+@pytest.mark.asyncio
 async def test_summary_updates_running_false(transport_fixture):
     client, ground_state, recorder, _, pub_server = transport_fixture
     ground_state.apply_plan(plan_for("case-1"), now_ms())
