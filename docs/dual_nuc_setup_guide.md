@@ -228,6 +228,51 @@ uv run python -m nuedc_web_gateway.emergency_stop \
 只有退出码为 0 且输出“紧急停止已确认”才表示收到机载 ACK。浏览器刷新或 Gateway 重启
 不会自动 STOP；重启后等待状态从“同步中”恢复“在线”，再允许 START。
 
+### 机载重启后的遥测恢复
+
+仅在同一机载 OS 会话内重启 `ground_link` 时，必须保持 Web Gateway 和浏览器页面原样运行，
+不需要刷新页面或重启 Gateway。完整重启机载系统（或完整重启
+`sim_airborne.launch.py`）后，必须使用同一个 `task_id=wildlife-demo` 重新规划并重新
+`LOAD`，不能直接对重启前的任务发送 `START`。以下验收流程对两种重启方式各执行一次；
+即使仅重启 `ground_link`，验收时也重新规划同一任务，以同时检查地面站运行态复位。
+
+1. 保持 Web Gateway 运行，不要重启地面站服务，也不要刷新浏览器。
+2. 完成一次 `LOAD -> START`，确认 `/api/snapshot` 的 `visited_count` 增长。
+3. 重启机载 `ground_link` 或完整 `sim_airborne.launch.py`。
+4. 重新规划同一个 `task_id=wildlife-demo`，执行 `LOAD -> START`。
+5. 5 秒内确认 `telemetry_link=online`、`current_cell` 从 `A9B1` 开始更新，且
+   `visited_count` 从 0/1 开始增长。
+6. 确认任务结束后收到 `recent_summary`，而不是等待旧序号水位自然追平。
+
+开始前检查 Gateway 健康状态；应返回 `{"ok":true}`：
+
+```bash
+curl -fsS http://10.42.0.1:8000/api/health
+```
+
+在首次执行、重启期间和第二次执行中持续采样快照。重启后的前五次采样即为 5 秒验收
+窗口，保留输出作为联调记录：
+
+```bash
+for sample in 1 2 3 4 5; do
+  date --iso-8601=seconds
+  curl -fsS http://10.42.0.1:8000/api/snapshot
+  sleep 1
+done
+```
+
+在重启前最后一条遥测和重启后第一条遥测各采样一次机载 wire sequence。每次都从
+`web_ground_station/` 目录执行以下命令，并记录打印出的整数：
+
+```bash
+.venv/bin/python -c 'import zmq; from nuedc_web_gateway.proto_runtime import load_messages_module; c=zmq.Context(); s=c.socket(zmq.SUB); s.setsockopt(zmq.SUBSCRIBE,b""); s.setsockopt(zmq.RCVTIMEO,5000); s.connect("tcp://10.42.0.2:5557"); print(load_messages_module().Envelope.FromString(s.recv()).sequence); s.close(); c.term()'
+```
+
+验收通过必须同时满足：重启后第一个 sequence 大于重启前最后一个 sequence；Gateway
+在 5 秒内恢复 `telemetry_link=online`；新执行的 `current_cell` 从 `A9B1` 开始更新，
+`visited_count` 从 0/1 增长；任务结束后 `recent_summary` 对应新执行。任何一项不满足时，
+保存两次 sequence、五次快照和双方日志，不得通过刷新浏览器或重启 Gateway 掩盖问题。
+
 ## 9. PlotJuggler PID 波形调试
 
 Web 地面站不提供 PID 调试页。需要波形调参时，让机载端把既有 UDP JSON 发送到
