@@ -46,7 +46,7 @@ runtime/*.env
 
 # Local agent / tool state
 .serena/
-.superpowers/
+.superpowers/sdd/
 .codex/
 .codex
 
