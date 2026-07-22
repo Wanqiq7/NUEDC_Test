@@ -18,6 +18,7 @@ _HIGH_FREQUENCY_EVENTS = frozenset(
     {"telemetry", "pid_debug", "attitude", "motor_status"}
 )
 _RECENT_DETECTION_LIMIT = 100
+_DETECTION_HISTORY_LIMIT = 500
 _WEB_SEQUENCE_COUNTER_BITS = 10
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,9 @@ class GroundState:
         self._detection_totals: dict[str, int] = {}
         self._recent_detections: deque[dict[str, Any]] = deque(
             maxlen=_RECENT_DETECTION_LIMIT
+        )
+        self._detection_history: deque[dict[str, Any]] = deque(
+            maxlen=_DETECTION_HISTORY_LIMIT
         )
         self._detection_keys: set[tuple[str, str | int]] = set()
         self._target_update: dict[str, Any] | None = None
@@ -238,6 +242,15 @@ class GroundState:
         with self._lock:
             self._publish(event)
 
+    def detection_history(self, task_id: str | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            entries = (
+                item
+                for item in self._detection_history
+                if task_id is None or item.get("task_id") == task_id
+            )
+            return deepcopy(list(entries))
+
     def snapshot(self, now_ms: int) -> GroundSnapshot:
         with self._lock:
             task_matches = (
@@ -339,6 +352,7 @@ class GroundState:
             return
         self._detection_keys.add(key)
         self._recent_detections.append(payload)
+        self._detection_history.append({"task_id": task_id, **payload})
         animal_name = payload.get("animal_name")
         count = payload.get("count", 1)
         if isinstance(animal_name, str) and animal_name:
