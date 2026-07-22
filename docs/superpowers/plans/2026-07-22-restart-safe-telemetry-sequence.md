@@ -430,6 +430,42 @@ async def test_restart_safe_publisher_epoch_rejects_retired_packets(
     assert await client.receive_one_telemetry() is None
     await delayed_publish
     assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
+
+
+@pytest.mark.asyncio
+async def test_same_task_replan_accepts_lower_epoch_after_airborne_reboot(
+    transport_fixture,
+):
+    client, ground_state, _, _, pub_server = transport_fixture
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+
+    old_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                1_000_000_500,
+                {"current_cell": "A1B2", "visited_cells": 9},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await old_publish
+
+    ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+    rebooted_publish = asyncio.create_task(
+        pub_server.publish(
+            task_event(
+                "wildlife-demo",
+                "telemetry",
+                100,
+                {"current_cell": "A9B1", "visited_cells": 1},
+            )
+        )
+    )
+    assert await client.receive_one_telemetry() is not None
+    await rebooted_publish
+    assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
 ```
 
 - [ ] **Step 2: Run the regression test**
@@ -439,10 +475,10 @@ Run:
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web/web_ground_station
 .venv/bin/pytest tests/gateway/test_airborne.py \
-  -k restart_safe_publisher_epoch -vv
+  -k "restart_safe_publisher_epoch or lower_epoch_after_airborne_reboot" -vv
 ```
 
-Expected after Tasks 1 and 2: PASS. To prove the test is meaningful, temporarily restore the conditional same-task reset locally, rerun and observe failure, then restore the implementation before continuing. Do not commit the temporary reversion.
+Expected after Tasks 1 and 2: both tests PASS. To prove the lower-epoch test is meaningful, temporarily restore the conditional same-task reset locally, rerun and observe only `test_same_task_replan_accepts_lower_epoch_after_airborne_reboot` fail, then restore the implementation before continuing. Do not commit the temporary reversion.
 
 - [ ] **Step 3: Run the full Gateway suite and lint**
 
