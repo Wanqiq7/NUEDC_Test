@@ -36,7 +36,7 @@ runtime/active_mission_plan.json
 runtime/deployment_manifest.json
 runtime/ground_control_results.db
 runtime/*.env
-!runtime/web_ground_station.env
+runtime/mediamtx.ready
 
 # Qt / IDE
 *.user
