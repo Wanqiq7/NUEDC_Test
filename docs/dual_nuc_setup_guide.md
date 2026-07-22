@@ -265,7 +265,7 @@ done
 `web_ground_station/` 目录执行以下命令，并记录打印出的整数：
 
 ```bash
-.venv/bin/python -c 'import zmq; from nuedc_web_gateway.proto_runtime import load_messages_module; c=zmq.Context(); s=c.socket(zmq.SUB); s.setsockopt(zmq.SUBSCRIBE,b""); s.setsockopt(zmq.RCVTIMEO,5000); s.connect("tcp://10.42.0.2:5557"); print(load_messages_module().Envelope.FromString(s.recv()).sequence); s.close(); c.term()'
+PYTHONPATH=gateway .venv/bin/python -c 'import zmq; from nuedc_web_gateway.proto_runtime import load_messages_module; c=zmq.Context(); s=c.socket(zmq.SUB); s.setsockopt(zmq.SUBSCRIBE,b""); s.setsockopt(zmq.RCVTIMEO,5000); s.connect("tcp://10.42.0.2:5557"); print(load_messages_module().Envelope.FromString(s.recv()).sequence); s.close(); c.term()'
 ```
 
 验收通过必须同时满足：重启后第一个 sequence 大于重启前最后一个 sequence；Gateway

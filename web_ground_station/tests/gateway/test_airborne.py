@@ -538,7 +538,7 @@ async def test_restart_safe_publisher_epoch_rejects_retired_packets(
 async def test_full_airborne_reboot_accepts_lower_publisher_epoch(
     transport_fixture,
 ):
-    client, ground_state, _, _, pub_server = transport_fixture
+    client, ground_state, _, rep_server, pub_server = transport_fixture
     ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
 
     old_publish = asyncio.create_task(
@@ -555,6 +555,17 @@ async def test_full_airborne_reboot_accepts_lower_publisher_epoch(
     await old_publish
 
     ground_state.apply_plan(plan_for("wildlife-demo"), now_ms())
+    assert ground_state.snapshot(now_ms()).mission_loaded is False
+
+    rep_server.queue_ack(task_id="wildlife-demo")
+    load_ack = await client.send_mission_load(plan_for("wildlife-demo"))
+
+    assert load_ack.ok is True
+    assert load_ack.task_id == "wildlife-demo"
+    assert load_ack.mission_loaded is True
+    assert rep_server.requests[-1].WhichOneof("payload") == "mission_load"
+    assert ground_state.snapshot(now_ms()).mission_loaded is True
+
     rebooted_publish = asyncio.create_task(
         pub_server.publish(
             task_event(
@@ -726,6 +737,4 @@ def test_ground_control_command_is_a_string_enum():
 
 
 def test_command_epoch_matches_sender_independent_contract():
-    assert initial_command_sequence(1_720_000_000_123) == (
-        1_720_000_000_123 << 20
-    )
+    assert initial_command_sequence(1_720_000_000_123) == (1_720_000_000_123 << 20)
