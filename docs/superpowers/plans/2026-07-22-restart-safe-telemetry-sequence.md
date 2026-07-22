@@ -583,7 +583,7 @@ curl -fsS http://10.42.0.1:8000/api/snapshot
 在 `web_ground_station/` 目录使用以下准确命令，分别在重启前和重启后独立采样一个机载传输序号：
 
 ```bash
-.venv/bin/python -c 'import zmq; from nuedc_web_gateway.proto_runtime import load_messages_module; c=zmq.Context(); s=c.socket(zmq.SUB); s.setsockopt(zmq.SUBSCRIBE, b""); s.setsockopt(zmq.RCVTIMEO, 5000); s.connect("tcp://10.42.0.2:5557"); print(load_messages_module().Envelope.FromString(s.recv()).sequence); s.close(); c.term()'
+PYTHONPATH=gateway .venv/bin/python -c 'import zmq; from nuedc_web_gateway.proto_runtime import load_messages_module; c=zmq.Context(); s=c.socket(zmq.SUB); s.setsockopt(zmq.SUBSCRIBE, b""); s.setsockopt(zmq.RCVTIMEO, 5000); s.connect("tcp://10.42.0.2:5557"); print(load_messages_module().Envelope.FromString(s.recv()).sequence); s.close(); c.term()'
 ```
 
 记录两个打印出的整数。模式 A 只在同一次机载 OS 启动期间重启 `ground_link`，不得重新规划，必须断言重启后的第一个序号大于重启前的最后一个序号；模式 B 完整重启机载 OS，允许新序号更小，但必须先使用同一 `task_id=wildlife-demo` 重新规划并重新 `LOAD`。两种场景都必须断言 Gateway 在 5 秒内变为 `telemetry_link=online`，且新执行的首条遥测立即更新运行态。
