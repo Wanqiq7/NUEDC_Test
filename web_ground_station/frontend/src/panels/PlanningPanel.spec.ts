@@ -82,6 +82,24 @@ describe('PlanningPanel', () => {
     expect(wrapper.get('[data-testid="planning-status"]').text()).toContain('航线已生成');
   });
 
+  it('shows the live current cell instead of the planned terminal cell', async () => {
+    const wrapper = mountPanel();
+    const store = useGroundStore();
+    store.$patch({ plan: successfulPlan, currentCell: 'A9B1' });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).not.toContain('ACTIVE TASK');
+    expect(wrapper.text()).not.toContain('wildlife-demo');
+    expect(wrapper.get('.route-summary').text()).toContain('当前所在格');
+    expect(wrapper.get('.route-summary').text()).toContain('A9B1');
+    expect(wrapper.get('.route-summary').text()).not.toContain('A8B4');
+
+    store.$patch({ currentCell: 'A8B3' });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('.route-summary').text()).toContain('A8B3');
+    expect(wrapper.get('.route-summary').text()).not.toContain('A9B1');
+  });
+
   it('disables editing and planning while the command link is offline or mission runs', async () => {
     const wrapper = mountPanel();
     const store = useGroundStore();

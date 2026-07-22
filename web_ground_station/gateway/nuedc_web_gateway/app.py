@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -19,6 +20,12 @@ from .planner import PlannerClient, PlannerError, is_canonical_plan, store_plan_
 from .recorder import JsonlRecorder
 from .state import GroundState
 from .video import VideoGateway, VideoGatewayError
+
+
+logger = logging.getLogger(__name__)
+
+_BACKGROUND_RETRY_INITIAL_S = 0.25
+_BACKGROUND_RETRY_MAX_S = 5.0
 
 
 def _now_ms() -> int:
@@ -55,10 +62,23 @@ class GatewayServices:
 
 
 async def _run_background(coro, stop: asyncio.Event) -> None:
-    try:
-        await coro(stop)
-    except asyncio.CancelledError:
-        raise
+    retry_delay = _BACKGROUND_RETRY_INITIAL_S
+    while not stop.is_set():
+        try:
+            await coro(stop)
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Background worker failed; retrying in %.2f seconds", retry_delay
+            )
+
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=retry_delay)
+            return
+        except asyncio.TimeoutError:
+            retry_delay = min(retry_delay * 2, _BACKGROUND_RETRY_MAX_S)
 
 
 async def _initial_probe(services: GatewayServices) -> None:
@@ -189,27 +209,11 @@ def create_app(services: GatewayServices | None = None) -> FastAPI:
 
     @app.get("/api/detections/history")
     async def detection_history(task_id: str | None = None):
-        """Return persisted detection events for post-flight review."""
-        entries: list[dict[str, Any]] = []
-        sessions_dir = services.config.runtime_dir / "sessions"
-        for path in sorted(sessions_dir.glob("*.jsonl")):
-            try:
-                lines = path.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                continue
-            for line in lines:
-                try:
-                    event = json.loads(line)
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    continue
-                if event.get("event") != "detection":
-                    continue
-                if task_id is not None and event.get("task_id") != task_id:
-                    continue
-                payload = event.get("payload")
-                if isinstance(payload, dict):
-                    entries.append({"task_id": event.get("task_id"), **payload})
-        return {"ok": True, "detections": entries[-500:]}
+        """Return detections observed during this Gateway process lifetime."""
+        return {
+            "ok": True,
+            "detections": services.state.detection_history(task_id),
+        }
 
     @app.post("/api/mission/plan")
     async def plan(request: PlanRequest):

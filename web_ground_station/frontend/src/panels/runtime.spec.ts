@@ -173,8 +173,15 @@ describe('responsive operator shell', () => {
     setActivePinia(pinia);
     const store = useGroundStore();
     store.$patch({
-      detectionTotals: { hare: 3, blue_ball: 1 },
-      recentDetections: [{ animal_name: 'hare', cell_code: 'A3B4' }],
+      detectionTotals: { elephant: 1 },
+      recentDetections: [{ animal_name: 'elephant', cell_code: 'A9B1' }],
+    });
+    vi.spyOn(gatewayApi, 'fetchDetectionHistory').mockResolvedValue({
+      ok: true,
+      detections: [
+        { animal_name: 'hare', cell_code: 'A3B4', count: 2 },
+        { animal_name: 'hare', cell_code: 'A4B4', count: 1 },
+      ],
     });
     const wrapper = mount(App, {
       attachTo: document.body,
@@ -194,12 +201,18 @@ describe('responsive operator shell', () => {
     const detectionEntry = wrapper.get('[data-testid="open-detections"]');
     expect(detectionEntry.attributes('aria-label')).toContain('检测');
     await detectionEntry.trigger('click');
+    await flushPromises();
 
     const details = wrapper.get('[data-testid="detection-dialog-content"]');
+    expect(details.text()).toContain('历史检测记录');
     expect(details.text()).toContain('hare');
     expect(details.text()).toContain('3');
-    expect(details.text()).toContain('hare');
     expect(details.text()).toContain('A3B4');
+    expect(details.text()).not.toContain('elephant');
+    const realtime = wrapper.get('.detection-panel');
+    expect(realtime.text()).toContain('实时检测');
+    expect(realtime.text()).toContain('elephant');
+    expect(realtime.text()).not.toContain('hare');
     expect(wrapper.get('svg.map-canvas').element).toBe(mapElement);
     expect(wrapper.get('svg.map-canvas').attributes('viewBox')).toBe(mapViewBox);
     expect(wrapper.get('svg.map-canvas').attributes('class')).toBe(mapClass);

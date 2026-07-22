@@ -4,10 +4,6 @@
       <div>
         <h2 id="planning-title">任务区域</h2>
       </div>
-      <div class="plan-identity" aria-label="当前任务">
-        <span>ACTIVE TASK</span>
-        <strong>{{ taskName }}</strong>
-      </div>
     </header>
 
     <div class="planning-workspace">
@@ -32,9 +28,9 @@
           </p>
         </div>
 
-        <div v-if="metadata.terminal_cell" class="control-section route-summary">
-          <span class="section-label">当前航线</span>
-          <strong>{{ metadata.terminal_cell }}</strong>
+        <div class="control-section route-summary">
+          <span class="section-label">当前所在格</span>
+          <strong>{{ store.currentCell ?? '--' }}</strong>
           <span v-if="typeof metadata.estimated_mission_time_s === 'number'">
             预计 {{ metadata.estimated_mission_time_s.toFixed(1) }} 秒
           </span>
@@ -108,9 +104,6 @@ const officialNoFlyCells = computed(() =>
 );
 const displayedNoFlyCells = computed(() =>
   editing.value ? selectedCells.value : officialNoFlyCells.value,
-);
-const taskName = computed(() =>
-  typeof store.plan?.task_id === 'string' ? store.plan.task_id : '未规划',
 );
 const isContiguous = computed(() => contiguousLine(selectedCells.value));
 const selectionStatus = computed(() => {
@@ -216,22 +209,6 @@ h2 {
 }
 
 h2 small { margin-left: 8px; color: #73878f; font: 700 10px "JetBrains Mono", ui-monospace, monospace; vertical-align: middle; }
-
-.plan-identity {
-  display: grid;
-  gap: 5px;
-  text-align: right;
-}
-
-.plan-identity strong {
-  color: #f5c451;
-  font: 700 13px "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
-}
-
-.plan-identity span {
-  color: #6f858e;
-  font: 700 10px "JetBrains Mono", ui-monospace, monospace;
-}
 
 .planning-workspace {
   display: grid;

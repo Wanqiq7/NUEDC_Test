@@ -1,6 +1,6 @@
 <template>
   <section class="detection-panel" aria-labelledby="detection-heading">
-    <header><span>VISION</span><h2 id="detection-heading">检测结果</h2></header>
+    <header><span>VISION</span><h2 id="detection-heading">实时检测</h2></header>
     <div v-if="totalEntries.length" class="detection-totals">
       <span v-for="[label, count] in totalEntries" :key="label"><strong>{{ count }}</strong>{{ label }}</span>
     </div>
