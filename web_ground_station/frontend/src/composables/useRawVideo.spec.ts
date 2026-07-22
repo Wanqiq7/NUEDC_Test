@@ -9,6 +9,8 @@ class FakePeerConnection extends EventTarget {
   remoteDescription: RTCSessionDescriptionInit | null = null;
   closed = false;
   addTransceiver = vi.fn();
+  inboundBytes = 0;
+  inboundPackets = 0;
 
   constructor() {
     super();
@@ -30,6 +32,16 @@ class FakePeerConnection extends EventTarget {
   async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
     this.remoteDescription = description;
   }
+
+  getStats = vi.fn(async () => new Map([
+    ['video-inbound', {
+      id: 'video-inbound',
+      type: 'inbound-rtp',
+      kind: 'video',
+      bytesReceived: this.inboundBytes,
+      packetsReceived: this.inboundPackets,
+    }],
+  ]) as unknown as RTCStatsReport);
 
   close(): void {
     this.closed = true;
@@ -104,7 +116,7 @@ describe('useRawVideo', () => {
     expect(client.state.value).toBe('idle');
   });
 
-  it('drops a stale session after one second and reconnects with bounded backoff', async () => {
+  it('drops a session with no media progress and reconnects with bounded backoff', async () => {
     const { useRawVideo } = await import('./useRawVideo');
     const video = fakeVideo();
     const client = useRawVideo();
@@ -114,7 +126,7 @@ describe('useRawVideo', () => {
     video.emitFrame();
     expect(client.state.value).toBe('live');
 
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(client.state.value).toBe('interrupted');
     expect(firstPeer.closed).toBe(true);
 
@@ -122,5 +134,30 @@ describe('useRawVideo', () => {
     await Promise.resolve();
     expect(FakePeerConnection.instances).toHaveLength(2);
     expect(fetch).toHaveBeenCalledWith('/api/video/whep/session-1', { method: 'DELETE' });
+  });
+
+  it('keeps a healthy RTP session when requestVideoFrameCallback is temporarily silent', async () => {
+    const { useRawVideo } = await import('./useRawVideo');
+    const video = fakeVideo();
+    const client = useRawVideo();
+    await client.open(video as unknown as HTMLVideoElement);
+    const peer = FakePeerConnection.instances[0];
+    peer.connectionState = 'connected';
+    peer.dispatchEvent(new Event('connectionstatechange'));
+    peer.dispatchEvent(Object.assign(new Event('track'), {
+      streams: [{} as MediaStream],
+      track: { readyState: 'live' } as MediaStreamTrack,
+    }));
+
+    for (let second = 1; second <= 7; second += 1) {
+      peer.inboundBytes = second * 4096;
+      peer.inboundPackets = second * 24;
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+
+    expect(client.state.value).toBe('live');
+    expect(peer.closed).toBe(false);
+    expect(FakePeerConnection.instances).toHaveLength(1);
+    expect(fetch).not.toHaveBeenCalledWith('/api/video/whep/session-1', { method: 'DELETE' });
   });
 });

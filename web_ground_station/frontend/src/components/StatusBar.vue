@@ -52,7 +52,7 @@
     <q-dialog v-model="detectionsOpen">
       <q-card v-if="detectionsOpen" data-testid="detection-dialog-content" class="details-dialog detection-dialog">
         <q-card-section class="dialog-title">
-          <strong>检测记录</strong>
+          <strong>历史检测记录</strong>
           <q-btn v-close-popup flat round icon="close" aria-label="关闭检测详情" />
         </q-card-section>
         <q-separator dark />
@@ -95,10 +95,19 @@ const historyError = ref('');
 const probing = ref(false);
 const syncLabel = computed(() => ({ unconfirmed: '未确认', matched: '一致', mismatch: '任务不一致' })[store.taskSyncState]);
 const detectionCount = computed(() => Object.values(store.detectionTotals).reduce((sum, count) => sum + count, 0));
-const detectionEntries = computed(() => Object.entries(store.detectionTotals));
-const reviewDetections = computed(() =>
-  historyDetections.value.length ? historyDetections.value : store.recentDetections,
-);
+const detectionEntries = computed(() => {
+  const totals: Record<string, number> = {};
+  for (const item of historyDetections.value) {
+    const name = detectionName(item);
+    const rawCount = item.count;
+    const count = typeof rawCount === 'number' && Number.isInteger(rawCount)
+      ? Math.max(0, rawCount)
+      : 1;
+    totals[name] = (totals[name] ?? 0) + count;
+  }
+  return Object.entries(totals);
+});
+const reviewDetections = computed(() => historyDetections.value);
 
 async function openDetectionHistory(): Promise<void> {
   detectionsOpen.value = true;
@@ -108,7 +117,7 @@ async function openDetectionHistory(): Promise<void> {
     const response = await fetchDetectionHistory();
     historyDetections.value = response.detections;
   } catch {
-    historyError.value = '历史记录读取失败，显示当前会话记录';
+    historyError.value = '历史记录读取失败';
     historyDetections.value = [];
   } finally {
     historyLoading.value = false;

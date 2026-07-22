@@ -53,6 +53,7 @@ class GroundState:
         self._target_update: dict[str, Any] | None = None
         self._recent_summary: dict[str, Any] | None = None
         self._recent_error: dict[str, Any] | None = None
+        self._recent_error_source: str | None = None
         self._recording_error = ""
         self._resyncing = False
 
@@ -69,6 +70,7 @@ class GroundState:
     def set_recent_error(self, message: str) -> None:
         with self._lock:
             self._recent_error = {"message": message}
+            self._recent_error_source = "command"
             self._advance_snapshot()
 
     def mark_resyncing(self) -> None:
@@ -142,9 +144,13 @@ class GroundState:
                 self._resyncing = False
                 self._last_command_success_ms = timestamp_ms
                 self._command_failures = 0
+                if self._recent_error_source == "command":
+                    self._recent_error = None
+                    self._recent_error_source = None
             else:
                 self._command_failures += 1
                 self._recent_error = {"message": ack.message}
+                self._recent_error_source = "command"
             seq = self._advance_snapshot()
             self._publish(
                 WebEvent(
@@ -185,6 +191,7 @@ class GroundState:
                 self._target_update = payload_copy
             elif event == "error":
                 self._recent_error = payload_copy
+                self._recent_error_source = "task"
             web_seq = self._advance_snapshot()
             web_event = WebEvent(
                 type="task_event",
@@ -222,6 +229,7 @@ class GroundState:
                 self._ack = self._ack.model_copy(update={"mission_running": False})
             if not success:
                 self._recent_error = payload_copy
+                self._recent_error_source = "task"
             web_seq = self._advance_snapshot()
             event = WebEvent(
                 type="task_summary",
@@ -302,6 +310,7 @@ class GroundState:
         self._target_update = None
         self._recent_summary = None
         self._recent_error = None
+        self._recent_error_source = None
 
     def _accept_sequence(self, task_id: str, seq: int, source: str) -> bool:
         if task_id != self._active_task_id:

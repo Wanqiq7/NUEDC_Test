@@ -8,8 +8,28 @@ interface RawVideoClient {
   close: () => Promise<void>;
 }
 
-const STALE_AFTER_MS = 1000;
+const MEDIA_HEALTH_CHECK_MS = 1000;
+const MEDIA_STALE_AFTER_MS = 5000;
 const RECONNECT_DELAYS_MS = [250, 500, 1000, 2000];
+
+interface InboundVideoCounters {
+  bytes: number;
+  packets: number;
+  frames: number;
+}
+
+function readInboundVideoCounters(report: RTCStatsReport): InboundVideoCounters | null {
+  let found = false;
+  const counters = { bytes: 0, packets: 0, frames: 0 };
+  report.forEach((entry) => {
+    if (entry.type !== 'inbound-rtp' || (entry.kind ?? entry.mediaType) !== 'video') return;
+    found = true;
+    counters.bytes += Number(entry.bytesReceived) || 0;
+    counters.packets += Number(entry.packetsReceived) || 0;
+    counters.frames += Number(entry.framesDecoded) || 0;
+  });
+  return found ? counters : null;
+}
 
 export function useRawVideo(): RawVideoClient {
   const state = ref<RawVideoState>('idle');
@@ -17,22 +37,26 @@ export function useRawVideo(): RawVideoClient {
   let generation = 0;
   let reconnectAttempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let staleTimer: ReturnType<typeof setInterval> | null = null;
+  let healthTimer: ReturnType<typeof setInterval> | null = null;
   let frameCallbackId: number | null = null;
-  let lastFrameAt = 0;
+  let lastMediaActivityAt = 0;
+  let inboundCounters: InboundVideoCounters | null = null;
+  let remoteVideoTrack: MediaStreamTrack | null = null;
   let videoElement: HTMLVideoElement | null = null;
   let peer: RTCPeerConnection | null = null;
   let sessionUrl: string | null = null;
 
   function clearTimers(): void {
     if (reconnectTimer !== null) clearTimeout(reconnectTimer);
-    if (staleTimer !== null) clearInterval(staleTimer);
+    if (healthTimer !== null) clearInterval(healthTimer);
     reconnectTimer = null;
-    staleTimer = null;
+    healthTimer = null;
     if (videoElement && frameCallbackId !== null && 'cancelVideoFrameCallback' in videoElement) {
       videoElement.cancelVideoFrameCallback(frameCallbackId);
     }
     frameCallbackId = null;
+    inboundCounters = null;
+    remoteVideoTrack = null;
   }
 
   async function releaseSession(): Promise<void> {
@@ -70,10 +94,11 @@ export function useRawVideo(): RawVideoClient {
   }
 
   function watchFrames(video: HTMLVideoElement, ownGeneration: number): void {
-    lastFrameAt = Date.now();
+    lastMediaActivityAt = Date.now();
+    inboundCounters = null;
     const onFrame: VideoFrameRequestCallback = () => {
       if (!active || ownGeneration !== generation) return;
-      lastFrameAt = Date.now();
+      lastMediaActivityAt = Date.now();
       reconnectAttempt = 0;
       state.value = 'live';
       frameCallbackId = video.requestVideoFrameCallback(onFrame);
@@ -81,11 +106,44 @@ export function useRawVideo(): RawVideoClient {
     if ('requestVideoFrameCallback' in video) {
       frameCallbackId = video.requestVideoFrameCallback(onFrame);
     }
-    staleTimer = setInterval(() => {
-      if (active && ownGeneration === generation && Date.now() - lastFrameAt >= STALE_AFTER_MS) {
-        void interrupt(ownGeneration);
+    healthTimer = setInterval(() => {
+      void checkMediaHealth(ownGeneration);
+    }, MEDIA_HEALTH_CHECK_MS);
+  }
+
+  async function checkMediaHealth(ownGeneration: number): Promise<void> {
+    const connection = peer;
+    if (!active || ownGeneration !== generation || !connection) return;
+    if (remoteVideoTrack?.readyState === 'ended') {
+      await interrupt(ownGeneration);
+      return;
+    }
+
+    try {
+      const current = readInboundVideoCounters(await connection.getStats());
+      if (!active || ownGeneration !== generation) return;
+      if (current) {
+        const previous = inboundCounters;
+        inboundCounters = current;
+        const hasProgress = previous
+          ? current.bytes > previous.bytes
+            || current.packets > previous.packets
+            || current.frames > previous.frames
+          : current.bytes > 0 || current.packets > 0 || current.frames > 0;
+        if (hasProgress) {
+          lastMediaActivityAt = Date.now();
+          reconnectAttempt = 0;
+          state.value = 'live';
+          return;
+        }
       }
-    }, 250);
+    } catch {
+      // Transient stats failures are not proof that the peer is dead.
+    }
+
+    if (Date.now() - lastMediaActivityAt >= MEDIA_STALE_AFTER_MS) {
+      await interrupt(ownGeneration);
+    }
   }
 
   function scheduleReconnect(): void {
@@ -116,6 +174,7 @@ export function useRawVideo(): RawVideoClient {
     connection.addTransceiver('video', { direction: 'recvonly' });
     connection.addEventListener('track', (event) => {
       if (active && ownGeneration === generation && videoElement) {
+        remoteVideoTrack = event.track;
         videoElement.srcObject = event.streams[0] ?? new MediaStream([event.track]);
       }
     });

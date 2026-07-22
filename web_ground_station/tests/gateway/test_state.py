@@ -314,6 +314,63 @@ def test_ack_mirror_and_command_link_failure_threshold():
     assert COMMAND_HEARTBEAT_MS == 2000
 
 
+def test_successful_ack_clears_recovered_command_error():
+    state = active_state()
+    state.apply_ack(
+        AckSnapshot(
+            ok=False,
+            message="command ack timed out",
+            task_id="active",
+            mission_loaded=True,
+            mission_running=False,
+            last_accepted_sequence=1,
+            vision_armed=False,
+        ),
+        101,
+    )
+    assert state.snapshot(102).recent_error == {"message": "command ack timed out"}
+
+    state.apply_ack(
+        AckSnapshot(
+            ok=True,
+            message="mission coordinator ready",
+            task_id="active",
+            mission_loaded=True,
+            mission_running=False,
+            last_accepted_sequence=2,
+            vision_armed=False,
+        ),
+        103,
+    )
+
+    assert state.snapshot(104).recent_error is None
+
+
+def test_successful_ack_does_not_clear_airborne_task_error():
+    state = active_state()
+    state.apply_task_event(
+        "active",
+        "error",
+        1,
+        101,
+        {"message": "camera unavailable"},
+    )
+    state.apply_ack(
+        AckSnapshot(
+            ok=True,
+            message="pong",
+            task_id="active",
+            mission_loaded=True,
+            mission_running=False,
+            last_accepted_sequence=2,
+            vision_armed=False,
+        ),
+        102,
+    )
+
+    assert state.snapshot(103).recent_error == {"message": "camera unavailable"}
+
+
 def test_plan_switch_resets_task_specific_state():
     state = active_state("first")
     state.apply_task_event("first", "telemetry", 2, 102, {"current_cell": "A7B1"})

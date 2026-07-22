@@ -1,5 +1,7 @@
 import asyncio
 import json
+import logging
+import time
 from types import SimpleNamespace
 
 import httpx
@@ -13,6 +15,48 @@ from nuedc_web_gateway.models import AckSnapshot, WebEvent
 from nuedc_web_gateway.planner import PlannerError
 from nuedc_web_gateway.state import GroundState
 from nuedc_web_gateway.video import VideoGatewayError
+
+
+@pytest.mark.asyncio
+async def test_background_worker_restarts_after_failure_with_backoff(
+    caplog, monkeypatch
+):
+    stop = asyncio.Event()
+    restarted = asyncio.Event()
+    attempts = 0
+
+    async def flaky_worker(worker_stop):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary telemetry failure")
+        restarted.set()
+        await worker_stop.wait()
+
+    monkeypatch.setattr(app_module, "_BACKGROUND_RETRY_INITIAL_S", 0.02)
+    monkeypatch.setattr(app_module, "_BACKGROUND_RETRY_MAX_S", 0.02)
+    caplog.set_level(logging.ERROR, logger="nuedc_web_gateway.app")
+
+    started_at = time.monotonic()
+    task = asyncio.create_task(app_module._run_background(flaky_worker, stop))
+    await asyncio.wait_for(restarted.wait(), timeout=0.5)
+
+    assert attempts == 2
+    assert time.monotonic() - started_at >= 0.015
+    assert "background worker failed" in caplog.text.lower()
+    assert "temporary telemetry failure" in caplog.text
+
+    stop.set()
+    await asyncio.wait_for(task, timeout=0.1)
+
+
+@pytest.mark.asyncio
+async def test_background_worker_propagates_cancellation():
+    async def cancelled_worker(_stop):
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await app_module._run_background(cancelled_worker, asyncio.Event())
 
 
 def plan_for(task_id="case-1"):
@@ -314,6 +358,54 @@ async def test_health_snapshot_probe_and_lifespan(tmp_path):
         assert recorder.started
         assert airborne.probe_count == 1
     assert recorder.stopped and airborne.closed
+
+
+@pytest.mark.asyncio
+async def test_detection_history_only_contains_current_gateway_lifetime(tmp_path):
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    (sessions / "old.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "task_event",
+                "task_id": "old-task",
+                "event": "detection",
+                "payload": {"animal_name": "hare", "cell_code": "A1B1"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    svc, *_ = services(tmp_path)
+    svc.state.apply_plan(plan_for("current-task"), 1)
+    app = create_app(svc)
+
+    before = await request(app, "GET", "/api/detections/history")
+    svc.state.apply_task_event(
+        "current-task",
+        "detection",
+        1,
+        2,
+        {"animal_name": "elephant", "cell_code": "A9B1", "count": 1},
+    )
+    after = await request(app, "GET", "/api/detections/history")
+    filtered = await request(
+        app, "GET", "/api/detections/history", params={"task_id": "other-task"}
+    )
+
+    assert before.json() == {"ok": True, "detections": []}
+    assert after.json() == {
+        "ok": True,
+        "detections": [
+            {
+                "task_id": "current-task",
+                "animal_name": "elephant",
+                "cell_code": "A9B1",
+                "count": 1,
+            }
+        ],
+    }
+    assert filtered.json() == {"ok": True, "detections": []}
 
 
 @pytest.mark.asyncio
