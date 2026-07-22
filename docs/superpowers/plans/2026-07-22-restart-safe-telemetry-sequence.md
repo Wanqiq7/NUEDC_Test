@@ -1,71 +1,87 @@
-# Restart-Safe Telemetry Sequence Implementation Plan
+# 遥测序号重启安全实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向执行代理：** 必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Ensure a running Web Gateway immediately accepts telemetry after the airborne `ground_link` process or the complete airborne stack restarts, including repeated executions that reuse `task_id=wildlife-demo`.
+**目标：** 确保 Web Gateway 持续运行时，在机载 `ground_link` 进程或完整机载栈重启后立即接收遥测，包括重复使用 `task_id=wildlife-demo` 的多次执行。
 
-**Architecture:** Keep the existing Protobuf schema unchanged. Make the airborne envelope sequence restart-safe within one Linux boot by seeding `SequencedPublisher` directly from the nanosecond value of `CLOCK_BOOTTIME`; independently treat every newly applied Web plan as a new execution boundary so a complete airborne reboot and reload resets only Gateway task-runtime state, while preserving process-lifetime detection history and the global command ACK watermark.
+**架构：** 保持现有 Protobuf schema 不变。直接使用 `CLOCK_BOOTTIME` 的纳秒值为 `SequencedPublisher` 提供种子，使机载 envelope 序号在同一次 Linux 启动期间具备进程重启安全性；同时，独立地将 Web 端每次应用新计划视为新的执行边界，使完整机载重启并重新加载后只复位 Gateway 的任务运行态，同时保留进程生命周期内的检测历史和全局命令 ACK 水位。
 
-**Tech Stack:** C++17, ROS 2 Humble, ZeroMQ, Protobuf, Python 3.10, FastAPI, pytest, GoogleTest, colcon.
+**技术栈：** C++17、ROS 2 Humble、ZeroMQ、Protobuf、Python 3.10、FastAPI、pytest、GoogleTest、colcon。
 
-## Global Constraints
+## 全局约束
 
-- Do not modify either repository's `shared/proto/messages.proto`; this fix must not introduce a Protobuf regeneration dependency.
-- Preserve the existing wire envelope fields and WebSocket payload shape.
-- High-frequency telemetry may drop intermediate frames, but a restarted publisher must never be blocked by a watermark from its previous process.
-- A `ground_link` process restart within one airborne OS boot uses monotonic `CLOCK_BOOTTIME`; after an airborne OS reboot, the operator must replan/reload so the Gateway establishes a fresh execution boundary.
-- Replanning with the same `task_id` starts a fresh task-runtime view: current cell, visited count, totals, recent detections, summary, error, telemetry TTL, PID TTL, deduplication keys, and event watermark reset.
-- Process-lifetime detection history does not reset on replanning; it resets only when the Gateway process exits.
-- Process-lifetime detection history is not capacity-evicted during a Gateway lifetime, and every stored detection keeps the Gateway-supplied canonical `task_id` even if payload JSON contains another value.
-- Command ACK sequence deduplication and command-link health remain global across plans and must not reset; cached `mission_loaded`, `mission_running`, and `vision_armed` flags reset to `false` because they describe the retired plan execution.
-- Do not commit generated `build/`, `install/`, `log/`, frontend `dist/`, runtime session logs, or `.playwright-cli/` artifacts.
-- Both repositories may already contain unrelated user changes; stage only the exact files listed in each task.
-
----
-
-## File Map
-
-### Airborne repository: `/home/sb/Ground_station/.worktrees/airborne-restart-safe`
-
-- Modify `src/ground_link/include/ground_link/event_gateway.hpp`: declare the restart-safe sequence epoch function and counter-bit constant.
-- Modify `src/ground_link/src/event_gateway.cpp`: implement deterministic epoch construction with overflow validation.
-- Modify `src/ground_link/src/ground_link_node.cpp`: seed `SequencedPublisher` from Linux `CLOCK_BOOTTIME` instead of `1`.
-- Modify `src/ground_link/test/test_envelope_codec.cpp`: prove later boots dominate all ordinary event counts from earlier boots and preserve per-process incrementing.
-
-### Ground-station repository: `/home/sb/Ground_station/.worktrees/nuedc-web`
-
-- Modify `web_ground_station/gateway/nuedc_web_gateway/state.py`: make every applied plan a task-runtime reset boundary without clearing process-lifetime history or ACK watermark.
-- Modify `web_ground_station/tests/gateway/test_state.py`: cover same-task replanning, lower post-replan event sequences, history preservation, and ACK watermark preservation.
-- Modify `web_ground_station/tests/gateway/test_airborne.py`: cover acceptance of a fresh publisher epoch and rejection of delayed packets from the retired epoch.
-- Modify `docs/dual_nuc_setup_guide.md`: document restart recovery and its acceptance check.
+- 不得修改任一仓库的 `shared/proto/messages.proto`；本修复不得引入重新生成 Protobuf 的依赖。
+- 保持现有 wire envelope 字段和 WebSocket payload 结构不变。
+- 高频遥测可以丢失中间帧，但重启后的发布端绝不能被上一进程留下的水位阻塞。
+- 在同一次机载 OS 启动期间重启 `ground_link` 进程时，使用单调递增的 `CLOCK_BOOTTIME`；机载 OS 重启后，操作员必须重新规划并重新加载，让 Gateway 建立新的执行边界。
+- 使用相同 `task_id` 重新规划时，启动全新的任务运行态视图：复位当前格、已巡检数量、统计总数、近期检测、摘要、错误、遥测 TTL、PID TTL、去重键和事件水位。
+- 进程生命周期内的检测历史不随重新规划复位，只在 Gateway 进程退出时清除。
+- Gateway 生命周期内不得因容量限制淘汰检测历史；即使 payload JSON 中包含其他值，每条存储的检测记录也必须保留 Gateway 提供的规范 `task_id`。
+- 命令 ACK 序号去重和命令链路健康状态在不同计划之间保持全局有效，不得复位；缓存的 `mission_loaded`、`mission_running` 和 `vision_armed` 标志必须复位为 `false`，因为它们描述的是已结束的计划执行。
+- 不得提交生成的 `build/`、`install/`、`log/`、前端 `dist/`、运行时会话日志或 `.playwright-cli/` 产物。
+- 两个仓库中可能已有用户的无关修改；每项任务只暂存其中明确列出的文件。
 
 ---
 
-### Task 1: Seed Airborne Event Sequences From a Boot Epoch
+## 文件映射
 
-**Files:**
-- Modify: `/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/include/ground_link/event_gateway.hpp`
-- Modify: `/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/src/event_gateway.cpp`
-- Modify: `/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/src/ground_link_node.cpp`
-- Test: `/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/test/test_envelope_codec.cpp`
+### 机载仓库：`/home/sb/Ground_station/.worktrees/airborne-restart-safe`
 
-**Interfaces:**
-- Produces: `std::int64_t bootTimeNanoseconds();`
-- Produces: `std::uint64_t initialPublishSequence(std::int64_t boot_time_ns);`
-- Preserves: `SequencedPublisher(Send send, std::uint64_t first_sequence)` and its existing increment-on-publish behavior.
+- 修改 `src/ground_link/include/ground_link/event_gateway.hpp`：声明 `bootTimeNanoseconds()` 和接收 64 位有符号输入的 `initialPublishSequence(std::int64_t boot_time_ns)`。
+- 修改 `src/ground_link/src/event_gateway.cpp`：读取 `CLOCK_BOOTTIME` 纳秒值，校验溢出，并将该 64 位纳秒种子转换为初始发布序号。
+- 修改 `src/ground_link/src/ground_link_node.cpp`：使用 Linux `CLOCK_BOOTTIME` 纳秒种子初始化 `SequencedPublisher`，不再使用 `1`。
+- 修改 `src/ground_link/test/test_envelope_codec.cpp`：验证 `bootTimeNanoseconds()` 读取 Linux boot time、后启动的进程得到更大的纳秒序号，并保留进程内逐次递增行为。
 
-- [ ] **Step 1: Write the failing epoch tests**
+### 地面站仓库：`/home/sb/Ground_station/.worktrees/nuedc-web`
 
-Add tests that express the exact restart contract:
+- 修改 `web_ground_station/gateway/nuedc_web_gateway/state.py`：将每次应用计划都设为任务运行态复位边界，但不清除进程生命周期历史或 ACK 水位。
+- 修改 `web_ground_station/tests/gateway/test_state.py`：覆盖同任务重新规划、重新规划后的较低事件序号、历史保留和 ACK 水位保留。
+- 修改 `web_ground_station/tests/gateway/test_airborne.py`：覆盖接收新发布端 epoch，并拒绝已结束发布端的延迟数据包。
+- 修改 `docs/dual_nuc_setup_guide.md`：记录重启恢复方式及其验收检查。
+
+---
+
+### 任务 1：使用启动时间为机载事件序号提供种子
+
+**文件：**
+- 修改：`/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/include/ground_link/event_gateway.hpp`
+- 修改：`/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/src/event_gateway.cpp`
+- 修改：`/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/src/ground_link_node.cpp`
+- 测试：`/home/sb/Ground_station/.worktrees/airborne-restart-safe/src/ground_link/test/test_envelope_codec.cpp`
+
+**接口：**
+- 新增：`std::int64_t bootTimeNanoseconds();`
+- 新增：`std::uint64_t initialPublishSequence(std::int64_t boot_time_ns);`
+- 保持：`SequencedPublisher(Send send, std::uint64_t first_sequence)` 及其每次发布后递增的现有行为。
+
+- [ ] **步骤 1：编写失败的 epoch 测试**
+
+添加准确表达重启合约的测试：
 
 ```cpp
 TEST(EventGateway, PublishSequenceUsesRestartSafeBootEpoch)
 {
-    const auto first_boot = ground_link::initialPublishSequence(1'000'000'000);
-    const auto later_boot = ground_link::initialPublishSequence(1'000'100'001);
+    const auto first_boot = ground_link::initialPublishSequence(1'000'000'000'000);
+    const auto later_boot = ground_link::initialPublishSequence(1'000'000'000'001);
 
-    EXPECT_EQ(first_boot, 1'000'000'000u);
-    EXPECT_GT(later_boot, first_boot + 100'000);
+    EXPECT_EQ(first_boot, 1'000'000'000'000u);
+    EXPECT_GT(later_boot, first_boot);
+}
+
+TEST(EventGateway, BootTimeNanosecondsUsesLinuxBoottimeClock)
+{
+    const auto to_nanoseconds = [](const timespec &time) {
+        return static_cast<std::int64_t>(time.tv_sec) * 1'000'000'000 + time.tv_nsec;
+    };
+    timespec before{};
+    timespec after{};
+    ASSERT_EQ(clock_gettime(CLOCK_BOOTTIME, &before), 0);
+
+    const auto boot_time_ns = ground_link::bootTimeNanoseconds();
+
+    ASSERT_EQ(clock_gettime(CLOCK_BOOTTIME, &after), 0);
+    EXPECT_GE(boot_time_ns, to_nanoseconds(before));
+    EXPECT_LE(boot_time_ns, to_nanoseconds(after));
 }
 
 TEST(EventGateway, NegativeBootTimeClampsToZero)
@@ -74,10 +90,10 @@ TEST(EventGateway, NegativeBootTimeClampsToZero)
 }
 ```
 
-In the existing concurrent `SequencedPublisher` test, replace the literal seed and expected values with the epoch base while retaining all 200 concurrent publishes:
+在现有并发 `SequencedPublisher` 测试中，用 epoch 基值替换字面量种子和预期值，同时保留全部 200 次并发发布：
 
 ```cpp
-const auto base = ground_link::initialPublishSequence(1'000'000'000);
+const auto base = ground_link::initialPublishSequence(1'000'000'000'000);
 ground_link::SequencedPublisher publisher([&](const std::string &bytes) {
     const auto parsed = ground_link::parseEnvelope(bytes);
     std::lock_guard<std::mutex> lock(sequences_mutex);
@@ -85,16 +101,16 @@ ground_link::SequencedPublisher publisher([&](const std::string &bytes) {
     return true;
 }, base);
 
-// Existing thread creation and joins remain unchanged.
+// 现有线程创建和 join 保持不变。
 ASSERT_EQ(wire_sequences.size(), 200u);
 for (std::size_t index = 0; index < wire_sequences.size(); ++index) {
     EXPECT_EQ(wire_sequences[index], base + index);
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [ ] **步骤 2：运行聚焦测试并确认 RED**
 
-Run:
+运行：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/airborne-restart-safe
@@ -104,18 +120,18 @@ CMAKE_BUILD_PARALLEL_LEVEL=2 MAKEFLAGS=-j2 \
   --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
-Expected: compilation fails because `bootTimeNanoseconds` and `initialPublishSequence` do not exist. `colcon test` alone is insufficient here because it does not rebuild a changed test executable.
+预期：由于 `bootTimeNanoseconds` 和 `initialPublishSequence` 尚不存在，编译失败。此处仅运行 `colcon test` 不足以验证，因为它不会重新构建已修改的测试可执行文件。
 
-- [ ] **Step 3: Implement deterministic epoch construction**
+- [ ] **步骤 3：实现纳秒种子的确定性转换**
 
-Add to `event_gateway.hpp`:
+在 `event_gateway.hpp` 中添加：
 
 ```cpp
 std::int64_t bootTimeNanoseconds();
 std::uint64_t initialPublishSequence(std::int64_t boot_time_ns);
 ```
 
-Add to `event_gateway.cpp`:
+在 `event_gateway.cpp` 中添加：
 
 ```cpp
 std::uint64_t initialPublishSequence(const std::int64_t boot_time_ns)
@@ -124,11 +140,11 @@ std::uint64_t initialPublishSequence(const std::int64_t boot_time_ns)
 }
 ```
 
-Add the required `<algorithm>` include. The clamp makes the function defined for an invalid negative input, while the signed 64-bit nanosecond input covers roughly 292 years of OS uptime without shifting or overflow.
+添加所需的 `<algorithm>` include。下限截断让函数对无效的负数输入也有明确结果；64 位有符号纳秒输入无需移位且不会溢出，可覆盖约 292 年的 OS 运行时间。
 
-- [ ] **Step 4: Seed the publisher in the ROS node**
+- [ ] **步骤 4：在 ROS 节点中初始化发布端种子**
 
-In `ground_link_node.cpp`, compute the monotonic OS boot epoch once in the constructor:
+在 `ground_link_node.cpp` 构造函数中只读取一次单调的 OS boot time：
 
 ```cpp
 const auto boot_time_ns = bootTimeNanoseconds();
@@ -137,13 +153,13 @@ sequenced_publisher_ = std::make_unique<SequencedPublisher>(
     initialPublishSequence(boot_time_ns));
 ```
 
-Implement `bootTimeNanoseconds()` in `event_gateway.cpp` with `clock_gettime(CLOCK_BOOTTIME, ...)`, adding the required `<cerrno>`, `<ctime>`, `<limits>`, and `<system_error>` includes. Validate `tv_sec` before multiplying by `1'000'000'000`; a clock failure or unrepresentable uptime must throw instead of silently falling back to `system_clock` or wrapping.
+在 `event_gateway.cpp` 中用 `clock_gettime(CLOCK_BOOTTIME, ...)` 实现 `bootTimeNanoseconds()`，并添加所需的 `<cerrno>`、`<ctime>`、`<limits>` 和 `<system_error>` include。在 `tv_sec` 乘以 `1'000'000'000` 前校验范围；时钟调用失败或运行时间无法表示时必须抛出异常，不能静默回退到 `system_clock` 或发生回绕。
 
-Do not reseed on LOAD, START, plan revision, or execution ID. The sequence domain belongs to the `ground_link` process and remains monotonic for its entire lifetime.
+不得在 LOAD、START、计划修订或执行 ID 变化时重新设置种子。序号域属于 `ground_link` 进程，并在其整个生命周期内保持单调递增。
 
-- [ ] **Step 5: Run package tests and verify GREEN**
+- [ ] **步骤 5：运行包测试并确认 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/airborne-restart-safe
@@ -156,9 +172,9 @@ CTEST_PARALLEL_LEVEL=1 colcon test --packages-select ground_link \
 colcon test-result --verbose
 ```
 
-Expected: `ground_link` builds and all package tests pass with zero failures.
+预期：`ground_link` 构建成功，包内全部测试通过且失败数为零。
 
-- [ ] **Step 6: Commit the airborne change**
+- [ ] **步骤 6：提交机载端修改**
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/airborne-restart-safe
@@ -172,20 +188,20 @@ git commit -m "fix(ground-link): make telemetry sequence restart-safe"
 
 ---
 
-### Task 2: Treat Same-Task Replanning as a New Gateway Execution Boundary
+### 任务 2：将同任务重新规划视为新的 Gateway 执行边界
 
-**Files:**
-- Modify: `web_ground_station/gateway/nuedc_web_gateway/state.py`
-- Test: `web_ground_station/tests/gateway/test_state.py`
+**文件：**
+- 修改：`web_ground_station/gateway/nuedc_web_gateway/state.py`
+- 测试：`web_ground_station/tests/gateway/test_state.py`
 
-**Interfaces:**
-- Consumes: restart-safe airborne `Envelope.sequence` values from Task 1.
-- Produces: `GroundState.apply_plan(...)` always resets task-runtime fields before installing the new plan.
-- Preserves: `GroundState.detection_history(task_id: str | None = None)` across replans.
+**接口：**
+- 输入：任务 1 生成的重启安全机载 `Envelope.sequence` 值。
+- 输出：`GroundState.apply_plan(...)` 在安装新计划前始终复位任务运行态字段。
+- 保持：重新规划前后的 `GroundState.detection_history(task_id: str | None = None)`。
 
-- [ ] **Step 1: Write the failing same-task replan test**
+- [ ] **步骤 1：编写失败的同任务重新规划测试**
 
-Add a test that first establishes old runtime state and a high event watermark, then applies another plan with the same task ID:
+添加测试：先建立旧运行态和较高的事件水位，再应用具有相同任务 ID 的另一份计划：
 
 ```python
 def test_same_task_replan_starts_fresh_runtime_and_accepts_new_sequence():
@@ -230,25 +246,30 @@ def test_same_task_replan_starts_fresh_runtime_and_accepts_new_sequence():
     assert state.snapshot(106).current_cell == "A9B1"
 ```
 
-Also add these bounded-lifetime and canonical-ownership checks:
+另添加以下进程生命周期容量和规范归属检查：
 
 ```python
-def test_detection_history_is_not_evicted_during_gateway_lifetime():
-    state = active_state("active")
-    for sequence in range(501):
+def test_detection_history_survives_replan_without_capacity_eviction():
+    state = active_state()
+    for seq in range(1, 502):
         state.apply_task_event(
             "active",
             "detection",
-            sequence + 1,
-            200 + sequence,
-            {"track_id": f"track-{sequence}", "animal_name": "hare", "count": 1},
+            seq,
+            100 + seq,
+            {"track_id": f"track-{seq}", "animal_name": "hare", "count": 1},
         )
+
+    state.apply_plan(
+        {"task_id": "active", "message_type": "task_plan", "waypoints": []},
+        700,
+    )
 
     assert len(state.detection_history()) == 501
 
 
 def test_detection_history_uses_canonical_task_id():
-    state = active_state("active")
+    state = active_state()
     state.apply_task_event(
         "active",
         "detection",
@@ -261,9 +282,9 @@ def test_detection_history_uses_canonical_task_id():
     assert state.detection_history("spoofed") == []
 ```
 
-- [ ] **Step 2: Write the ACK-watermark preservation test**
+- [ ] **步骤 2：编写 ACK 水位保留测试**
 
-Add this test so plan replacement cannot weaken command replay protection:
+添加以下测试，确保替换计划不会削弱命令重放保护：
 
 ```python
 def test_same_task_replan_preserves_global_ack_sequence_watermark():
@@ -309,9 +330,9 @@ def test_same_task_replan_preserves_global_ack_sequence_watermark():
     assert snapshot.mission_loaded is False
 ```
 
-- [ ] **Step 3: Run both tests and verify RED**
+- [ ] **步骤 3：运行两组测试并确认 RED**
 
-Run:
+运行：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web/web_ground_station
@@ -319,11 +340,11 @@ cd /home/sb/Ground_station/.worktrees/nuedc-web/web_ground_station
   -k "same_task_replan or ack_watermark" -vv
 ```
 
-Expected: the runtime-reset test fails because `apply_plan` only calls `_reset_task_state()` when `task_id` changes; the ACK test should pass before and after the implementation.
+预期：运行态复位测试失败，因为 `apply_plan` 只在 `task_id` 变化时调用 `_reset_task_state()`；ACK 测试在实现前后都应通过。
 
-- [ ] **Step 4: Reset task runtime for every new plan**
+- [ ] **步骤 4：对每份新计划复位任务运行态**
 
-Change the `apply_plan` critical section from conditional reset to unconditional reset:
+将 `apply_plan` 临界区从条件复位改为无条件复位：
 
 ```python
 with self._lock:
@@ -341,20 +362,20 @@ with self._lock:
     snapshot_seq = self._advance_snapshot()
 ```
 
-Keep `_detection_history`, `_highest_ack_sequence`, `_ack`, `_last_command_success_ms`, and `_command_failures` outside `_reset_task_state()`. Store history in an unbounded process-lifetime deque and write detection entries as `{**payload, "task_id": task_id}` so payload keys cannot replace the canonical task ID. Preserve the ACK identity, message, and sequence, but clear its retired-plan mission flags as shown above. Do not clear process-lifetime detection history or command connectivity when replanning.
+保持 `_detection_history`、`_highest_ack_sequence`、`_ack`、`_last_command_success_ms` 和 `_command_failures` 不受 `_reset_task_state()` 影响。使用不设容量上限、生命周期与进程一致的 deque 存储历史，并以 `{**payload, "task_id": task_id}` 写入检测记录，防止 payload 中的键替换规范任务 ID。保留 ACK 的身份、消息和序号，但按上例清除已结束计划的任务标志。重新规划时不得清除进程生命周期检测历史或命令连接状态。
 
-- [ ] **Step 5: Run focused and full state tests**
+- [ ] **步骤 5：运行聚焦测试和完整状态测试**
 
-Run:
+运行：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web/web_ground_station
 .venv/bin/pytest tests/gateway/test_state.py -q
 ```
 
-Expected: all state tests pass, including same-task replan and ACK watermark preservation.
+预期：全部状态测试通过，包括同任务重新规划和 ACK 水位保留测试。
 
-- [ ] **Step 6: Commit the Gateway state change**
+- [ ] **步骤 6：提交 Gateway 状态修改**
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web
@@ -366,18 +387,18 @@ git commit -m "fix(gateway): reset runtime state for repeated plans"
 
 ---
 
-### Task 3: Lock the Cross-Restart Contract at the Gateway Protocol Boundary
+### 任务 3：在 Gateway 协议边界锁定跨重启合约
 
-**Files:**
-- Modify: `web_ground_station/tests/gateway/test_airborne.py`
+**文件：**
+- 修改：`web_ground_station/tests/gateway/test_airborne.py`
 
-**Interfaces:**
-- Consumes: `GroundState.apply_plan(...)` execution reset from Task 2.
-- Verifies: a new publisher epoch is accepted immediately and a delayed event from the retired epoch cannot overwrite it.
+**接口：**
+- 使用：任务 2 中 `GroundState.apply_plan(...)` 建立的执行态复位。
+- 验证：立即接收新发布端 epoch，并且已结束 epoch 的延迟事件无法覆盖新状态。
 
-- [ ] **Step 1: Add the protocol-boundary regression test**
+- [ ] **步骤 1：添加协议边界回归测试**
 
-Use the existing `task_event(...)`, `plan_for(...)`, `transport_fixture`, and real Protobuf transport path:
+使用现有 `task_event(...)`、`plan_for(...)`、`transport_fixture` 和真实 Protobuf 传输路径：
 
 ```python
 @pytest.mark.asyncio
@@ -433,7 +454,7 @@ async def test_restart_safe_publisher_epoch_rejects_retired_packets(
 
 
 @pytest.mark.asyncio
-async def test_same_task_replan_accepts_lower_epoch_after_airborne_reboot(
+async def test_full_airborne_reboot_accepts_lower_publisher_epoch(
     transport_fixture,
 ):
     client, ground_state, _, _, pub_server = transport_fixture
@@ -468,21 +489,21 @@ async def test_same_task_replan_accepts_lower_epoch_after_airborne_reboot(
     assert ground_state.snapshot(now_ms()).current_cell == "A9B1"
 ```
 
-- [ ] **Step 2: Run the regression test**
+- [ ] **步骤 2：运行回归测试**
 
-Run:
+运行：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web/web_ground_station
 .venv/bin/pytest tests/gateway/test_airborne.py \
-  -k "restart_safe_publisher_epoch or lower_epoch_after_airborne_reboot" -vv
+  -k "restart_safe_publisher_epoch or full_airborne_reboot" -vv
 ```
 
-Expected after Tasks 1 and 2: both tests PASS. To prove the lower-epoch test is meaningful, temporarily restore the conditional same-task reset locally, rerun and observe only `test_same_task_replan_accepts_lower_epoch_after_airborne_reboot` fail, then restore the implementation before continuing. Do not commit the temporary reversion.
+预期：完成任务 1 和任务 2 后，两项测试均 PASS。为证明较低 epoch 测试有效，可在本地临时恢复同任务条件复位，重新运行并确认只有 `test_full_airborne_reboot_accepts_lower_publisher_epoch` 失败，然后在继续前恢复实现。不得提交该临时回退。
 
-- [ ] **Step 3: Run the full Gateway suite and lint**
+- [ ] **步骤 3：运行完整 Gateway 测试套件和 lint**
 
-Run:
+运行：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web/web_ground_station
@@ -490,9 +511,9 @@ cd /home/sb/Ground_station/.worktrees/nuedc-web/web_ground_station
 .venv/bin/ruff check gateway tests/gateway
 ```
 
-Expected: all Gateway tests pass; Ruff reports `All checks passed!`.
+预期：全部 Gateway 测试通过；Ruff 报告 `All checks passed!`。
 
-- [ ] **Step 4: Commit the boundary test**
+- [ ] **步骤 4：提交边界测试**
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web
@@ -502,17 +523,17 @@ git commit -m "test(gateway): cover airborne publisher restarts"
 
 ---
 
-### Task 4: Document and Perform the Dual-Process Restart Acceptance Test
+### 任务 4：记录并执行两种重启方式的验收测试
 
-**Files:**
-- Modify: `docs/dual_nuc_setup_guide.md`
+**文件：**
+- 修改：`docs/dual_nuc_setup_guide.md`
 
-**Interfaces:**
-- Verifies deployed airborne `ground_link` and Gateway behavior over `tcp://10.42.0.2:5557` and `tcp://10.42.0.2:5558`.
+**接口：**
+- 验证已部署机载 `ground_link` 与 Gateway 在 `tcp://10.42.0.2:5557` 和 `tcp://10.42.0.2:5558` 上的行为。
 
-- [ ] **Step 1: Add the restart acceptance procedure**
+- [ ] **步骤 1：添加重启验收流程**
 
-Document this exact sequence:
+准确记录以下流程：
 
 ```markdown
 ### 机载重启后的遥测恢复
@@ -525,11 +546,11 @@ Document this exact sequence:
 6. 确认任务结束后收到 `recent_summary`，而不是等待旧序号水位自然追平。
 ```
 
-Also state that restarting only the airborne publisher must not require a Gateway restart or browser refresh.
+同时注明：仅重启机载发布端时，不得要求重启 Gateway 或刷新浏览器。完整重启机载 OS 后，`CLOCK_BOOTTIME` 从新一次系统启动开始计时，因此新发布序号可以低于重启前的序号；重新规划建立新的 Gateway 执行边界后，首条新遥测必须立即被接收。
 
-- [ ] **Step 2: Build and deploy the focused airborne package**
+- [ ] **步骤 2：构建并部署聚焦的机载包**
 
-On the airborne workspace:
+在机载工作区运行：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/airborne-restart-safe
@@ -540,36 +561,36 @@ CMAKE_BUILD_PARALLEL_LEVEL=2 MAKEFLAGS=-j2 \
 source install/setup.bash
 ```
 
-Deploy the resulting `ground_link` package through the repository's existing airborne deployment procedure; do not copy individual shared libraries by hand.
+通过仓库现有的机载部署流程部署生成的 `ground_link` 包；不得手工复制单个共享库。
 
-- [ ] **Step 3: Start the competition-mode Gateway**
+- [ ] **步骤 3：启动比赛模式 Gateway**
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web
 web_ground_station/scripts/start_competition.sh
 ```
 
-Expected: `http://10.42.0.1:8000/api/health` returns `{"ok":true}` and both command and telemetry endpoints pass preflight.
+预期：`http://10.42.0.1:8000/api/health` 返回 `{"ok":true}`，且命令和遥测端点均通过启动前检查。
 
-- [ ] **Step 4: Run the live restart scenario**
+- [ ] **步骤 4：执行在线重启场景**
 
-During both executions, sample the Gateway:
+在前后两次执行期间对 Gateway 采样：
 
 ```bash
 curl -fsS http://10.42.0.1:8000/api/snapshot
 ```
 
-Independently sample one airborne wire sequence immediately before and after restart with this exact command from `web_ground_station/`:
+在 `web_ground_station/` 目录使用以下准确命令，分别在重启前和重启后独立采样一个机载 wire sequence：
 
 ```bash
 .venv/bin/python -c 'import zmq; from nuedc_web_gateway.proto_runtime import load_messages_module; c=zmq.Context(); s=c.socket(zmq.SUB); s.setsockopt(zmq.SUBSCRIBE,b""); s.setsockopt(zmq.RCVTIMEO,5000); s.connect("tcp://10.42.0.2:5557"); print(load_messages_module().Envelope.FromString(s.recv()).sequence); s.close(); c.term()'
 ```
 
-Record both printed integers. Assert the first post-restart sequence is greater than the final pre-restart sequence and that the Gateway becomes `telemetry_link=online` within 5 seconds.
+记录两个打印出的整数。若只在同一次机载 OS 启动期间重启 `ground_link`，断言重启后的第一个序号大于重启前的最后一个序号；若完整重启机载 OS，允许新序号更小，但必须先使用同一 `task_id=wildlife-demo` 重新规划并重新 `LOAD`。两种场景都必须断言 Gateway 在 5 秒内变为 `telemetry_link=online`，且新执行的首条遥测立即更新运行态。
 
-- [ ] **Step 5: Verify final repository state**
+- [ ] **步骤 5：验证最终仓库状态**
 
-Ground station:
+地面站：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web
@@ -577,7 +598,7 @@ git diff --check
 git status --short
 ```
 
-Airborne:
+机载端：
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/airborne-restart-safe
@@ -585,9 +606,9 @@ git diff --check
 git status --short
 ```
 
-Expected: no generated build/install/log/runtime artifacts are staged; only intended source, test, and documentation files appear in commits.
+预期：没有生成的 build/install/log/runtime 产物被暂存；提交中只包含预期的源文件、测试文件和文档文件。
 
-- [ ] **Step 6: Commit the acceptance documentation**
+- [ ] **步骤 6：提交验收文档**
 
 ```bash
 cd /home/sb/Ground_station/.worktrees/nuedc-web
@@ -597,21 +618,22 @@ git commit -m "docs: add airborne restart telemetry check"
 
 ---
 
-## Final Verification Matrix
+## 最终验证矩阵
 
-| Scenario | Required result |
+| 场景 | 必须满足的结果 |
 |---|---|
-| Same task ID is replanned without any process restart | UI runtime resets immediately; first new telemetry is accepted |
-| `ground_link` restarts while Gateway remains running | First new epoch sequence exceeds the previous watermark |
-| Delayed packet from the retired publisher arrives | Packet is rejected and cannot overwrite the new execution |
-| Command ACK arrives with an older sequence after replan | ACK is rejected; command replay protection remains intact |
-| Replan occurs after detections | Current totals clear, process-lifetime history remains available |
-| Task completes after airborne restart | `current_cell`, `visited_count`, and `recent_summary` all reach the new execution's final state |
+| 不重启任何进程，使用相同任务 ID 重新规划 | UI 运行态立即复位；接收第一条新遥测 |
+| Gateway 持续运行，同一次机载 OS 启动期间重启 `ground_link` | 新 epoch 的首个序号大于原水位 |
+| 完整重启机载 OS 后使用相同任务 ID 重新规划并重新加载 | 即使新发布序号较低，首条新遥测也会立即被接收 |
+| 已结束发布端的延迟数据包到达 | 拒绝该数据包，且不得覆盖新执行状态 |
+| 重新规划后收到序号更旧的命令 ACK | 拒绝该 ACK；命令重放保护保持有效 |
+| 检测发生后重新规划 | 清除当前统计总数，进程生命周期历史仍可查询 |
+| 机载重启后任务完成 | `current_cell`、`visited_count` 和 `recent_summary` 均达到新执行的最终状态 |
 
-## Explicit Non-Goals
+## 明确不在范围内的事项
 
-- No Protobuf field additions for `plan_revision`, `execution_id`, or a boot UUID in this fix.
-- No database or persistent sequence store.
-- No browser-side workaround, polling fallback, or forced Gateway restart.
-- No change to command sequence generation; it already uses a time-based sender epoch.
-- No attempt to make high-frequency PUB telemetry reliable; only task events and summaries require separate reliability work if packet-loss testing later proves the existing path insufficient.
+- 本修复不为 `plan_revision`、`execution_id` 或 boot UUID 添加 Protobuf 字段。
+- 不引入数据库或持久化序号存储。
+- 不引入浏览器端规避方案、轮询回退或强制 Gateway 重启。
+- 不修改命令序号生成；它已经使用基于时间的发送端 epoch。
+- 不尝试让高频 PUB 遥测具备可靠传输；如果后续丢包测试证明现有路径不足，只有任务事件和摘要需要另行开展可靠性工作。
